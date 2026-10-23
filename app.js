@@ -74,25 +74,36 @@ function fetchWithTimeout(url, ms) {
   var to = setTimeout(function () { ctl.abort(); }, ms);
   return fetch(url, { signal: ctl.signal }).finally(function () { clearTimeout(to); });
 }
-/* Try each relay in turn; validate with an optional predicate on the text. */
-async function relayFetch(url, opts) {
+/* Race every route at once (direct + all relays); the first response that
+ * validates wins. Sequential relay fallback could stack 4 timeouts per
+ * source and look like a perpetual spinner, so everything runs parallel. */
+function relayFetch(url, opts) {
   opts = opts || {};
-  var timeout = opts.timeout || 14000;
-  var lastErr = null;
-  for (var i = 0; i < RELAYS.length; i++) {
-    try {
-      var resp = await fetchWithTimeout(RELAYS[i](url), timeout);
-      if (!resp.ok) { lastErr = new Error('HTTP ' + resp.status); continue; }
-      var text = await resp.text();
-      if (!text || text.length < 8) { lastErr = new Error('empty response'); continue; }
-      if (/error code: 5\d\d|Rate limit exceeded/i.test(text) && text.length < 200) {
-        lastErr = new Error('relay busy'); continue;
-      }
-      if (opts.validate && !opts.validate(text)) { lastErr = new Error('unexpected content'); continue; }
-      return text;
-    } catch (e) { lastErr = e; }
-  }
-  throw lastErr || new Error('all relays failed');
+  var timeout = opts.timeout || 12000;
+  var attempts = [url];
+  for (var i = 0; i < RELAYS.length; i++) attempts.push(RELAYS[i](url));
+  return new Promise(function (resolve, reject) {
+    var done = false, pending = attempts.length, lastErr = null;
+    var killer = setTimeout(function () {
+      if (!done) { done = true; reject(lastErr || new Error('data sources timed out')); }
+    }, timeout);
+    attempts.forEach(function (u) {
+      fetchWithTimeout(u, timeout).then(function (resp) {
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return resp.text();
+      }).then(function (text) {
+        if (!text || text.length < 8) throw new Error('empty response');
+        if (/error code: 5\d\d|Rate limit exceeded/i.test(text) && text.length < 200) {
+          throw new Error('relay busy');
+        }
+        if (opts.validate && !opts.validate(text)) throw new Error('unexpected content');
+        if (!done) { done = true; clearTimeout(killer); resolve(text); }
+      }).catch(function (e) {
+        lastErr = e; pending--;
+        if (!done && pending === 0) { done = true; clearTimeout(killer); reject(lastErr || new Error('all relays failed')); }
+      });
+    });
+  });
 }
 async function relayJSON(url) {
   var text = await relayFetch(url, { validate: function (t) { return t.trim().charAt(0) === '{'; } });
@@ -144,7 +155,7 @@ async function fetchStock(ticker, opts) {
   var d = { ticker: T, sources: [], errors: [] };
 
   // --- Finviz: fundamentals workhorse ---
-  try {
+  var srcFinviz = async function () { try {
     var fvHtml = await relayFetch('https://finviz.com/stock?t=' + encodeURIComponent(T), {
       validate: function (t) { return t.indexOf('snapshot-td-label') !== -1; }
     });
@@ -185,10 +196,10 @@ async function fetchStock(ticker, opts) {
       if (dashParts.length > 1) d.companyName = dashParts.slice(1).join(' - ').trim();
     }
     d.sources.push('Finviz');
-  } catch (e) { d.errors.push('Finviz: ' + e.message); }
+  } catch (e) { d.errors.push('Finviz: ' + e.message); } };
 
   // --- Nasdaq: quote + summary + EPS forecasts ---
-  try {
+  var srcNasdaqInfo = async function () { try {
     var info = await relayJSON('https://api.nasdaq.com/api/quote/' + encodeURIComponent(T) + '/info?assetclass=stocks');
     var id = (info && info.data) || {};
     if (id.companyName) d.companyName = String(id.companyName).replace(/\s+(Common Stock|Class A.*|Common Shares)$/i, '').trim();
@@ -204,9 +215,9 @@ async function fetchStock(ticker, opts) {
       if (!isNum(d.high52)) d.high52 = parseNum(rangeM[2]);
     }
     d.sources.push('Nasdaq');
-  } catch (e) { d.errors.push('Nasdaq quote: ' + e.message); }
+  } catch (e) { d.errors.push('Nasdaq quote: ' + e.message); } };
 
-  try {
+  var srcNasdaqSummary = async function () { try {
     var sum = await relayJSON('https://api.nasdaq.com/api/quote/' + encodeURIComponent(T) + '/summary?assetclass=stocks');
     var sd = (sum && sum.data && sum.data.summaryData) || {};
     var mc = sd.MarketCap ? parseNum(sd.MarketCap.value) : null;
@@ -216,9 +227,9 @@ async function fetchStock(ticker, opts) {
     if (sd.OneYrTarget) d.target1Y = parseNum(sd.OneYrTarget.value);
     if (sd.Yield && !isNum(d.divYield)) d.divYield = parseNum(sd.Yield.value);
     if (sd.PreviousClose) d.prevClose = parseNum(sd.PreviousClose.value);
-  } catch (e) { d.errors.push('Nasdaq summary: ' + e.message); }
+  } catch (e) { d.errors.push('Nasdaq summary: ' + e.message); } };
 
-  try {
+  var srcNasdaqForecast = async function () { try {
     var fc = await relayJSON('https://api.nasdaq.com/api/analyst/' + encodeURIComponent(T) + '/earnings-forecast?assetclass=stocks');
     var rows = (fc && fc.data && fc.data.yearlyForecast && fc.data.yearlyForecast.rows) || [];
     d.epsForecasts = rows.map(function (r) {
@@ -231,10 +242,10 @@ async function fetchStock(ticker, opts) {
       };
     }).filter(function (r) { return isNum(r.eps); });
     if (d.epsForecasts.length) d.sources.push('Nasdaq estimates');
-  } catch (e) { d.errors.push('Nasdaq forecasts: ' + e.message); d.epsForecasts = []; }
+  } catch (e) { d.errors.push('Nasdaq forecasts: ' + e.message); d.epsForecasts = []; } };
 
   // --- Yahoo chart: 1y weekly price history ---
-  try {
+  var srcYahoo = async function () { try {
     var ch = await relayJSON('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(T) + '?range=1y&interval=1wk');
     var res = ch && ch.chart && ch.chart.result && ch.chart.result[0];
     if (res) {
@@ -248,7 +259,10 @@ async function fetchStock(ticker, opts) {
       if (!d.companyName && meta.longName) d.companyName = meta.longName;
       d.sources.push('Yahoo');
     }
-  } catch (e) { d.errors.push('Yahoo chart: ' + e.message); }
+  } catch (e) { d.errors.push('Yahoo chart: ' + e.message); } };
+
+  // All five sources were fetched concurrently above; wait for them here.
+  await Promise.all([srcFinviz(), srcNasdaqInfo(), srcNasdaqSummary(), srcNasdaqForecast(), srcYahoo()]);
 
   // --- derived values (transparent arithmetic on sourced numbers) ---
   if (!isNum(d.pctBelowHigh) && isNum(d.price) && isNum(d.high52) && d.high52 > 0) {
