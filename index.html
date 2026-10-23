@@ -106,6 +106,20 @@
       <button id="wl-refresh" class="btn-ghost" type="button">↻ Refresh prices</button>
     </div>
     <div id="wl-list"></div>
+    <div class="card" style="margin-top:14px">
+      <h3 style="margin:0 0 6px">Back up <span class="gold-text">your data</span></h3>
+      <p class="fineprint" style="margin:0 0 10px">Your watchlist and journal live only on this device. Export a backup file and keep it somewhere safe (Files, iCloud, or email it to yourself). If you ever delete and re-add this app, import the backup and everything comes back.</p>
+      <div class="row-gap">
+        <button id="btn-export" class="btn-gold" type="button">⬇ Export backup</button>
+        <button id="btn-import" class="btn-ghost" type="button">⬆ Import backup</button>
+        <input id="import-file" type="file" accept="application/json,.json" hidden>
+      </div>
+      <div id="backup-status" class="status"></div>
+      <textarea id="backup-text" rows="4" placeholder="Your backup appears here as text too — handy for copying. To restore from text instead, paste a backup here and tap Import from text." style="width:100%;box-sizing:border-box;margin-top:8px"></textarea>
+      <div class="row-gap" style="margin-top:6px">
+        <button id="btn-import-text" class="btn-ghost" type="button">Import from text</button>
+      </div>
+    </div>
   </section>
 
   <!-- JOURNAL -->

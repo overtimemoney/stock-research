@@ -261,10 +261,23 @@ async function fetchStock(ticker, opts) {
     }
   } catch (e) { d.errors.push('Yahoo chart: ' + e.message); } };
 
-  // All five sources were fetched concurrently above; wait for them here.
-  await Promise.all([srcFinviz(), srcNasdaqInfo(), srcNasdaqSummary(), srcNasdaqForecast(), srcYahoo()]);
+  // Fast stage: the four small JSON sources in parallel. Finviz (a huge
+  // HTML page through a relay) runs after, so price/chart/EPS render
+  // immediately and valuation details fill in when they land.
+  await Promise.all([srcNasdaqInfo(), srcNasdaqSummary(), srcNasdaqForecast(), srcYahoo()]);
+  deriveValues(d);
+  if (opts.onStage && (isNum(d.price) || isNum(d.marketCap))) {
+    d.partial = true;
+    d.fetchedAt = Date.now();
+    try { opts.onStage(d); } catch (e) {}
+  }
+  // Slow stage: Finviz fundamentals.
+  await srcFinviz();
+  deriveValues(d);
+  d.partial = false;
 
   // --- derived values (transparent arithmetic on sourced numbers) ---
+  function deriveValues(d) {
   if (!isNum(d.pctBelowHigh) && isNum(d.price) && isNum(d.high52) && d.high52 > 0) {
     d.pctBelowHigh = Math.max(0, (1 - d.price / d.high52) * 100);
   }
@@ -286,6 +299,7 @@ async function fetchStock(ticker, opts) {
   // PEG fallback: forward P/E / next-year EPS growth % (labelled calc.)
   if (!isNum(d.peg) && isNum(d.forwardPE) && isNum(d.epsGrowthNextY) && d.epsGrowthNextY > 0) {
     d.peg = d.forwardPE / d.epsGrowthNextY; d.pegCalc = true;
+  }
   }
   d.fetchedAt = Date.now();
   d.fromCache = false;
@@ -529,6 +543,7 @@ function renderScorecard(d) {
     '<button class="btn-ghost" id="sc-refresh" type="button">↻ Refresh data</button></div>';
 
   var when = d.fetchedAt ? new Date(d.fetchedAt).toLocaleString() : '';
+  if (d.partial) html += '<div class="alert warn">Fast data is in — still pulling valuation details (forward P/E, PEG, margins)… the score updates when they land.</div>';
   html += '<p class="src-line">Sources: ' + esc(d.sources.join(', ') || '—') + ' · Fetched ' + esc(when) + (d.fromCache ? ' (cached, ≤15 min old)' : '') +
     '. Live data via public feeds — figures can differ slightly between sources and from your broker. Research tool, not financial advice.</p>';
   html += '</div>';
@@ -559,7 +574,10 @@ async function runSearch(ticker, fresh) {
   status.className = 'status';
   status.innerHTML = '<span class="spinner"></span>Pulling live data for ' + esc(T) + ' — trying the public feeds…';
   try {
-    var d = await fetchStock(T, { fresh: !!fresh });
+    var d = await fetchStock(T, { fresh: !!fresh, onStage: function (interim) {
+      status.innerHTML = '<span class="spinner"></span>Fast data for ' + esc(T) + ' is in — valuation details still coming…';
+      renderScorecard(interim);
+    } });
     status.textContent = '';
     renderScorecard(d);
   } catch (e) {
@@ -885,6 +903,50 @@ function renderGlossary(filter) {
   $('gloss-list').innerHTML = html || '<p class="fineprint">No terms match that search.</p>';
 }
 
+/* ============================== data backup ============================== */
+function collectBackup() {
+  return { app: 'stock-research', version: 1, exportedAt: new Date().toISOString(),
+           watchlist: getWatchlist(), journal: getJournal() };
+}
+function doExport() {
+  var json = JSON.stringify(collectBackup(), null, 2);
+  $('backup-text').value = json;
+  var status = $('backup-status');
+  status.className = 'status';
+  try {
+    var blob = new Blob([json], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'stock-research-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+    status.textContent = 'Backup downloaded — it is also in the box below, in case you would rather copy it as text.';
+  } catch (e) {
+    status.textContent = 'Your backup is in the box below — select it and copy it somewhere safe.';
+  }
+}
+function importBackupText(text) {
+  var status = $('backup-status');
+  var obj;
+  try { obj = JSON.parse(String(text || '')); } catch (e) {
+    status.className = 'status err'; status.textContent = 'That does not look like a backup (could not read it).'; return;
+  }
+  var wl = obj && Array.isArray(obj.watchlist) ? obj.watchlist : null;
+  var j = obj && obj.journal && typeof obj.journal === 'object' && !Array.isArray(obj.journal) ? obj.journal : null;
+  if (!wl && !j) {
+    status.className = 'status err';
+    status.textContent = 'That file has no watchlist or journal in it — not a Stock Research backup.';
+    return;
+  }
+  if (!window.confirm('Replace your current watchlist and journal with this backup?')) return;
+  if (wl) setWatchlist(wl);
+  if (j) setJournal(j);
+  renderWatchlist(false);
+  renderJournal();
+  status.className = 'status';
+  status.textContent = 'Backup restored: ' + (wl ? wl.length : 0) + ' watchlist item(s), ' + (j ? Object.keys(j).length : 0) + ' journal entr(ies).';
+}
+
 /* ============================== tabs & init ============================== */
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(function (s) { s.classList.toggle('active', s.id === 'tab-' + name); });
@@ -917,6 +979,17 @@ function initApp() {
     $('wl-ticker').value = ''; $('wl-target').value = '';
   });
   $('wl-refresh').addEventListener('click', function () { renderWatchlist(true); });
+  $('btn-export').addEventListener('click', doExport);
+  $('btn-import').addEventListener('click', function () { $('import-file').click(); });
+  $('import-file').addEventListener('change', function () {
+    var f = $('import-file').files && $('import-file').files[0];
+    if (!f) return;
+    var r = new FileReader();
+    r.onload = function () { importBackupText(String(r.result || '')); };
+    r.readAsText(f);
+    $('import-file').value = '';
+  });
+  $('btn-import-text').addEventListener('click', function () { importBackupText($('backup-text').value); });
   $('journal-form').addEventListener('submit', function (e) {
     e.preventDefault();
     var T = ($('j-ticker').value || '').trim().toUpperCase();
