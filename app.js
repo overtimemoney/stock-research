@@ -79,7 +79,7 @@ function fetchWithTimeout(url, ms) {
  * source and look like a perpetual spinner, so everything runs parallel. */
 function relayFetch(url, opts) {
   opts = opts || {};
-  var timeout = opts.timeout || 12000;
+  var timeout = opts.timeout || 18000;
   var attempts = [url];
   for (var i = 0; i < RELAYS.length; i++) attempts.push(RELAYS[i](url));
   return new Promise(function (resolve, reject) {
@@ -573,16 +573,27 @@ async function runSearch(ticker, fresh) {
   var status = $('score-status');
   status.className = 'status';
   status.innerHTML = '<span class="spinner"></span>Pulling live data for ' + esc(T) + ' — trying the public feeds…';
-  try {
-    var d = await fetchStock(T, { fresh: !!fresh, onStage: function (interim) {
-      status.innerHTML = '<span class="spinner"></span>Fast data for ' + esc(T) + ' is in — valuation details still coming…';
-      renderScorecard(interim);
-    } });
-    status.textContent = '';
-    renderScorecard(d);
-  } catch (e) {
-    status.className = 'status err';
-    status.textContent = e.message || 'Something went wrong fetching that ticker.';
+  // The free relays fail in waves (rate limits, brief outages). Rather
+  // than erroring on the first bad wave, retry the whole lookup a few
+  // times with pauses — most waves clear within a minute.
+  for (var attempt = 1; attempt <= 3; attempt++) {
+    try {
+      var d = await fetchStock(T, { fresh: !!fresh, onStage: function (interim) {
+        status.innerHTML = '<span class="spinner"></span>Fast data for ' + esc(T) + ' is in — valuation details still coming…';
+        renderScorecard(interim);
+      } });
+      status.textContent = '';
+      renderScorecard(d);
+      return;
+    } catch (e) {
+      if (attempt >= 3) {
+        status.className = 'status err';
+        status.textContent = (e.message || 'Something went wrong fetching that ticker.') + ' (Tried 3 times — the free relays are having a bad stretch. Give it a minute and tap Research again.)';
+        return;
+      }
+      status.innerHTML = '<span class="spinner"></span>The free data relays are having a bad moment — retrying automatically (' + attempt + ' of 3)…';
+      await new Promise(function (res) { setTimeout(res, attempt * 4000); });
+    }
   }
 }
 
