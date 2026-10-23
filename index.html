@@ -60,6 +60,11 @@
   <section id="tab-tools" class="tab">
     <h2 class="tab-title">Projection <span class="gold-text">Builder</span></h2>
     <div class="card">
+      <form id="pj-load-form" class="search-row" autocomplete="off" style="margin-bottom:12px">
+        <input id="pj-ticker" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="Ticker — load live data" aria-label="Projection ticker">
+        <button type="submit" class="btn-gold">Load stock</button>
+      </form>
+      <div id="pj-status" class="status" role="status" style="margin:0 2px 8px"></div>
       <div class="grid2">
         <label>Current price $<input id="pj-price" type="number" step="any" min="0" placeholder="0.00"></label>
         <label>EPS base $<input id="pj-eps" type="number" step="any" placeholder="e.g. next-year EPS"></label>

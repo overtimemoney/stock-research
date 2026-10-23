@@ -531,11 +531,8 @@ function renderScorecard(d) {
   });
   $('sc-project').addEventListener('click', function () {
     switchTab('tools');
-    if (isNum(d.price)) $('pj-price').value = d.price;
-    var base = isNum(d.epsNextY) ? d.epsNextY : (d.epsForecasts && d.epsForecasts[0] ? d.epsForecasts[0].eps : d.epsTTM);
-    if (isNum(base)) $('pj-eps').value = base;
-    if (isNum(d.epsGrowth5Y)) $('pj-growth').value = Math.max(-20, Math.min(60, Math.round(d.epsGrowth5Y)));
-    else if (isNum(d.epsGrowthNextY)) $('pj-growth').value = Math.round(Math.max(-20, Math.min(60, d.epsGrowthNextY)));
+    $('pj-ticker').value = d.ticker;
+    fillProjection(d);
     runProjection();
   });
   $('sc-refresh').addEventListener('click', function () { runSearch(d.ticker, true); });
@@ -609,6 +606,37 @@ async function runCompare() {
 }
 
 /* ============================== tools ============================== */
+/* Populate the Projection Builder from a fetched stock record:
+ * current price, current (TTM) EPS, and analyst growth estimates. */
+function fillProjection(d) {
+  if (isNum(d.price)) $('pj-price').value = d.price;
+  var base = isNum(d.epsTTM) ? d.epsTTM : (isNum(d.epsNextY) ? d.epsNextY :
+    (d.epsForecasts && d.epsForecasts[0] ? d.epsForecasts[0].eps : null));
+  if (isNum(base)) $('pj-eps').value = base;
+  if (isNum(d.epsGrowth5Y)) $('pj-growth').value = Math.max(-20, Math.min(60, Math.round(d.epsGrowth5Y)));
+  else if (isNum(d.epsGrowthNextY)) $('pj-growth').value = Math.round(Math.max(-20, Math.min(60, d.epsGrowthNextY)));
+}
+async function loadProjectionTicker() {
+  var T = ($('pj-ticker').value || '').trim().toUpperCase();
+  var status = $('pj-status');
+  if (!T) { status.className = 'status err'; status.textContent = 'Type a ticker first.'; return; }
+  status.className = 'status';
+  status.innerHTML = '<span class="spinner"></span>Loading live data for ' + esc(T) + '…';
+  try {
+    var d = await fetchStock(T);
+    fillProjection(d);
+    var bits = [];
+    if (isNum(d.price)) bits.push('price ' + fmtMoney(d.price));
+    if (isNum(d.epsTTM)) bits.push('EPS (TTM) ' + fmtMoney(d.epsTTM));
+    if (isNum(d.epsGrowth5Y)) bits.push('analyst 5-yr EPS growth ' + fmtNum(d.epsGrowth5Y, 1) + '%/yr');
+    else if (isNum(d.epsGrowthNextY)) bits.push('next-yr EPS growth ' + fmtNum(d.epsGrowthNextY, 1) + '%');
+    status.textContent = 'Loaded ' + T + (bits.length ? ' — ' + bits.join(' · ') : '') + '. Adjust the assumptions below, then build.';
+    runProjection();
+  } catch (e) {
+    status.className = 'status err';
+    status.textContent = e.message || 'Could not load that ticker.';
+  }
+}
 function runProjection() {
   var price = parseFloat($('pj-price').value);
   var eps = parseFloat($('pj-eps').value);
@@ -860,6 +888,11 @@ function initApp() {
   });
   $('compare-form').addEventListener('submit', function (e) { e.preventDefault(); runCompare(); });
   $('pj-run').addEventListener('click', runProjection);
+  $('pj-load-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    loadProjectionTicker();
+    $('pj-ticker').blur();
+  });
   $('cc-run').addEventListener('click', runCompound);
   runCompound();
   $('wl-form').addEventListener('submit', function (e) {
@@ -896,5 +929,5 @@ if (typeof document !== 'undefined' && document.getElementById) {
 }
 /* Node export for offline pipeline tests (ignored in the browser). */
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON };
+  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection };
 }
