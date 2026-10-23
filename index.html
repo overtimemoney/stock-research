@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stock Research</title>
+<meta name="description" content="Personal stock research: scorecards, value screen, EPS cliff check, comparisons and projections — live data, math shown.">
+<meta name="theme-color" content="#ffffff">
+<link rel="manifest" href="manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Stock Research">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark" aria-hidden="true">SR</div>
+    <div class="brand-text">
+      <div class="brand-name">STOCK <span class="gold-text">RESEARCH</span></div>
+      <div class="brand-tag">Every number. One screen.</div>
+    </div>
+  </div>
+</header>
+
+<main id="app">
+  <!-- SCORECARD -->
+  <section id="tab-scorecard" class="tab active">
+    <form id="search-form" class="search-row" autocomplete="off">
+      <input id="search-input" type="text" inputmode="text" autocapitalize="characters"
+             autocorrect="off" spellcheck="false" placeholder="Ticker — e.g. MU, AAPL, NVDA" aria-label="Ticker symbol">
+      <button type="submit" class="btn-gold">Research</button>
+    </form>
+    <div id="score-status" class="status" role="status"></div>
+    <div id="score-result"></div>
+    <div id="score-empty" class="empty-note">
+      <h2>Look up any stock</h2>
+      <p>Get a valuation scorecard with the math shown, your 4-point value screen,
+         an EPS cliff check, and a 1-year chart. Data is pulled live — nothing to update by hand.</p>
+    </div>
+  </section>
+
+  <!-- COMPARE -->
+  <section id="tab-compare" class="tab">
+    <h2 class="tab-title">Compare <span class="gold-text">3 stocks</span></h2>
+    <form id="compare-form" class="compare-inputs" autocomplete="off">
+      <input id="cmp-1" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="Ticker 1" aria-label="First ticker">
+      <input id="cmp-2" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="Ticker 2" aria-label="Second ticker">
+      <input id="cmp-3" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="Ticker 3" aria-label="Third ticker">
+      <button type="submit" class="btn-gold">Compare</button>
+    </form>
+    <div id="compare-status" class="status" role="status"></div>
+    <div id="compare-result"></div>
+  </section>
+
+  <!-- TOOLS -->
+  <section id="tab-tools" class="tab">
+    <h2 class="tab-title">Projection <span class="gold-text">Builder</span></h2>
+    <div class="card">
+      <div class="grid2">
+        <label>Current price $<input id="pj-price" type="number" step="any" min="0" placeholder="0.00"></label>
+        <label>EPS base $<input id="pj-eps" type="number" step="any" placeholder="e.g. next-year EPS"></label>
+        <label>EPS growth % / yr<input id="pj-growth" type="number" step="any" value="15"></label>
+        <label>Years<input id="pj-years" type="number" step="1" min="1" max="10" value="3"></label>
+        <label>Exit P/E<input id="pj-mult" type="number" step="any" value="18"></label>
+      </div>
+      <button id="pj-run" class="btn-gold wide" type="button">Build projections</button>
+      <div id="pj-result" class="tool-result"></div>
+      <p class="fineprint">Bear = growth −5 pts &amp; exit P/E −2 · Base = your inputs · Bull = growth +5 pts &amp; exit P/E +2.
+      Projections are only as good as the assumptions — they're yours, not a forecast.</p>
+    </div>
+
+    <h2 class="tab-title">Compound <span class="gold-text">Calculator</span></h2>
+    <div class="card">
+      <div class="grid2">
+        <label>Initial investment $<input id="cc-init" type="number" step="any" min="0" value="10000"></label>
+        <label>Monthly contribution $<input id="cc-monthly" type="number" step="any" min="0" value="500"></label>
+        <label>Years<input id="cc-years" type="number" step="1" min="1" max="50" value="20"></label>
+        <label>Annual return %<input id="cc-rate" type="number" step="any" value="10"></label>
+      </div>
+      <button id="cc-run" class="btn-gold wide" type="button">Calculate</button>
+      <div id="cc-result" class="tool-result"></div>
+      <p class="fineprint">For scale: the S&amp;P 500's long-run average is roughly 10%/yr before inflation.
+      The gap between average and a few points better is what compounding does over decades.</p>
+    </div>
+  </section>
+
+  <!-- WATCHLIST -->
+  <section id="tab-watchlist" class="tab">
+    <h2 class="tab-title">Watch<span class="gold-text">list</span></h2>
+    <form id="wl-form" class="wl-inputs" autocomplete="off">
+      <input id="wl-ticker" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="Ticker" aria-label="Watchlist ticker">
+      <input id="wl-target" type="number" step="any" min="0" placeholder="Target buy $" aria-label="Target buy price">
+      <button type="submit" class="btn-gold">Add</button>
+    </form>
+    <div class="row-between">
+      <span id="wl-status" class="status"></span>
+      <button id="wl-refresh" class="btn-ghost" type="button">↻ Refresh prices</button>
+    </div>
+    <div id="wl-list"></div>
+  </section>
+
+  <!-- JOURNAL -->
+  <section id="tab-journal" class="tab">
+    <h2 class="tab-title">Research <span class="gold-text">Journal</span></h2>
+    <div id="journal-list"></div>
+    <div class="card" id="journal-editor-card">
+      <h3 id="journal-editor-title">New entry</h3>
+      <form id="journal-form" autocomplete="off">
+        <label>Ticker<input id="j-ticker" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="e.g. MU"></label>
+        <label>Thesis<textarea id="j-thesis" rows="3" placeholder="Why this stock, in plain English"></textarea></label>
+        <label>Catalysts<textarea id="j-catalysts" rows="2" placeholder="What could drive it up"></textarea></label>
+        <div class="grid3">
+          <label>Bull case<textarea id="j-bull" rows="2"></textarea></label>
+          <label>Base case<textarea id="j-base" rows="2"></textarea></label>
+          <label>Bear case<textarea id="j-bear" rows="2"></textarea></label>
+        </div>
+        <label>Review date<input id="j-review" type="date"></label>
+        <div class="row-gap">
+          <button type="submit" class="btn-gold">Save entry</button>
+          <button type="button" id="j-cancel" class="btn-ghost" hidden>Cancel edit</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- GLOSSARY -->
+  <section id="tab-glossary" class="tab">
+    <h2 class="tab-title">Plain-English <span class="gold-text">Glossary</span></h2>
+    <input id="gloss-search" type="search" placeholder="Search terms…" aria-label="Search glossary">
+    <div id="gloss-list"></div>
+  </section>
+</main>
+
+<nav class="tabbar" role="navigation" aria-label="Sections">
+  <button data-tab="scorecard" class="active"><span class="tab-ico">▦</span>Scorecard</button>
+  <button data-tab="compare"><span class="tab-ico">⚖</span>Compare</button>
+  <button data-tab="tools"><span class="tab-ico">✦</span>Tools</button>
+  <button data-tab="watchlist"><span class="tab-ico">◎</span>Watchlist</button>
+  <button data-tab="journal"><span class="tab-ico">✎</span>Journal</button>
+  <button data-tab="glossary"><span class="tab-ico">?</span>Glossary</button>
+</nav>
+
+<script src="app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  });
+}
+</script>
+</body>
+</html>
