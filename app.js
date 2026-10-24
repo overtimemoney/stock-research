@@ -138,6 +138,46 @@ function finvizPctBelowHigh(pairs) {
   return hi; // caller falls back to price math if this looks like a price
 }
 
+/* MarketBeat earnings page: the history table with Consensus Estimate vs
+ * Reported EPS per quarter (newest first). Their free table carries the
+ * last ~8-9 quarters — the deepest EPS-surprise history fetchable without
+ * a paid API key (Nasdaq/Zacks publish only 4). */
+function parseMBEarnings(html) {
+  var tables = String(html).match(/<table[\s\S]*?<\/table>/g) || [];
+  for (var ti = 0; ti < tables.length; ti++) {
+    var t = tables[ti];
+    if (t.indexOf('Consensus Estimate') === -1 || t.indexOf('Reported EPS') === -1) continue;
+    var rows = [], trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi, trM;
+    while ((trM = trRe.exec(t)) !== null) {
+      var cells = [], tdRe = /<td[^>]*>([\s\S]*?)<\/td>/gi, tdM;
+      while ((tdM = tdRe.exec(trM[1])) !== null) cells.push(stripTags(tdM[1]));
+      if (cells.length >= 4) {
+        var consensus = parseNum(cells[2]);
+        var reported = parseNum(cells[3]);
+        if (isNum(consensus) && isNum(reported)) {
+          rows.push({ date: cells[0], quarter: cells[1], consensus: consensus, reported: reported });
+        }
+      }
+    }
+    if (rows.length) return rows.slice(0, 20);
+  }
+  return [];
+}
+/* Miss = reported EPS below the consensus estimate; within a tenth of a
+ * cent counts as in line. Returns counts plus miss/beat percentages. */
+function epsRecordStats(rows) {
+  var n = rows.length, misses = 0, beats = 0, meets = 0;
+  rows.forEach(function (r) {
+    var diff = r.reported - r.consensus;
+    if (diff < -0.001) misses++; else if (diff > 0.001) beats++; else meets++;
+  });
+  return {
+    n: n, misses: misses, beats: beats, meets: meets,
+    missPct: n ? Math.round(misses / n * 100) : null,
+    beatPct: n ? Math.round(beats / n * 100) : null
+  };
+}
+
 /* ============================== data assembly ============================== */
 var CACHE_KEY = 'sr_qcache_v1';
 var CACHE_TTL = 15 * 60 * 1000;
@@ -244,6 +284,30 @@ async function fetchStock(ticker, opts) {
     if (d.epsForecasts.length) d.sources.push('Nasdaq estimates');
   } catch (e) { d.errors.push('Nasdaq forecasts: ' + e.message); d.epsForecasts = []; } };
 
+  // --- MarketBeat: EPS surprise history (consensus vs reported) ---
+  var srcSurprise = async function () { try {
+    var ex = String(d.exchange || '').toUpperCase();
+    var segs = [];
+    if (['NASDAQ', 'NYSE', 'AMEX'].indexOf(ex) !== -1) segs.push(ex);
+    ['NASDAQ', 'NYSE'].forEach(function (s) { if (segs.indexOf(s) === -1) segs.push(s); });
+    var urls = segs.slice(0, 2).map(function (s) {
+      return 'https://www.marketbeat.com/stocks/' + s + '/' + encodeURIComponent(T) + '/earnings/';
+    });
+    var html = await new Promise(function (resolve, reject) {
+      var pending = urls.length, done = false;
+      urls.forEach(function (u) {
+        relayFetch(u, { timeout: 15000, validate: function (t) { return t.indexOf('Reported EPS') !== -1 && t.indexOf('Consensus Estimate') !== -1; } })
+          .then(function (text) { if (!done) { done = true; resolve(text); } })
+          .catch(function (e) { pending--; if (pending === 0 && !done) reject(e || new Error('no earnings history')); });
+      });
+    });
+    var rows = parseMBEarnings(html);
+    if (rows.length >= 4) {
+      d.epsRecord = epsRecordStats(rows);
+      d.sources.push('MarketBeat');
+    }
+  } catch (e) { d.errors.push('EPS history: ' + e.message); } };
+
   // --- Yahoo chart: 1y weekly price history ---
   var srcYahoo = async function () { try {
     var ch = await relayJSON('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(T) + '?range=1y&interval=1wk');
@@ -271,8 +335,9 @@ async function fetchStock(ticker, opts) {
     d.fetchedAt = Date.now();
     try { opts.onStage(d); } catch (e) {}
   }
-  // Slow stage: Finviz fundamentals.
-  await srcFinviz();
+  // Slow stage: Finviz fundamentals + MarketBeat EPS-surprise history in
+  // parallel — both are big HTML pages through the relays.
+  await Promise.all([srcFinviz(), srcSurprise()]);
   deriveValues(d);
   d.partial = false;
 
@@ -510,6 +575,10 @@ function renderScorecard(d) {
   html += kvItem('PEG', isNum(d.peg) ? fmtNum(d.peg, 2) + (d.pegCalc ? ' (calc.)' : '') : '—');
   html += kvItem('EPS (trailing)', isNum(d.epsTTM) ? fmtNum(d.epsTTM) : '—');
   html += kvItem('EPS growth next yr', isNum(d.epsGrowthNextY) ? fmtPct(d.epsGrowthNextY) : '—');
+  if (d.epsRecord && d.epsRecord.n >= 4) {
+    html += kvItem('EPS miss rate · last ' + d.epsRecord.n + ' qtrs', d.epsRecord.missPct + '%');
+    html += kvItem('EPS beat rate · last ' + d.epsRecord.n + ' qtrs', d.epsRecord.beatPct + '%');
+  }
   html += kvItem('Revenue growth', isNum(d.salesGrowthTTM) ? fmtPct(d.salesGrowthTTM) : '—');
   html += kvItem('Gross margin', isNum(d.grossMargin) ? fmtNum(d.grossMargin, 1) + '%' : '—');
   html += kvItem('Operating margin', isNum(d.operMargin) ? fmtNum(d.operMargin, 1) + '%' : '—');
@@ -1170,5 +1239,5 @@ if (typeof document !== 'undefined' && document.getElementById) {
 }
 /* Node export for offline pipeline tests (ignored in the browser). */
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps };
+  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats };
 }
