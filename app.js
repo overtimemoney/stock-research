@@ -79,7 +79,7 @@ function fetchWithTimeout(url, ms) {
  * source and look like a perpetual spinner, so everything runs parallel. */
 function relayFetch(url, opts) {
   opts = opts || {};
-  var timeout = opts.timeout || 18000;
+  var timeout = opts.timeout || 10000;
   var attempts = [url];
   for (var i = 0; i < RELAYS.length; i++) attempts.push(RELAYS[i](url));
   return new Promise(function (resolve, reject) {
@@ -573,6 +573,18 @@ async function runSearch(ticker, fresh) {
   var status = $('score-status');
   status.className = 'status';
   status.innerHTML = '<span class="spinner"></span>Pulling live data for ' + esc(T) + ' — trying the public feeds…';
+  // Instant paint: if this ticker was looked up before, show the saved
+  // data right away (even if stale) and refresh over the top — repeat
+  // lookups feel instant instead of staring at a spinner in a relay wave.
+  var staleHit = lsGet(CACHE_KEY, {})[T];
+  var showedStale = false;
+  if (staleHit && staleHit.data) {
+    staleHit.data.fromCache = true;
+    try { renderScorecard(staleHit.data); showedStale = true; } catch (e) {}
+    if (showedStale) {
+      status.innerHTML = '<span class="spinner"></span>Showing your last saved data for ' + esc(T) + ' — refreshing…';
+    }
+  }
   // The free relays fail in waves (rate limits, brief outages). Rather
   // than erroring on the first bad wave, retry the whole lookup a few
   // times with pauses — most waves clear within a minute.
@@ -588,11 +600,13 @@ async function runSearch(ticker, fresh) {
     } catch (e) {
       if (attempt >= 3) {
         status.className = 'status err';
-        status.textContent = (e.message || 'Something went wrong fetching that ticker.') + ' (Tried 3 times — the free relays are having a bad stretch. Give it a minute and tap Research again.)';
+        status.textContent = showedStale
+          ? 'Couldn\'t refresh ' + T + ' — the free relays are having a bad stretch. You\'re still seeing your last saved data above; try Refresh again in a minute.'
+          : (e.message || 'Something went wrong fetching that ticker.') + ' (Tried 3 times — the free relays are having a bad stretch. Give it a minute and tap Research again.)';
         return;
       }
       status.innerHTML = '<span class="spinner"></span>The free data relays are having a bad moment — retrying automatically (' + attempt + ' of 3)…';
-      await new Promise(function (res) { setTimeout(res, attempt * 4000); });
+      await new Promise(function (res) { setTimeout(res, attempt * 1500); });
     }
   }
 }
