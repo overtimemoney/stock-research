@@ -68,13 +68,15 @@
       <div class="grid2">
         <label>Current price $<input id="pj-price" type="number" step="any" min="0" placeholder="0.00"></label>
         <label>EPS base $<input id="pj-eps" type="number" step="any" placeholder="e.g. next-year EPS"></label>
-        <label>EPS growth % / yr<input id="pj-growth" type="number" step="any" value="15"></label>
-        <label>Years<input id="pj-years" type="number" step="1" min="1" max="10" value="3"></label>
+        <label>Flat growth % / yr (fallback)<input id="pj-growth" type="number" step="any" value="15"></label>
+        <label>Years<input id="pj-years" type="number" step="1" min="1" max="5" value="3"></label>
         <label>Exit P/E<input id="pj-mult" type="number" step="any" value="18"></label>
       </div>
+      <div class="pj-path-head">Year-by-year EPS <span>— the analysts' path, auto-filled when you load a stock. Every box is editable: change an EPS and its growth % updates; change a growth % and that year's EPS updates. * = extrapolated past the last analyst year.</span></div>
+      <div id="pj-path"></div>
       <button id="pj-run" class="btn-gold wide" type="button">Build projections</button>
       <div id="pj-result" class="tool-result"></div>
-      <p class="fineprint">Bear = growth −5 pts &amp; exit P/E −2 · Base = your inputs · Bull = growth +5 pts &amp; exit P/E +2.
+      <p class="fineprint">Bear = each year's growth −5 pts &amp; exit P/E −2 · Base = the path above · Bull = growth +5 pts &amp; exit P/E +2.
       Projections are only as good as the assumptions — they're yours, not a forecast.</p>
     </div>
 

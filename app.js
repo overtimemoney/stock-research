@@ -664,7 +664,110 @@ async function runCompare() {
 
 /* ============================== tools ============================== */
 /* Populate the Projection Builder from a fetched stock record:
- * current price, current (TTM) EPS, and analyst growth estimates. */
+ * current price, current (TTM) EPS, and the analysts' year-by-year EPS
+ * forecast path (up to 5 years). Every year renders an editable EPS box
+ * and an editable growth-% box; the two stay in sync — edit an EPS and
+ * its growth recomputes, edit a growth % and that year's EPS recomputes. */
+var pjPath = [];            // [{label:'FY2026', eps:1.42, extrapolated:bool}]
+var pjPathFromForecast = false;
+
+function pjBaseEps() { var v = parseFloat($('pj-eps').value); return isNum(v) ? v : null; }
+function pjYearsWanted() {
+  var y = parseInt($('pj-years').value, 10);
+  return isNum(y) ? Math.max(1, Math.min(5, y)) : 3;
+}
+function pjFlatGrowth() {
+  var g = parseFloat($('pj-growth').value);
+  return isNum(g) ? g : 15;
+}
+/* Growth % of each path year vs the prior year's EPS (year 1 vs base). */
+function pjGrowths(base, path) {
+  var out = [], prev = base;
+  for (var i = 0; i < path.length; i++) {
+    out.push(isNum(prev) && prev !== 0 && isNum(path[i].eps) ? (path[i].eps / prev - 1) * 100 : null);
+    prev = path[i].eps;
+  }
+  return out;
+}
+/* Pure case math: chain the EPS path with every year's growth shifted by
+ * deltaPts and return the exit-year EPS. Exported for testing. */
+function pjCaseEps(base, path, deltaPts) {
+  var growths = pjGrowths(base, path);
+  var eps = base;
+  for (var i = 0; i < path.length; i++) {
+    var g = growths[i];
+    if (!isNum(g) || !isNum(eps)) { eps = path[i].eps; continue; }
+    eps = eps * (1 + (g + deltaPts) / 100);
+  }
+  return eps;
+}
+/* Grow the path to at least n years, extrapolating past the last known
+ * year at that year's growth (or the flat fallback rate). */
+function pjEnsureYears(n) {
+  var base = pjBaseEps(), guard = 0;
+  while (pjPath.length < n && guard++ < 5) {
+    var prevEps = pjPath.length ? pjPath[pjPath.length - 1].eps : base;
+    var growths = pjGrowths(base, pjPath);
+    var lastG = growths.length ? growths[growths.length - 1] : null;
+    var g = isNum(lastG) ? lastG : pjFlatGrowth();
+    var yr = null;
+    if (pjPath.length) {
+      var m = String(pjPath[pjPath.length - 1].label).match(/(\d{4})/);
+      if (m) yr = parseInt(m[1], 10) + 1;
+    }
+    pjPath.push({
+      label: yr ? 'FY' + yr : 'Year ' + (pjPath.length + 1),
+      eps: isNum(prevEps) ? +(prevEps * (1 + g / 100)).toFixed(4) : null,
+      extrapolated: true
+    });
+  }
+}
+/* No analyst path available: synthesize the rows from the flat rate. */
+function pjSynthPath() {
+  pjPath = [];
+  pjPathFromForecast = false;
+  var base = pjBaseEps(), g = pjFlatGrowth(), n = pjYearsWanted();
+  var eps = base;
+  for (var i = 0; i < n; i++) {
+    eps = isNum(eps) ? eps * (1 + g / 100) : null;
+    pjPath.push({ label: 'Year ' + (i + 1), eps: isNum(eps) ? +eps.toFixed(4) : null, extrapolated: false });
+  }
+}
+function renderPjPath() {
+  var box = $('pj-path');
+  if (!box) return;
+  var base = pjBaseEps();
+  var n = pjYearsWanted();
+  pjEnsureYears(n);
+  var growths = pjGrowths(base, pjPath);
+  var html = '';
+  for (var i = 0; i < n; i++) {
+    var row = pjPath[i];
+    html += '<div class="pj-yrow"><div class="pj-ylab">' + esc(row.label) + (row.extrapolated && isNum(row.eps) ? ' *' : '') + '</div>' +
+      '<label>EPS $<input data-pjeps="' + i + '" type="number" step="any" value="' + (isNum(row.eps) ? fmtNum(row.eps, 2) : '') + '"></label>' +
+      '<label>Growth %<input data-pjg="' + i + '" type="number" step="any" value="' + (isNum(growths[i]) ? fmtNum(growths[i], 1) : '') + '"></label></div>';
+  }
+  box.innerHTML = html;
+}
+function onPjPathEdit(e) {
+  var t = e.target;
+  if (!t || !t.hasAttribute) return;
+  var base = pjBaseEps();
+  if (t.hasAttribute('data-pjeps')) {
+    var i = parseInt(t.getAttribute('data-pjeps'), 10);
+    var v = parseFloat(t.value);
+    if (isNum(v) && pjPath[i]) { pjPath[i].eps = v; pjPath[i].extrapolated = false; renderPjPath(); }
+  } else if (t.hasAttribute('data-pjg')) {
+    var j = parseInt(t.getAttribute('data-pjg'), 10);
+    var gv = parseFloat(t.value);
+    var prev = j === 0 ? base : (pjPath[j - 1] ? pjPath[j - 1].eps : null);
+    if (isNum(gv) && isNum(prev) && pjPath[j]) {
+      pjPath[j].eps = +(prev * (1 + gv / 100)).toFixed(4);
+      pjPath[j].extrapolated = false;
+      renderPjPath();
+    }
+  }
+}
 function fillProjection(d) {
   if (isNum(d.price)) $('pj-price').value = d.price;
   var base = isNum(d.epsTTM) ? d.epsTTM : (isNum(d.epsNextY) ? d.epsNextY :
@@ -672,6 +775,18 @@ function fillProjection(d) {
   if (isNum(base)) $('pj-eps').value = base;
   if (isNum(d.epsGrowth5Y)) $('pj-growth').value = Math.max(-20, Math.min(60, Math.round(d.epsGrowth5Y)));
   else if (isNum(d.epsGrowthNextY)) $('pj-growth').value = Math.round(Math.max(-20, Math.min(60, d.epsGrowthNextY)));
+  // Year-by-year analyst EPS path, up to 5 years.
+  var fc = (d.epsForecasts || []).filter(function (r) { return r && isNum(r.eps); }).slice(0, 5);
+  if (fc.length) {
+    pjPathFromForecast = true;
+    pjPath = fc.map(function (r, i) {
+      var ym = String(r.fiscalEnd || '').match(/(\d{4})/);
+      return { label: ym ? 'FY' + ym[1] : 'Year ' + (i + 1), eps: r.eps, extrapolated: false };
+    });
+  } else {
+    pjSynthPath();
+  }
+  renderPjPath();
 }
 async function loadProjectionTicker() {
   var T = ($('pj-ticker').value || '').trim().toUpperCase();
@@ -685,6 +800,8 @@ async function loadProjectionTicker() {
     var bits = [];
     if (isNum(d.price)) bits.push('price ' + fmtMoney(d.price));
     if (isNum(d.epsTTM)) bits.push('EPS (TTM) ' + fmtMoney(d.epsTTM));
+    var fcBits = (d.epsForecasts || []).filter(function (r) { return r && isNum(r.eps); }).slice(0, 5);
+    if (fcBits.length) bits.push('analyst EPS path ' + fcBits.map(function (r) { return fmtMoney(r.eps); }).join(' → '));
     if (isNum(d.epsGrowth5Y)) bits.push('analyst 5-yr EPS growth ' + fmtNum(d.epsGrowth5Y, 1) + '%/yr');
     else if (isNum(d.epsGrowthNextY)) bits.push('next-yr EPS growth ' + fmtNum(d.epsGrowthNextY, 1) + '%');
     status.textContent = 'Loaded ' + T + (bits.length ? ' — ' + bits.join(' · ') : '') + '. Adjust the assumptions below, then build.';
@@ -696,26 +813,33 @@ async function loadProjectionTicker() {
 }
 function runProjection() {
   var price = parseFloat($('pj-price').value);
-  var eps = parseFloat($('pj-eps').value);
-  var growth = parseFloat($('pj-growth').value);
-  var years = parseInt($('pj-years').value, 10);
+  var base = pjBaseEps();
+  var years = pjYearsWanted();
   var mult = parseFloat($('pj-mult').value);
   var out = $('pj-result');
-  if (!isNum(price) || !isNum(eps) || !isNum(growth) || !isNum(years) || !isNum(mult)) {
-    out.innerHTML = '<div class="alert warn">Fill in price, EPS base, growth, years and exit P/E to build the projection.</div>'; return;
+  if (!isNum(price) || !isNum(base) || !isNum(mult)) {
+    out.innerHTML = '<div class="alert warn">Fill in price, EPS base and exit P/E to build the projection.</div>'; return;
   }
+  if (!pjPath.length) pjSynthPath();
+  pjEnsureYears(years);
+  renderPjPath();
+  var path = pjPath.slice(0, years);
   var scen = [
-    { name: 'Bear', g: growth - 5, m: mult - 2 },
-    { name: 'Base', g: growth, m: mult },
-    { name: 'Bull', g: growth + 5, m: mult + 2 }
+    { name: 'Bear', d: -5, m: mult - 2, note: 'path −5 pts/yr' },
+    { name: 'Base', d: 0, m: mult, note: 'your path' },
+    { name: 'Bull', d: 5, m: mult + 2, note: 'path +5 pts/yr' }
   ];
   var html = '<table class="factors scen"><tr><th>Case</th><th>EPS in ' + years + 'y</th><th>Exit P/E</th><th class="num">Implied price</th><th class="num">Return</th><th class="num">CAGR</th></tr>';
   scen.forEach(function (s) {
-    var feps = eps * Math.pow(1 + s.g / 100, years);
+    var feps = pjCaseEps(base, path, s.d);
+    if (!isNum(feps)) {
+      html += '<tr><td><strong>' + s.name + '</strong> <span class="factor-note">(' + s.note + ')</span></td><td>—</td><td>' + fmtNum(s.m, 1) + '×</td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>';
+      return;
+    }
     var fp = feps * s.m;
     var ret = (fp / price - 1) * 100;
-    var cagr = (Math.pow(fp / price, 1 / years) - 1) * 100;
-    html += '<tr><td><strong>' + s.name + '</strong> <span class="factor-note">(' + fmtPct(s.g, 0) + '/yr)</span></td><td>' + fmtMoney(feps) + '</td><td>' + fmtNum(s.m, 1) + '×</td>' +
+    var cagr = fp > 0 ? (Math.pow(fp / price, 1 / years) - 1) * 100 : -100;
+    html += '<tr><td><strong>' + s.name + '</strong> <span class="factor-note">(' + s.note + ')</span></td><td>' + fmtMoney(feps) + '</td><td>' + fmtNum(s.m, 1) + '×</td>' +
       '<td class="num"><strong>' + fmtMoney(fp) + '</strong></td><td class="num ' + (ret >= 0 ? 'up' : 'down') + '">' + fmtPct(ret) + '</td><td class="num">' + fmtPct(cagr) + '</td></tr>';
   });
   html += '</table>';
@@ -989,6 +1113,11 @@ function initApp() {
   });
   $('compare-form').addEventListener('submit', function (e) { e.preventDefault(); runCompare(); });
   $('pj-run').addEventListener('click', runProjection);
+  $('pj-path').addEventListener('change', onPjPathEdit);
+  $('pj-years').addEventListener('change', function () { renderPjPath(); });
+  $('pj-growth').addEventListener('change', function () { if (!pjPathFromForecast) pjSynthPath(); renderPjPath(); });
+  $('pj-eps').addEventListener('change', function () { if (!pjPathFromForecast) pjSynthPath(); renderPjPath(); });
+  renderPjPath();
   $('pj-load-form').addEventListener('submit', function (e) {
     e.preventDefault();
     loadProjectionTicker();
@@ -1041,5 +1170,5 @@ if (typeof document !== 'undefined' && document.getElementById) {
 }
 /* Node export for offline pipeline tests (ignored in the browser). */
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection };
+  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps };
 }
