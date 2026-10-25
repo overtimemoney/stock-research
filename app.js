@@ -1379,6 +1379,28 @@ async function fetchPfQuote(T) {
 }
 
 var pfOpen = {};
+/* The user's Coolors palette (deep navy -> pale sky). When there are
+ * more slices than palette colors, new colors are interpolated between
+ * neighbouring palette stops so the gradient just gets finer. */
+var PF_PALETTE = ['#012A4A', '#013A63', '#01497C', '#014F86', '#2A6F97', '#2C7DA0', '#468FAF', '#61A5C2', '#89C2D9', '#A9D6E5'];
+function pfPaletteColors(n) {
+  if (n <= PF_PALETTE.length) return PF_PALETTE.slice(0, Math.max(n, 0));
+  function hx(c) { return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]; }
+  var stops = PF_PALETTE.map(hx), out = [];
+  for (var i = 0; i < n; i++) {
+    var t = i / (n - 1) * (stops.length - 1);
+    var k = Math.min(stops.length - 2, Math.floor(t)), f = t - k;
+    var rgb = stops[k].map(function (v, j) { return Math.round(v + (stops[k + 1][j] - v) * f); });
+    out.push('#' + rgb.map(function (v) { return ('0' + v.toString(16)).slice(-2); }).join('').toUpperCase());
+  }
+  return out;
+}
+/* Readable initial-letter color on a palette disc: white on the dark
+ * blues, near-black on the pale ones. */
+function pfInk(hex) {
+  var r = parseInt(hex.slice(1, 3), 16) / 255, g = parseInt(hex.slice(3, 5), 16) / 255, b = parseInt(hex.slice(5, 7), 16) / 255;
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) > 0.45 ? '#141414' : '#FFFFFF';
+}
 function pfLogoErr(img) {
   var fb = img.getAttribute('data-fb');
   if (fb) { img.removeAttribute('data-fb'); img.src = fb; }
@@ -1410,7 +1432,6 @@ async function renderPortfolio(doFetch) {
     if (status) status.textContent = '';
   }
   var q = pfQuotes();
-  var PF_COLORS = ['#F8C73D', '#3EC6B8', '#A79BFA', '#8FE3D0', '#7C9EFF', '#F49AC1', '#7BD88F', '#FFA26B', '#90A4C4', '#FF8A80'];
   // First pass: derive everything per holding and total it up.
   var totVal = 0, totInc = 0, totCost = 0, anyCost = false, dayNum = 0, dayDen = 0;
   var rows = positions.map(function (p) {
@@ -1431,8 +1452,9 @@ async function renderPortfolio(doFetch) {
   var dayPct = dayDen > 0 ? dayNum / dayDen : null;
   // Colors follow value rank so the chart, its labels and the rows agree.
   var ranked = rows.filter(function (r) { return isNum(r.val) && r.val > 0; }).slice().sort(function (a, b) { return b.val - a.val; });
+  var sliceColors = pfPaletteColors(ranked.length);
   var colorOf = {};
-  ranked.forEach(function (r, i) { colorOf[r.p.ticker] = PF_COLORS[i % PF_COLORS.length]; });
+  ranked.forEach(function (r, i) { colorOf[r.p.ticker] = sliceColors[i]; });
   // Holdings list: biggest first, like the reference.
   var ordered = rows.slice().sort(function (a, b) { return (b.val || 0) - (a.val || 0); });
   var html = '';
@@ -1443,7 +1465,7 @@ async function renderPortfolio(doFetch) {
     var col = colorOf[p.ticker] || '#5A5A5E';
     html += '<div class="wl-row pf-row' + (open ? ' open' : '') + '">' +
       '<button class="pf-head" data-pf-toggle="' + esc(p.ticker) + '" aria-expanded="' + open + '">' +
-        '<span class="pf-avatar" style="background:' + col + '">' + esc(p.ticker.charAt(0)) + pfLogoImg(p.ticker) + '</span>' +
+        '<span class="pf-avatar" style="background:' + col + ';color:' + pfInk(col) + '">' + esc(p.ticker.charAt(0)) + pfLogoImg(p.ticker) + '</span>' +
         '<span class="wl-left"><span class="wl-t">' + esc(p.ticker) + '</span>' +
         (qt.name ? '<span class="pf-name">' + esc(qt.name) + '</span>' : '') + '</span>' +
         '<span class="pf-alloc">' + (isNum(frac) ? fmtNum(frac, 1) + '%' : '\u2014') + '</span>' +
@@ -1477,7 +1499,7 @@ async function renderPortfolio(doFetch) {
       if (ranked.length > 8 && i >= 7) otherVal += r.val;
       else slices.push({ label: r.p.ticker, val: r.val, col: colorOf[r.p.ticker], initial: r.p.ticker.charAt(0) });
     });
-    if (otherVal > 0) slices.push({ label: 'Other', val: otherVal, col: '#5A5A5E', initial: '\u2022' });
+    if (otherVal > 0) slices.push({ label: 'Other', val: otherVal, col: '#5B7183', initial: '\u2022' });
     var C = 2 * Math.PI * 78, off = 0, circles = '', pills = '';
     var mids = [];
     slices.forEach(function (s) {
@@ -1506,7 +1528,7 @@ async function renderPortfolio(doFetch) {
     mids.forEach(function (m) {
       var x = 50 + 44.5 * Math.cos(m.ang), y = 50 + 44.5 * Math.sin(m.ang);
       x = Math.min(89, Math.max(11, x)); y = Math.min(93, Math.max(7, y));
-      pills += '<span class="pf-pill" style="left:' + x.toFixed(1) + '%;top:' + y.toFixed(1) + '%"><span class="pf-pill-dot" style="background:' + m.s.col + '">' + esc(m.s.initial) + (m.s.label !== 'Other' ? pfLogoImg(m.s.label) : '') + '</span>' + fmtNum(m.frac * 100, 0) + '%</span>';
+      pills += '<span class="pf-pill" style="left:' + x.toFixed(1) + '%;top:' + y.toFixed(1) + '%"><span class="pf-pill-dot" style="background:' + m.s.col + ';color:' + pfInk(m.s.col) + '">' + esc(m.s.initial) + (m.s.label !== 'Other' ? pfLogoImg(m.s.label) : '') + '</span>' + fmtNum(m.frac * 100, 0) + '%</span>';
     });
     var center = '<text x="100" y="103" text-anchor="middle" class="pf-c-v">' + fmtMoney(totVal, 0) + '</text><text x="100" y="126" text-anchor="middle" class="pf-c-l">TOTAL VALUE</text>';
     chartHtml = '<div class="pf-donut"><svg viewBox="0 0 200 200" role="img" aria-label="Portfolio allocation chart"><g transform="rotate(-90 100 100)">' + circles + '</g>' + center + '</svg>' + pills + '</div>';
@@ -1997,5 +2019,5 @@ if (typeof document !== 'undefined' && document.getElementById) {
 }
 /* Node export for offline pipeline tests (ignored in the browser). */
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr, buildSwot: buildSwot, tickerSuggestions: tickerSuggestions, pjFadeGrowth: pjFadeGrowth };
+  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr, buildSwot: buildSwot, tickerSuggestions: tickerSuggestions, pjFadeGrowth: pjFadeGrowth, pfPaletteColors: pfPaletteColors };
 }
