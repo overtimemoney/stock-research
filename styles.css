@@ -351,3 +351,10 @@ table.scen td { padding: 8px 6px; }
 /* ---------- portfolio ---------- */
 .pf-sum-v { font-size: 30px; font-weight: 900; letter-spacing: -.01em; line-height: 1.1; }
 .pf-sum-row { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 8px; font-size: 13.5px; font-weight: 600; }
+
+.pf-chart { display: flex; align-items: center; gap: 16px; margin-top: 14px; flex-wrap: wrap; }
+.pf-chart svg { width: 148px; height: 148px; flex: 0 0 auto; }
+.pf-legend { flex: 1 1 130px; display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 600; }
+.pf-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 7px; }
+.pf-chart .pf-c-v { font-size: 19px; font-weight: 900; fill: var(--ink); }
+.pf-chart .pf-c-l { font-size: 10px; font-weight: 700; letter-spacing: .07em; fill: var(--muted); }

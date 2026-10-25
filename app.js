@@ -1400,12 +1400,13 @@ async function renderPortfolio(doFetch) {
   }
   var q = pfQuotes();
   var totVal = 0, totInc = 0, totCost = 0, anyPx = false, anyCost = false;
+  var alloc = [];
   var html = '';
   positions.forEach(function (p) {
     var qt = q[p.ticker] || {};
     var px = isNum(qt.price) ? qt.price : null;
     var val = isNum(px) ? px * p.shares : null;
-    if (isNum(val)) { totVal += val; anyPx = true; }
+    if (isNum(val)) { totVal += val; anyPx = true; if (val > 0) alloc.push({ ticker: p.ticker, val: val }); }
     var inc = (isNum(val) && isNum(qt.divYield)) ? val * qt.divYield / 100 : null;
     if (isNum(inc)) totInc += inc;
     var costTot = isNum(p.cost) ? p.cost * p.shares : null;
@@ -1429,11 +1430,29 @@ async function renderPortfolio(doFetch) {
   listBox.innerHTML = html;
   var yld = (anyPx && totVal > 0) ? totInc / totVal * 100 : null;
   var totGain = totVal - totCost;
+  var chartHtml = '';
+  if (alloc.length && totVal > 0) {
+    var PF_COLORS = ['#F8C73D', '#5EB1EF', '#7BD88F', '#E879A6', '#B18CFF', '#FF9F68', '#4FD1C5', '#F6E05E', '#90A4C4', '#FF6B6B'];
+    alloc.sort(function (a, b) { return b.val - a.val; });
+    var C = 2 * Math.PI * 70, off = 0, circles = '', legend = '';
+    alloc.forEach(function (s, i) {
+      var frac = s.val / totVal;
+      var seg = Math.max(frac * C - 1.5, 0.5);
+      var col = PF_COLORS[i % PF_COLORS.length];
+      circles += '<circle cx="90" cy="90" r="70" fill="none" stroke="' + col + '" stroke-width="26" stroke-dasharray="' + seg.toFixed(1) + ' ' + (C - seg).toFixed(1) + '" stroke-dashoffset="' + (-off).toFixed(1) + '"/>';
+      off += frac * C;
+      legend += '<div class="pf-leg"><span class="pf-dot" style="background:' + col + '"></span>' + esc(s.ticker) + ' <b>' + fmtNum(frac * 100, 1) + '%</b> <span class="factor-note">' + fmtMoney(s.val, 0) + '</span></div>';
+    });
+    chartHtml = '<div class="pf-chart"><svg viewBox="0 0 180 180" role="img" aria-label="Portfolio allocation chart"><g transform="rotate(-90 90 90)">' + circles + '</g>' +
+      '<text x="90" y="88" text-anchor="middle" class="pf-c-v">' + fmtMoney(totVal, 0) + '</text>' +
+      '<text x="90" y="106" text-anchor="middle" class="pf-c-l">TOTAL VALUE</text></svg>' +
+      '<div class="pf-legend">' + legend + '</div></div>';
+  }
   sumBox.innerHTML = '<div class="card"><div class="pf-sum-v">' + (anyPx ? fmtMoney(totVal, 0) : '—') + '</div>' +
     '<div class="wl-meta">Total value \u00b7 ' + positions.length + ' holding' + (positions.length === 1 ? '' : 's') + '</div>' +
     '<div class="pf-sum-row"><span>Est. dividends <b>' + fmtMoney(totInc, 0) + '/yr</b>' + (isNum(yld) ? ' \u00b7 ' + fmtNum(yld, 2) + '% yield' : '') + '</span>' +
     (anyCost && totCost > 0 ? '<span>Total gain/loss <b class="' + (totGain >= 0 ? 'up' : 'down') + '">' + (totGain >= 0 ? '+' : '') + fmtMoney(totGain, 0) + ' (' + fmtPct(totGain / totCost * 100) + ')</b></span>' : '') +
-    '</div></div>';
+    '</div>' + chartHtml + '</div>';
   listBox.querySelectorAll('[data-pf-research]').forEach(function (b) {
     b.addEventListener('click', function () { switchTab('scorecard'); $('search-input').value = b.getAttribute('data-pf-research'); runSearch(b.getAttribute('data-pf-research')); });
   });
