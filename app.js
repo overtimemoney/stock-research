@@ -1408,6 +1408,24 @@ function pfInk(hex) {
   var r = parseInt(hex.slice(1, 3), 16) / 255, g = parseInt(hex.slice(3, 5), 16) / 255, b = parseInt(hex.slice(5, 7), 16) / 255;
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) > 0.45 ? '#141414' : '#FFFFFF';
 }
+/* Estimated purchase date for a holding: the most recent day in the
+ * cached daily history whose close sat within 3% of the average cost
+ * the user entered. Returns a YYYYMMDD key, or null when the price
+ * never came near the cost in the available history. */
+function pfEstBuyKey(pts, cost) {
+  if (!pts || !isNum(cost) || cost <= 0) return null;
+  for (var i = pts.length - 1; i >= 0; i--) {
+    if (Math.abs(pts[i][1] - cost) / cost <= 0.03) return pts[i][0];
+  }
+  return null;
+}
+function pfFmtDate(key) {
+  var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return MON[(Math.floor(key / 100) % 100) - 1] + ' ' + (key % 100) + ', ' + Math.floor(key / 10000);
+}
+function pfKeyToISO(key) {
+  return Math.floor(key / 10000) + '-' + String(Math.floor(key / 100) % 100).padStart(2, '0') + '-' + String(key % 100).padStart(2, '0');
+}
 function pfLogoErr(img) {
   var fb = img.getAttribute('data-fb');
   if (fb) { img.removeAttribute('data-fb'); img.src = fb; }
@@ -1488,6 +1506,22 @@ async function renderPortfolio(doFetch) {
         (isNum(qt.dayChg) ? pfKv('Today', '<span class="' + (qt.dayChg >= 0 ? 'up' : 'down') + '">' + fmtPct(qt.dayChg) + '</span>') : '') +
         (isNum(r.gain) ? pfKv('Gain/loss', '<span class="' + (r.gain >= 0 ? 'up' : 'down') + '">' + (r.gain >= 0 ? '+' : '') + fmtMoney(r.gain, 0) + (isNum(r.gainPct) ? ' (' + fmtPct(r.gainPct) + ')' : '') + '</span>') : '') +
         pfKv('Dividends', p.drip ? 'Reinvested (DRIP)' : 'Paid as cash') +
+        (function () {
+          var hh = pfHistAll()[p.ticker];
+          var buysHtml = '';
+          if (p.buys && p.buys.length) {
+            buysHtml = p.buys.map(function (b, bi) {
+              var bk = pfDkey(new Date(b.d + 'T12:00:00'));
+              var pxTxt = '';
+              if (hh) { for (var z = 0; z < hh.pts.length; z++) { if (hh.pts[z][0] <= bk) pxTxt = ' @ ' + fmtMoney(hh.pts[z][1]); else break; } }
+              return '<div class="pf-buy-row"><span>' + esc(b.d) + '</span><span>' + fmtShares(b.sh) + ' shares' + pxTxt + '</span><button class="link-btn danger pf-buy-del" data-pf-buydel="' + esc(p.ticker) + '|' + bi + '">\u2715</button></div>';
+            }).join('');
+          } else if (isNum(p.cost) && hh) {
+            var ek = pfEstBuyKey(hh.pts, p.cost);
+            if (ek) buysHtml = '<div class="pf-buy-row"><span>Est. purchase</span><span>' + pfFmtDate(ek) + ' (from your avg cost)</span></div>';
+          }
+          return '<div class="pf-buys"><div class="pf-buys-h"><span>Purchases</span><button class="link-btn" data-pf-buyadd="' + esc(p.ticker) + '">\uff0b Add purchase</button></div>' + buysHtml + '</div>';
+        })() +
         (isNum(r.inc) ? pfKv('Est. dividend income', '\u2248 ' + fmtMoney(r.inc, 0) + '/yr') : '') +
         (p.drip && isNum(r.inc) && isNum(r.px) && r.px > 0 ? pfKv('DRIP buys', '\u2248 ' + fmtShares(r.inc / r.px) + ' shares/yr') : '') +
         '<div class="wl-actions"><button class="link-btn" data-pf-research="' + esc(p.ticker) + '">Research</button>' +
@@ -1502,12 +1536,12 @@ async function renderPortfolio(doFetch) {
   // "Other" only when there are more than 8 holdings.
   var chartHtml = '';
   if (ranked.length && totVal > 0) {
-    var slices = [], otherVal = 0;
+    var slices = [], otherVal = 0, otherMembers = [];
     ranked.forEach(function (r, i) {
-      if (ranked.length > 8 && i >= 7) otherVal += r.val;
+      if (ranked.length > 8 && i >= 7) { otherVal += r.val; otherMembers.push({ label: r.p.ticker, name: r.qt.name || r.p.ticker, val: r.val, col: colorOf[r.p.ticker] }); }
       else slices.push({ label: r.p.ticker, name: r.qt.name || r.p.ticker, val: r.val, col: colorOf[r.p.ticker], initial: r.p.ticker.charAt(0) });
     });
-    if (otherVal > 0) slices.push({ label: 'Other', name: 'Other holdings', val: otherVal, col: '#5B7183', initial: '\u2022' });
+    if (otherVal > 0) slices.push({ label: 'Other', name: 'Other holdings', val: otherVal, col: '#5B7183', initial: '\u2022', members: otherMembers });
     var C = 2 * Math.PI * 78, off = 0, circles = '', pills = '';
     var mids = [];
     var sliceByLabel = {};
@@ -1563,7 +1597,21 @@ async function renderPortfolio(doFetch) {
       circEls.forEach(function (o) { if (o !== c) o.style.opacity = '0.35'; });
       var s = sliceByLabel[label];
       if (popEl && s) {
-        popEl.innerHTML = '<b>' + esc(s.name) + '</b><span>' + esc(s.label) + ' \u00b7 ' + fmtNum(s.val / totVal * 100, 1) + '% of portfolio \u00b7 ' + fmtMoney(s.val, 0) + '</span>';
+        popEl.onclick = null;
+        popEl.classList.remove('clickable');
+        var popHtml = '<b>' + esc(s.name) + '</b><span>' + esc(s.label) + ' \u00b7 ' + fmtNum(s.val / totVal * 100, 1) + '% of portfolio \u00b7 ' + fmtMoney(s.val, 0) + '</span>';
+        if (s.members && s.members.length) {
+          popHtml += '<span class="pf-pop-hint">Tap here to see the holdings inside \u25be</span><div class="pf-pop-list" hidden>' +
+            s.members.map(function (mb) {
+              return '<div class="pf-pop-row"><span class="pf-pop-dot" style="background:' + mb.col + '"></span><b>' + esc(mb.label) + '</b><span class="pf-pop-row-n">' + esc(mb.name) + '</span><span>' + fmtNum(mb.val / totVal * 100, 1) + '% \u00b7 ' + fmtMoney(mb.val, 0) + '</span></div>';
+            }).join('') + '</div>';
+          popEl.classList.add('clickable');
+          popEl.onclick = function () {
+            var lst = popEl.querySelector('.pf-pop-list');
+            if (lst) lst.hidden = !lst.hidden;
+          };
+        }
+        popEl.innerHTML = popHtml;
         popEl.hidden = false;
       }
     });
@@ -1582,6 +1630,37 @@ async function renderPortfolio(doFetch) {
   listBox.querySelectorAll('[data-pf-del]').forEach(function (b) {
     b.addEventListener('click', function () {
       setPortfolio(getPortfolio().filter(function (x) { return x.ticker !== b.getAttribute('data-pf-del'); }));
+      renderPortfolio(false);
+    });
+  });
+  listBox.querySelectorAll('[data-pf-buyadd]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var T = b.getAttribute('data-pf-buyadd');
+      var d = window.prompt('Purchase date for ' + T + ' (YYYY-MM-DD):', pfKeyToISO(pfDkey(new Date())));
+      if (d === null) return;
+      d = String(d).trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || isNaN(new Date(d + 'T12:00:00').getTime())) { window.alert('That date does not look right -- use YYYY-MM-DD, like 2025-03-14.'); return; }
+      var s = window.prompt('How many shares did you buy on ' + d + '?');
+      if (s === null) return;
+      var sh = parseFloat(s);
+      if (!isNum(sh) || sh <= 0) { window.alert('Enter the number of shares bought.'); return; }
+      var pf = getPortfolio();
+      var pos = pf.filter(function (x) { return x.ticker === T; })[0];
+      if (!pos) return;
+      if (!pos.buys) pos.buys = [];
+      pos.buys.push({ d: d, sh: sh });
+      pos.buys.sort(function (x, y) { return x.d < y.d ? -1 : 1; });
+      setPortfolio(pf);
+      renderPortfolio(false);
+    });
+  });
+  listBox.querySelectorAll('[data-pf-buydel]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var parts = b.getAttribute('data-pf-buydel').split('|');
+      var pf = getPortfolio();
+      var pos = pf.filter(function (x) { return x.ticker === parts[0]; })[0];
+      if (pos && pos.buys) pos.buys.splice(parseInt(parts[1], 10), 1);
+      setPortfolio(pf);
       renderPortfolio(false);
     });
   });
@@ -1640,26 +1719,86 @@ function paintBench(box, hist, positions) {
   var cut = pfDkey(cutDt);
   var win = spy.pts.filter(function (p) { return p[0] >= cut; });
   if (win.length < 2) win = spy.pts.slice(-2);
-  var series = positions.map(function (p) {
+
+  // Forward-fill price lookup over a [[dateKey, close], ...] series.
+  function priceFn(pts) {
+    var i = 0, last = null;
+    return function (d) {
+      if (!pts) return null;
+      while (i < pts.length && pts[i][0] <= d) { last = pts[i][1]; i++; }
+      return last;
+    };
+  }
+  function priceAt(pts, d) {
+    if (!pts) return null;
+    var last = null;
+    for (var i = 0; i < pts.length && pts[i][0] <= d; i++) last = pts[i][1];
+    return last != null ? last : (pts.length ? pts[0][1] : null);
+  }
+
+  // Build purchase lots: the user's manual entries where they exist,
+  // otherwise one estimated lot (all shares at the date the price last
+  // matched the average cost). No lots at all -> constant-shares mode.
+  var lots = [], excluded = 0, estUsed = 0, manualUsed = 0;
+  positions.forEach(function (p) {
     var hh = hist[p.ticker];
-    return { shares: p.shares, pts: hh ? hh.pts : null, i: 0, last: null };
+    if (p.buys && p.buys.length) {
+      p.buys.forEach(function (b) { lots.push({ d: pfDkey(new Date(b.d + 'T12:00:00')), t: p.ticker, sh: b.sh }); });
+      manualUsed++;
+    } else if (isNum(p.cost) && hh) {
+      var ek = pfEstBuyKey(hh.pts, p.cost);
+      if (ek) { lots.push({ d: ek, t: p.ticker, sh: p.shares }); estUsed++; }
+      else excluded++;
+    } else excluded++;
   });
-  var missing = series.filter(function (s) { return !s.pts; }).length;
-  var pfVals = win.map(function (sp) {
-    var tot = 0, any = false;
-    series.forEach(function (s) {
-      if (!s.pts) return;
-      while (s.i < s.pts.length && s.pts[s.i][0] <= sp[0]) { s.last = s.pts[s.i][1]; s.i++; }
-      if (isNum(s.last)) { tot += s.shares * s.last; any = true; }
+  lots.sort(function (a, b) { return a.d - b.d; });
+
+  var pfSeries = [], spySeries = [];
+  if (lots.length) {
+    var pxFns = {}, owned = {};
+    positions.forEach(function (p) { pxFns[p.ticker] = priceFn(hist[p.ticker] ? hist[p.ticker].pts : null); owned[p.ticker] = 0; });
+    var spyPx = priceFn(spy.pts);
+    var li = 0, spyShares = 0;
+    win.forEach(function (sp) {
+      var d = sp[0];
+      while (li < lots.length && lots[li].d <= d) {
+        var lot = lots[li];
+        var lp = priceAt(hist[lot.t] ? hist[lot.t].pts : null, lot.d);
+        var sp0 = priceAt(spy.pts, lot.d);
+        if (isNum(lp) && isNum(sp0) && sp0 > 0) spyShares += lot.sh * lp / sp0;
+        owned[lot.t] = (owned[lot.t] || 0) + lot.sh;
+        li++;
+      }
+      var tot = 0;
+      positions.forEach(function (p) { var px = pxFns[p.ticker](d); if (isNum(px) && owned[p.ticker] > 0) tot += owned[p.ticker] * px; });
+      pfSeries.push(tot > 0 ? tot : null);
+      var sv = spyPx(d);
+      spySeries.push(spyShares > 0 && isNum(sv) ? spyShares * sv : null);
     });
-    return any ? tot : null;
-  });
-  var k0 = pfVals.findIndex(function (v) { return isNum(v); });
+  } else {
+    var series = positions.map(function (p) {
+      var hh2 = hist[p.ticker];
+      return { shares: p.shares, pts: hh2 ? hh2.pts : null, i: 0, last: null };
+    });
+    excluded = series.filter(function (s) { return !s.pts; }).length;
+    win.forEach(function (sp) {
+      var tot = 0, any = false;
+      series.forEach(function (s) {
+        if (!s.pts) return;
+        while (s.i < s.pts.length && s.pts[s.i][0] <= sp[0]) { s.last = s.pts[s.i][1]; s.i++; }
+        if (isNum(s.last)) { tot += s.shares * s.last; any = true; }
+      });
+      pfSeries.push(any ? tot : null);
+      spySeries.push(sp[1]);
+    });
+  }
+  var k0 = -1;
+  for (var kk = 0; kk < win.length; kk++) { if (isNum(pfSeries[kk]) && isNum(spySeries[kk])) { k0 = kk; break; } }
   if (k0 < 0 || win.length - k0 < 2) { box.innerHTML = ''; return; }
   var pfIdx = [], spyIdx = [];
   for (var k = k0; k < win.length; k++) {
-    pfIdx.push(pfVals[k] / pfVals[k0] * 100);
-    spyIdx.push(win[k][1] / win[k0][1] * 100);
+    pfIdx.push(pfSeries[k] / pfSeries[k0] * 100);
+    spyIdx.push(spySeries[k] / spySeries[k0] * 100);
   }
   var pfRet = pfIdx[pfIdx.length - 1] - 100, spyRet = spyIdx[spyIdx.length - 1] - 100;
   var gap = pfRet - spyRet;
@@ -1672,6 +1811,12 @@ function paintBench(box, hist, positions) {
   var chips = ['1M', '3M', '6M', '1Y'].map(function (p) {
     return '<button type="button" data-bench="' + p + '"' + (p === period ? ' class="active"' : '') + '>' + p + '</button>';
   }).join('');
+  var modeNote = lots.length
+    ? 'Your line replays your purchases day by day, and the S&amp;P line invests the same dollars in SPY on the same days.' +
+      (manualUsed ? ' ' + manualUsed + ' holding(s) use your entered purchase dates.' : '') +
+      (estUsed ? ' ' + estUsed + ' use a date estimated from your average cost (the last day the price matched it).' : '') +
+      ' Price return only, dividends not included.'
+    : 'Both lines start at 100. Your line is rebuilt from the share counts you entered, held constant over the period -- add purchase dates (or an average cost) on a holding to date it properly. Price return only, dividends not included. S&amp;P 500 tracked via SPY.';
   box.innerHTML = '<div class="card">' +
     '<div class="pf-bench-head"><span class="pf-bench-title">Portfolio vs S&amp;P 500</span>' +
     '<span class="pf-bench-legend"><span><span class="pf-bench-dot" style="background:#F8C73D"></span>You</span><span><span class="pf-bench-dot" style="background:#61A5C2"></span>S&amp;P 500</span></span></div>' +
@@ -1684,8 +1829,8 @@ function paintBench(box, hist, positions) {
     '<div class="pf-bench-stats"><span>You <b class="' + (pfRet >= 0 ? 'up' : 'down') + '">' + fmtPct(pfRet) + '</b></span>' +
     '<span>S&amp;P 500 <b class="' + (spyRet >= 0 ? 'up' : 'down') + '">' + fmtPct(spyRet) + '</b></span>' +
     '<span>' + (gap >= 0 ? 'Ahead by' : 'Behind by') + ' <b class="' + (gap >= 0 ? 'up' : 'down') + '">' + fmtNum(Math.abs(gap), 1) + ' pts</b></span></div>' +
-    '<p class="fineprint" style="margin:8px 0 0">Both lines start at 100. Your line is rebuilt from the share counts you entered, held constant over the period -- price return only, dividends not included. S&amp;P 500 tracked via SPY.' +
-    (missing ? ' ' + missing + ' holding(s) without a price history are left out.' : '') + '</p></div>';
+    '<p class="fineprint" style="margin:8px 0 0">' + modeNote +
+    (excluded ? ' ' + excluded + ' holding(s) left out (no purchase dates or average cost to date them).' : '') + '</p></div>';
   box.querySelectorAll('[data-bench]').forEach(function (b) {
     b.addEventListener('click', function () {
       lsSet(PF_BENCH_KEY, b.getAttribute('data-bench'));
