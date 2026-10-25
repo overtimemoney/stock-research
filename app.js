@@ -555,7 +555,7 @@ function lineChartSVG(closes, high52, w, h) {
     out += '<line x1="' + padX + '" y1="' + Y(high52) + '" x2="' + (w - padX) + '" y2="' + Y(high52) + '" stroke="#B46A11" stroke-width="1.4" stroke-dasharray="5 4"/>' +
       '<text x="' + (w - padX) + '" y="' + (Y(high52) - 4) + '" text-anchor="end" font-size="11" font-weight="800" fill="#B46A11">52-wk high ' + fmtNum(high52, 0) + '</text>';
   }
-  out += '<polyline points="' + pts + '" fill="none" stroke="#141414" stroke-width="2.2" stroke-linejoin="round"/>';
+  out += '<polyline points="' + pts + '" fill="none" style="stroke:var(--chart-line)" stroke-width="2.2" stroke-linejoin="round"/>';
   out += '<text x="' + padX + '" y="' + (h - 5) + '" font-size="11" font-weight="700" fill="#77705f">1 year ago</text>' +
     '<text x="' + (w - padX) + '" y="' + (h - 5) + '" text-anchor="end" font-size="11" font-weight="700" fill="#77705f">now · ' + fmtNum(closes[closes.length - 1]) + '</text>';
   out += '</svg>';
@@ -1365,7 +1365,7 @@ function renderGlossary(filter) {
 /* ============================== data backup ============================== */
 function collectBackup() {
   return { app: 'stock-research', version: 1, exportedAt: new Date().toISOString(),
-           watchlist: getWatchlist(), journal: getJournal() };
+           watchlist: getWatchlist(), journal: getJournal(), aiSwots: lsGet(AI_SWOT_KEY, {}) };
 }
 function doExport() {
   var json = JSON.stringify(collectBackup(), null, 2);
@@ -1392,18 +1392,34 @@ function importBackupText(text) {
   }
   var wl = obj && Array.isArray(obj.watchlist) ? obj.watchlist : null;
   var j = obj && obj.journal && typeof obj.journal === 'object' && !Array.isArray(obj.journal) ? obj.journal : null;
-  if (!wl && !j) {
+  var ai = obj && obj.aiSwots && typeof obj.aiSwots === 'object' && !Array.isArray(obj.aiSwots) ? obj.aiSwots : null;
+  if (!wl && !j && !ai) {
     status.className = 'status err';
-    status.textContent = 'That file has no watchlist or journal in it — not a Stock Research backup.';
+    status.textContent = 'That file has no watchlist, journal or AI SWOTs in it — not a Stock Research backup.';
     return;
   }
-  if (!window.confirm('Replace your current watchlist and journal with this backup?')) return;
+  if (!window.confirm('Replace your current watchlist, journal and saved AI SWOTs with this backup?')) return;
   if (wl) setWatchlist(wl);
   if (j) setJournal(j);
+  if (ai) lsSet(AI_SWOT_KEY, ai);
   renderWatchlist(false);
   renderJournal();
+  if (lastStock) renderScorecard(lastStock);
   status.className = 'status';
-  status.textContent = 'Backup restored: ' + (wl ? wl.length : 0) + ' watchlist item(s), ' + (j ? Object.keys(j).length : 0) + ' journal entr(ies).';
+  status.textContent = 'Backup restored: ' + (wl ? wl.length : 0) + ' watchlist item(s), ' + (j ? Object.keys(j).length : 0) + ' journal entr(ies)' + (ai ? ', ' + Object.keys(ai).length + ' AI SWOT(s)' : '') + '.';
+}
+
+/* ============================== theme & settings ============================== */
+function applyTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  try { localStorage.setItem('sr_theme', t); } catch (e) {}
+  var meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', t === 'dark' ? '#0d0d0f' : '#ffffff');
+  var dBtn = $('theme-dark'), lBtn = $('theme-light');
+  if (dBtn && lBtn) {
+    dBtn.classList.toggle('active', t === 'dark');
+    lBtn.classList.toggle('active', t === 'light');
+  }
 }
 
 /* ============================== tabs & init ============================== */
@@ -1454,6 +1470,41 @@ function initApp() {
     $('import-file').value = '';
   });
   $('btn-import-text').addEventListener('click', function () { importBackupText($('backup-text').value); });
+  // Settings menu + theme (dark is the default).
+  var savedTheme = null;
+  try { savedTheme = localStorage.getItem('sr_theme'); } catch (e) {}
+  applyTheme(savedTheme === 'light' ? 'light' : 'dark');
+  $('theme-dark').addEventListener('click', function () { applyTheme('dark'); });
+  $('theme-light').addEventListener('click', function () { applyTheme('light'); });
+  var settingsMenu = $('settings-menu');
+  $('btn-settings').addEventListener('click', function (e) {
+    e.stopPropagation();
+    var willOpen = settingsMenu.hidden;
+    settingsMenu.hidden = !willOpen;
+    $('btn-settings').setAttribute('aria-expanded', String(willOpen));
+  });
+  document.addEventListener('click', function (e) {
+    if (!settingsMenu.hidden && !settingsMenu.contains(e.target)) {
+      settingsMenu.hidden = true;
+      $('btn-settings').setAttribute('aria-expanded', 'false');
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      settingsMenu.hidden = true;
+      $('btn-settings').setAttribute('aria-expanded', 'false');
+    }
+  });
+  $('set-clear-ai').addEventListener('click', function () {
+    try { localStorage.removeItem(AI_SWOT_KEY); } catch (e) {}
+    $('settings-note').textContent = 'Saved AI SWOTs cleared — regenerate any of them from a scorecard.';
+    if (lastStock) renderScorecard(lastStock);
+  });
+  $('set-clear-cache').addEventListener('click', function () {
+    try { localStorage.removeItem(CACHE_KEY); } catch (e) {}
+    $('settings-note').textContent = 'Price cache cleared — the next lookups fetch fresh data.';
+  });
+  $('set-reload').addEventListener('click', function () { location.reload(); });
   $('journal-form').addEventListener('submit', function (e) {
     e.preventDefault();
     var T = ($('j-ticker').value || '').trim().toUpperCase();

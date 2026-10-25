@@ -1,19 +1,23 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Stock Research</title>
 <meta name="description" content="Personal stock research: scorecards, value screen, EPS cliff check, comparisons and projections — live data, math shown.">
-<meta name="theme-color" content="#ffffff">
+<meta name="theme-color" content="#0d0d0f">
 <link rel="manifest" href="manifest.json">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Stock Research">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="stylesheet" href="styles.css">
+<script>
+/* Apply the saved theme before first paint (dark is the default). */
+try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'dark') document.documentElement.setAttribute('data-theme', _t); } catch (e) {}
+</script>
 </head>
 <body>
 <header class="topbar">
@@ -22,6 +26,36 @@
     <div class="brand-text">
       <div class="brand-name">STOCK <span class="gold-text">RESEARCH</span></div>
       <div class="brand-tag">Every number. One screen.</div>
+    </div>
+    <div class="settings-wrap">
+      <button id="btn-settings" class="gear-btn" type="button" aria-label="Settings" aria-haspopup="true" aria-expanded="false">⚙</button>
+      <div id="settings-menu" class="settings-menu" hidden>
+        <div class="set-h">Appearance</div>
+        <div class="seg" role="group" aria-label="Theme">
+          <button id="theme-dark" type="button">🌙 Dark</button>
+          <button id="theme-light" type="button">☀️ Light</button>
+        </div>
+        <div class="set-h">Back up your data</div>
+        <p class="fineprint" style="margin:0 0 8px">Your watchlist, journal and saved AI SWOTs live only on this device. Export a backup and keep it somewhere safe (Files, iCloud, email it to yourself). Import a backup here to restore everything.</p>
+        <div class="row-gap">
+          <button id="btn-export" class="btn-gold" type="button">⬇ Export</button>
+          <button id="btn-import" class="btn-ghost" type="button">⬆ Import</button>
+          <input id="import-file" type="file" accept="application/json,.json" hidden>
+        </div>
+        <div id="backup-status" class="status"></div>
+        <textarea id="backup-text" rows="4" placeholder="Your backup appears here as text too. To restore from text, paste a backup here and tap Import from text."></textarea>
+        <div class="row-gap" style="margin-top:6px">
+          <button id="btn-import-text" class="btn-ghost" type="button">Import from text</button>
+        </div>
+        <div class="set-h">Housekeeping</div>
+        <div class="row-gap" style="flex-wrap:wrap">
+          <button id="set-clear-ai" class="btn-ghost" type="button">Clear AI SWOTs</button>
+          <button id="set-clear-cache" class="btn-ghost" type="button">Clear price cache</button>
+          <button id="set-reload" class="btn-ghost" type="button">↻ Reload app</button>
+        </div>
+        <div id="settings-note" class="status"></div>
+        <p class="fineprint">Data: Finviz · Nasdaq · Yahoo · MarketBeat, through your own Cloudflare relay. AI SWOTs: Llama 4 Scout on your Cloudflare account. Saved data never leaves this device — only the tickers you look up are sent.</p>
+      </div>
     </div>
   </div>
 </header>
@@ -108,20 +142,7 @@
       <button id="wl-refresh" class="btn-ghost" type="button">↻ Refresh prices</button>
     </div>
     <div id="wl-list"></div>
-    <div class="card" style="margin-top:14px">
-      <h3 style="margin:0 0 6px">Back up <span class="gold-text">your data</span></h3>
-      <p class="fineprint" style="margin:0 0 10px">Your watchlist and journal live only on this device. Export a backup file and keep it somewhere safe (Files, iCloud, or email it to yourself). If you ever delete and re-add this app, import the backup and everything comes back.</p>
-      <div class="row-gap">
-        <button id="btn-export" class="btn-gold" type="button">⬇ Export backup</button>
-        <button id="btn-import" class="btn-ghost" type="button">⬆ Import backup</button>
-        <input id="import-file" type="file" accept="application/json,.json" hidden>
-      </div>
-      <div id="backup-status" class="status"></div>
-      <textarea id="backup-text" rows="4" placeholder="Your backup appears here as text too — handy for copying. To restore from text instead, paste a backup here and tap Import from text." style="width:100%;box-sizing:border-box;margin-top:8px"></textarea>
-      <div class="row-gap" style="margin-top:6px">
-        <button id="btn-import-text" class="btn-ghost" type="button">Import from text</button>
-      </div>
-    </div>
+    <p class="fineprint">Your watchlist and journal live only on this device — back them up from the ⚙ settings menu (top right).</p>
   </section>
 
   <!-- JOURNAL -->
