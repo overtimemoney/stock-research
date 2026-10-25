@@ -1829,36 +1829,34 @@ function paintBench(box, hist, positions) {
 
   var pfSeries = [], spySeries = [];
   if (lots.length) {
-    // Justin's equation: every dollar of cost basis starts the period
-    // sitting in the S&P 500. On each purchase day, that lot's dollars
-    // move out of the index and into the stock. The benchmark is the
-    // same starting pot left in SPY the whole time.
+    // Fund-style (time-weighted) math: money enters the comparison on
+    // the day it was spent, and a deposit never counts as a gain. The
+    // line is a NAV that moves only with market performance; purchases
+    // add holdings at cost without moving the NAV. The S&P line runs
+    // the same span, so its NAV is the index's own price performance
+    // while his money was invested.
     var owned = {};
     positions.forEach(function (p) { owned[p.ticker] = 0; });
-    // The unspent cost basis rides the index as SPY shares, sized so
-    // each lot's sale on its purchase day raises exactly its cost.
-    var spyShares = 0;
-    lots.forEach(function (lot) {
-      if (lot.pre) owned[lot.t] += lot.sh;
-      else { var spx = priceAt(spy.pts, lot.d); if (isNum(spx) && spx > 0) spyShares += lot.amt / spx; }
-    });
-    var V0 = spyShares * win[0][1];
-    positions.forEach(function (p) {
-      if (owned[p.ticker] > 0) { var px0 = priceAt(hist[p.ticker] ? hist[p.ticker].pts : null, w0); if (isNum(px0)) V0 += owned[p.ticker] * px0; }
-    });
-    var li = 0;
-    win.forEach(function (sp) {
+    var nav = 100, vPost = null, li = 0, started = false;
+    win.forEach(function (sp, wi) {
       var d = sp[0];
+      if (wi === 0) {
+        while (li < lots.length && lots[li].pre) { owned[lots[li].t] += lots[li].sh; li++; }
+      }
+      var V = 0;
+      positions.forEach(function (p) {
+        if (owned[p.ticker] > 0) { var px = priceAt(hist[p.ticker] ? hist[p.ticker].pts : null, d); if (isNum(px)) V += owned[p.ticker] * px; }
+      });
+      if (vPost != null && vPost > 0 && V > 0) nav *= V / vPost;
+      var injected = 0;
       while (li < lots.length && lots[li].d <= d) {
-        if (!lots[li].pre) { var spx2 = priceAt(spy.pts, lots[li].d); if (isNum(spx2) && spx2 > 0) spyShares -= lots[li].amt / spx2; owned[lots[li].t] += lots[li].sh; }
+        if (!lots[li].pre) { injected += lots[li].amt; owned[lots[li].t] += lots[li].sh; }
         li++;
       }
-      var tot = spyShares * sp[1];
-      positions.forEach(function (p) {
-        if (owned[p.ticker] > 0) { var px = priceAt(hist[p.ticker] ? hist[p.ticker].pts : null, d); if (isNum(px)) tot += owned[p.ticker] * px; }
-      });
-      pfSeries.push(tot);
-      spySeries.push(V0 * sp[1] / win[0][1]);
+      vPost = V + injected;
+      if (!started && (V > 0 || injected > 0)) started = true;
+      pfSeries.push(started ? nav : null);
+      spySeries.push(sp[1]);
     });
   } else {
     var series = positions.map(function (p) {
@@ -1885,6 +1883,11 @@ function paintBench(box, hist, positions) {
     pfIdx.push(pfSeries[k] / pfSeries[k0] * 100);
     spyIdx.push(spySeries[k] / spySeries[k0] * 100);
   }
+  var pfLine = [], spyLine = [];
+  for (var k2 = 0; k2 < win.length; k2++) {
+    pfLine.push(k2 >= k0 && isNum(pfSeries[k2]) ? pfSeries[k2] / pfSeries[k0] * 100 : null);
+    spyLine.push(k2 >= k0 && isNum(spySeries[k2]) ? spySeries[k2] / spySeries[k0] * 100 : null);
+  }
   var pfRet = pfIdx[pfIdx.length - 1] - 100, spyRet = spyIdx[spyIdx.length - 1] - 100;
   var gap = pfRet - spyRet;
   var all = pfIdx.concat(spyIdx);
@@ -1892,7 +1895,7 @@ function paintBench(box, hist, positions) {
   lo -= pad; hi += pad;
   function X(i) { return (6 + i / (pfIdx.length - 1) * 328).toFixed(1); }
   function Y(v) { return (164 - (v - lo) / (hi - lo) * 158).toFixed(1); }
-  function line(arr) { return arr.map(function (v, i) { return X(i) + ',' + Y(v); }).join(' '); }
+  function line(arr) { return arr.map(function (v, i) { return isNum(v) ? X(i) + ',' + Y(v) : null; }).filter(Boolean).join(' '); }
   // X-axis ticks: day numbers on the 1M view, months for the
   // sub-year ranges, years only on the 5Y view.
   var MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1913,7 +1916,7 @@ function paintBench(box, hist, positions) {
     return '<button type="button" data-bench="' + p + '"' + (p === period ? ' class="active"' : '') + '>' + p + '</button>';
   }).join('');
   var modeNote = lots.length
-    ? 'Your line starts the period with all your cost-basis money sitting in the S&amp;P 500; on each purchase day that money moves into the stock you bought. The S&amp;P line is the same money never moved.' +
+    ? 'Fund-style math: money joins the comparison on the day you spent it, and a deposit never counts as a gain -- the percentages are pure performance of your money while it was invested. The S&amp;P line is the index over the same span.' +
       (manualUsed ? ' ' + manualUsed + ' holding(s) use your entered purchase dates.' : '') +
       (estUsed ? ' ' + estUsed + ' use a date estimated from your average cost (the last day the price matched it).' : '') +
       ' Price return only, dividends not included.'
@@ -1923,10 +1926,10 @@ function paintBench(box, hist, positions) {
     '<span class="pf-bench-legend"><span><span class="pf-bench-dot" style="background:#F8C73D"></span>You</span><span><span class="pf-bench-dot" style="background:#61A5C2"></span>S&amp;P 500</span></span></div>' +
     '<div class="seg pf-bench-seg" role="group" aria-label="Benchmark period">' + chips + '</div>' +
     '<svg class="pf-bench-chart" viewBox="0 0 340 186" role="img" aria-label="Portfolio versus S&P 500 chart">' +
-    '<polyline points="' + line(spyIdx) + '" fill="none" stroke="#61A5C2" stroke-width="2" stroke-linejoin="round"/>' +
-    '<polyline points="' + line(pfIdx) + '" fill="none" stroke="#F8C73D" stroke-width="2.5" stroke-linejoin="round"/>' +
-    '<circle cx="' + X(pfIdx.length - 1) + '" cy="' + Y(pfIdx[pfIdx.length - 1]) + '" r="3.2" fill="#F8C73D"/>' +
-    '<circle cx="' + X(spyIdx.length - 1) + '" cy="' + Y(spyIdx[spyIdx.length - 1]) + '" r="3" fill="#61A5C2"/>' + ticksSvg + '</svg>' +
+    '<polyline points="' + line(spyLine) + '" fill="none" stroke="#61A5C2" stroke-width="2" stroke-linejoin="round"/>' +
+    '<polyline points="' + line(pfLine) + '" fill="none" stroke="#F8C73D" stroke-width="2.5" stroke-linejoin="round"/>' +
+    '<circle cx="' + X(win.length - 1) + '" cy="' + Y(pfIdx[pfIdx.length - 1]) + '" r="3.2" fill="#F8C73D"/>' +
+    '<circle cx="' + X(win.length - 1) + '" cy="' + Y(spyIdx[spyIdx.length - 1]) + '" r="3" fill="#61A5C2"/>' + ticksSvg + '</svg>' +
     '<div class="pf-bench-stats"><span>You <b class="' + (pfRet >= 0 ? 'up' : 'down') + '">' + fmtPct(pfRet) + '</b></span>' +
     '<span>S&amp;P 500 <b class="' + (spyRet >= 0 ? 'up' : 'down') + '">' + fmtPct(spyRet) + '</b></span>' +
     '<span>' + (gap >= 0 ? 'Ahead by' : 'Behind by') + ' <b class="' + (gap >= 0 ? 'up' : 'down') + '">' + fmtNum(Math.abs(gap), 1) + ' pts</b></span></div>' +
