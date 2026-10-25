@@ -1085,6 +1085,9 @@ function fillProjection(d) {
   if (isNum(base)) $('pj-eps').value = base;
   if (isNum(d.epsGrowth5Y)) $('pj-growth').value = Math.max(-20, Math.min(60, Math.round(d.epsGrowth5Y)));
   else if (isNum(d.epsGrowthNextY)) $('pj-growth').value = Math.round(Math.max(-20, Math.min(60, d.epsGrowthNextY)));
+  // Exit P/E starts at the stock's current trailing (TTM) P/E — the
+  // no-multiple-expansion assumption — and stays editable.
+  if (isNum(d.pe) && d.pe > 0) $('pj-mult').value = Math.round(d.pe * 10) / 10;
   // Year-by-year path: the first row is the current TTM position (EPS and
   // its actual TTM growth), then the analysts' forecast years, up to 5.
   var ttmRow = isNum(d.epsTTM) ? {
