@@ -131,7 +131,7 @@ function parseFinviz(html) {
   while ((trM = trRe.exec(html)) !== null) {
     var block = trM[1];
     var labs = [], cons = [], m;
-    var labRe = /class="snapshot-td-label">([^<]+)<\/div>/g;
+    var labRe = /class="snapshot-td-label">(?:<a[^>]*>)?([^<]+)/g;
     while ((m = labRe.exec(block)) !== null) labs.push(m[1].trim());
     var conRe = /class="snapshot-td-content">([\s\S]*?)<\/div>/g;
     while ((m = conRe.exec(block)) !== null) cons.push(stripTags(m[1]));
@@ -246,7 +246,13 @@ async function fetchStock(ticker, opts) {
     d.debtEq = parseNum(p['Debt/Eq']);
     d.beta = parseNum(p['Beta']);
     d.roe = parseNum(p['ROE']);
-    d.divYield = parseNum(p['Dividend %']);
+    // Finviz renamed "Dividend %" away: the yield now rides in parens in
+    // "Dividend TTM" / "Dividend Est." — e.g. "2.10 (2.27%)". "-" when the
+    // stock pays no dividend.
+    var divRaw = p['Dividend TTM'] || p['Dividend Est.'] || '';
+    var divM = divRaw.match(/\(([\d.]+)%\)/);
+    if (divM) d.divYield = parseFloat(divM[1]);
+    else if (isNum(parseNum(p['Dividend %']))) d.divYield = parseNum(p['Dividend %']);
     var hiParts = (p['52W High'] || '').split(/\s+/);
     var loParts = (p['52W Low'] || '').split(/\s+/);
     d.high52 = parseNum(hiParts[0]);
