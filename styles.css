@@ -352,12 +352,20 @@ table.scen td { padding: 8px 6px; }
 .pf-sum-v { font-size: 30px; font-weight: 900; letter-spacing: -.01em; line-height: 1.1; }
 .pf-sum-row { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 8px; font-size: 13.5px; font-weight: 600; }
 
-.pf-chart { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-top: 14px; }
-.pf-chart svg { width: 100%; max-width: 320px; height: auto; }
-.pf-legend { width: 100%; display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 600; }
-.pf-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 7px; }
-.pf-chart .pf-c-v { font-size: 19px; font-weight: 900; fill: var(--ink); }
-.pf-chart .pf-c-l { font-size: 10px; font-weight: 700; letter-spacing: .07em; fill: var(--muted); }
+/* ---------- portfolio donut + holdings (Blossom-style) ---------- */
+.pf-donut { position: relative; width: min(340px, 94%); margin: 16px auto 4px; aspect-ratio: 1 / 1; }
+.pf-donut svg { width: 100%; height: 100%; display: block; }
+.pf-pill { position: absolute; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 6px; background: var(--chip-bg); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px 3px 4px; font-size: 12.5px; font-weight: 800; white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+.pf-pill-dot { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; color: #141414; font-size: 11px; font-weight: 900; }
+.pf-c-v { font-size: 21px; font-weight: 900; fill: var(--ink); }
+.pf-c-big { font-size: 27px; font-weight: 900; }
+.pf-c-up { fill: var(--good); }
+.pf-c-dn { fill: var(--bad); }
+.pf-c-l { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; fill: var(--muted); }
+.pf-avatar { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; color: #141414; font-size: 16px; font-weight: 900; flex: 0 0 auto; }
+.pf-name { display: block; font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.pf-alloc { font-size: 15px; font-weight: 800; text-align: right; flex: 0 0 auto; min-width: 50px; }
+.pf-valpill { display: inline-block; background: var(--chip-bg); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font-weight: 900; font-size: 15px; }
 
 /* ---------- portfolio rows (collapsible) ---------- */
 .pf-row { flex-direction: column; align-items: stretch; }

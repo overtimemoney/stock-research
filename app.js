@@ -1375,7 +1375,7 @@ async function fetchPfQuote(T) {
   if (!isNum(d.price)) throw new Error('no price');
   var chg = d.sourceFinviz ? parseNum(d.sourceFinviz['Change %']) : null;
   return { price: d.price, divYield: isNum(d.divYield) ? d.divYield : null,
-           dayChg: isNum(chg) ? chg : null, ts: Date.now() };
+           dayChg: isNum(chg) ? chg : null, name: d.companyName || null, ts: Date.now() };
 }
 
 var pfOpen = {};
@@ -1402,26 +1402,45 @@ async function renderPortfolio(doFetch) {
     if (status) status.textContent = '';
   }
   var q = pfQuotes();
-  var totVal = 0, totInc = 0, totCost = 0, anyPx = false, anyCost = false;
-  var alloc = [];
-  var html = '';
-  positions.forEach(function (p) {
+  var PF_COLORS = ['#F8C73D', '#3EC6B8', '#A79BFA', '#8FE3D0', '#7C9EFF', '#F49AC1', '#7BD88F', '#FFA26B', '#90A4C4', '#FF8A80'];
+  // First pass: derive everything per holding and total it up.
+  var totVal = 0, totInc = 0, totCost = 0, anyCost = false, dayNum = 0, dayDen = 0;
+  var rows = positions.map(function (p) {
     var qt = q[p.ticker] || {};
     var px = isNum(qt.price) ? qt.price : null;
     var val = isNum(px) ? px * p.shares : null;
-    if (isNum(val)) { totVal += val; anyPx = true; if (val > 0) alloc.push({ ticker: p.ticker, val: val }); }
     var inc = (isNum(val) && isNum(qt.divYield)) ? val * qt.divYield / 100 : null;
-    if (isNum(inc)) totInc += inc;
     var costTot = isNum(p.cost) ? p.cost * p.shares : null;
-    if (isNum(costTot)) { totCost += costTot; anyCost = true; }
     var gain = (isNum(val) && isNum(costTot)) ? val - costTot : null;
     var gainPct = (isNum(gain) && costTot > 0) ? gain / costTot * 100 : null;
+    if (isNum(val)) totVal += val;
+    if (isNum(inc)) totInc += inc;
+    if (isNum(costTot)) { totCost += costTot; anyCost = true; }
+    if (isNum(val) && isNum(qt.dayChg)) { dayNum += val * qt.dayChg; dayDen += val; }
+    return { p: p, qt: qt, px: px, val: val, inc: inc, gain: gain, gainPct: gainPct };
+  });
+  var anyPx = totVal > 0;
+  var dayPct = dayDen > 0 ? dayNum / dayDen : null;
+  // Colors follow value rank so the chart, its labels and the rows agree.
+  var ranked = rows.filter(function (r) { return isNum(r.val) && r.val > 0; }).slice().sort(function (a, b) { return b.val - a.val; });
+  var colorOf = {};
+  ranked.forEach(function (r, i) { colorOf[r.p.ticker] = PF_COLORS[i % PF_COLORS.length]; });
+  // Holdings list: biggest first, like the reference.
+  var ordered = rows.slice().sort(function (a, b) { return (b.val || 0) - (a.val || 0); });
+  var html = '';
+  ordered.forEach(function (r) {
+    var p = r.p, qt = r.qt;
+    var frac = (isNum(r.val) && totVal > 0) ? r.val / totVal * 100 : null;
     var open = !!pfOpen[p.ticker];
+    var col = colorOf[p.ticker] || '#5A5A5E';
     html += '<div class="wl-row pf-row' + (open ? ' open' : '') + '">' +
       '<button class="pf-head" data-pf-toggle="' + esc(p.ticker) + '" aria-expanded="' + open + '">' +
-        '<span class="wl-left"><span class="wl-t">' + esc(p.ticker) + '</span></span>' +
-        '<span class="wl-right"><span class="wl-price">' + (isNum(val) ? fmtMoney(val, 0) : '\u2014') + '</span>' +
-        '<span class="wl-meta" style="text-align:right">' + (isNum(px) ? fmtMoney(px) + '/share' : 'price unavailable') + '</span></span>' +
+        '<span class="pf-avatar" style="background:' + col + '">' + esc(p.ticker.charAt(0)) + '</span>' +
+        '<span class="wl-left"><span class="wl-t">' + esc(p.ticker) + '</span>' +
+        (qt.name ? '<span class="pf-name">' + esc(qt.name) + '</span>' : '') + '</span>' +
+        '<span class="pf-alloc">' + (isNum(frac) ? fmtNum(frac, 1) + '%' : '\u2014') + '</span>' +
+        '<span class="wl-right"><span class="pf-valpill">' + (isNum(r.val) ? fmtMoney(r.val, 0) : '\u2014') + '</span>' +
+        '<span class="wl-meta" style="text-align:right">' + (isNum(r.px) ? fmtMoney(r.px) + '/share' : 'price unavailable') + '</span></span>' +
         '<span class="pf-chev">\u25be</span>' +
       '</button>';
     if (open) {
@@ -1429,10 +1448,10 @@ async function renderPortfolio(doFetch) {
         pfKv('Shares', fmtShares(p.shares)) +
         (isNum(p.cost) ? pfKv('Average cost', fmtMoney(p.cost) + '/share') : '') +
         (isNum(qt.dayChg) ? pfKv('Today', '<span class="' + (qt.dayChg >= 0 ? 'up' : 'down') + '">' + fmtPct(qt.dayChg) + '</span>') : '') +
-        (isNum(gain) ? pfKv('Gain/loss', '<span class="' + (gain >= 0 ? 'up' : 'down') + '">' + (gain >= 0 ? '+' : '') + fmtMoney(gain, 0) + (isNum(gainPct) ? ' (' + fmtPct(gainPct) + ')' : '') + '</span>') : '') +
+        (isNum(r.gain) ? pfKv('Gain/loss', '<span class="' + (r.gain >= 0 ? 'up' : 'down') + '">' + (r.gain >= 0 ? '+' : '') + fmtMoney(r.gain, 0) + (isNum(r.gainPct) ? ' (' + fmtPct(r.gainPct) + ')' : '') + '</span>') : '') +
         pfKv('Dividends', p.drip ? 'Reinvested (DRIP)' : 'Paid as cash') +
-        (isNum(inc) ? pfKv('Est. dividend income', '\u2248 ' + fmtMoney(inc, 0) + '/yr') : '') +
-        (p.drip && isNum(inc) && isNum(px) && px > 0 ? pfKv('DRIP buys', '\u2248 ' + fmtShares(inc / px) + ' shares/yr') : '') +
+        (isNum(r.inc) ? pfKv('Est. dividend income', '\u2248 ' + fmtMoney(r.inc, 0) + '/yr') : '') +
+        (p.drip && isNum(r.inc) && isNum(r.px) && r.px > 0 ? pfKv('DRIP buys', '\u2248 ' + fmtShares(r.inc / r.px) + ' shares/yr') : '') +
         '<div class="wl-actions"><button class="link-btn" data-pf-research="' + esc(p.ticker) + '">Research</button>' +
         '<button class="link-btn" data-pf-edit="' + esc(p.ticker) + '">Edit</button>' +
         '<button class="link-btn danger" data-pf-del="' + esc(p.ticker) + '">Remove</button></div>' +
@@ -1441,26 +1460,34 @@ async function renderPortfolio(doFetch) {
     html += '</div>';
   });
   listBox.innerHTML = html;
+  // Donut with label pills around it, Blossom-style. Slices group into
+  // "Other" only when there are more than 8 holdings.
+  var chartHtml = '';
+  if (ranked.length && totVal > 0) {
+    var slices = [], otherVal = 0;
+    ranked.forEach(function (r, i) {
+      if (ranked.length > 8 && i >= 7) otherVal += r.val;
+      else slices.push({ label: r.p.ticker, val: r.val, col: colorOf[r.p.ticker], initial: r.p.ticker.charAt(0) });
+    });
+    if (otherVal > 0) slices.push({ label: 'Other', val: otherVal, col: '#5A5A5E', initial: '\u2022' });
+    var C = 2 * Math.PI * 78, off = 0, circles = '', pills = '';
+    slices.forEach(function (s) {
+      var frac = s.val / totVal;
+      var seg = Math.max(frac * C - 2, 0.5);
+      circles += '<circle cx="100" cy="100" r="78" fill="none" stroke="' + s.col + '" stroke-width="30" stroke-dasharray="' + seg.toFixed(1) + ' ' + (C - seg).toFixed(1) + '" stroke-dashoffset="' + (-off).toFixed(1) + '"/>';
+      var mid = (off + frac * C / 2) / C * 2 * Math.PI - Math.PI / 2;
+      off += frac * C;
+      var x = 50 + 57 * Math.cos(mid), y = 50 + 57 * Math.sin(mid);
+      x = Math.min(88, Math.max(12, x)); y = Math.min(93, Math.max(7, y));
+      pills += '<span class="pf-pill" style="left:' + x.toFixed(1) + '%;top:' + y.toFixed(1) + '%"><span class="pf-pill-dot" style="background:' + s.col + '">' + esc(s.initial) + '</span>' + fmtNum(frac * 100, 0) + '%</span>';
+    });
+    var center = isNum(dayPct)
+      ? '<text x="100" y="103" text-anchor="middle" class="pf-c-big ' + (dayPct >= 0 ? 'pf-c-up' : 'pf-c-dn') + '">' + fmtPct(dayPct) + '</text><text x="100" y="126" text-anchor="middle" class="pf-c-l">TODAY</text>'
+      : '<text x="100" y="103" text-anchor="middle" class="pf-c-v">' + fmtMoney(totVal, 0) + '</text><text x="100" y="126" text-anchor="middle" class="pf-c-l">TOTAL VALUE</text>';
+    chartHtml = '<div class="pf-donut"><svg viewBox="0 0 200 200" role="img" aria-label="Portfolio allocation chart"><g transform="rotate(-90 100 100)">' + circles + '</g>' + center + '</svg>' + pills + '</div>';
+  }
   var yld = (anyPx && totVal > 0) ? totInc / totVal * 100 : null;
   var totGain = totVal - totCost;
-  var chartHtml = '';
-  if (alloc.length && totVal > 0) {
-    var PF_COLORS = ['#F8C73D', '#5EB1EF', '#7BD88F', '#E879A6', '#B18CFF', '#FF9F68', '#4FD1C5', '#F6E05E', '#90A4C4', '#FF6B6B'];
-    alloc.sort(function (a, b) { return b.val - a.val; });
-    var C = 2 * Math.PI * 70, off = 0, circles = '', legend = '';
-    alloc.forEach(function (s, i) {
-      var frac = s.val / totVal;
-      var seg = Math.max(frac * C - 1.5, 0.5);
-      var col = PF_COLORS[i % PF_COLORS.length];
-      circles += '<circle cx="90" cy="90" r="70" fill="none" stroke="' + col + '" stroke-width="26" stroke-dasharray="' + seg.toFixed(1) + ' ' + (C - seg).toFixed(1) + '" stroke-dashoffset="' + (-off).toFixed(1) + '"/>';
-      off += frac * C;
-      legend += '<div class="pf-leg"><span class="pf-dot" style="background:' + col + '"></span>' + esc(s.ticker) + ' <b>' + fmtNum(frac * 100, 1) + '%</b> <span class="factor-note">' + fmtMoney(s.val, 0) + '</span></div>';
-    });
-    chartHtml = '<div class="pf-chart"><svg viewBox="0 0 180 180" role="img" aria-label="Portfolio allocation chart"><g transform="rotate(-90 90 90)">' + circles + '</g>' +
-      '<text x="90" y="88" text-anchor="middle" class="pf-c-v">' + fmtMoney(totVal, 0) + '</text>' +
-      '<text x="90" y="106" text-anchor="middle" class="pf-c-l">TOTAL VALUE</text></svg>' +
-      '<div class="pf-legend">' + legend + '</div></div>';
-  }
   sumBox.innerHTML = '<div class="card"><div class="pf-sum-v">' + (anyPx ? fmtMoney(totVal, 0) : '\u2014') + '</div>' +
     '<div class="wl-meta">Total value \u00b7 ' + positions.length + ' holding' + (positions.length === 1 ? '' : 's') + '</div>' +
     '<div class="pf-sum-row"><span>Est. dividends <b>' + fmtMoney(totInc, 0) + '/yr</b>' + (isNum(yld) ? ' \u00b7 ' + fmtNum(yld, 2) + '% yield' : '') + '</span>' +
