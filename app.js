@@ -1496,6 +1496,83 @@ function applyTheme(t) {
   }
 }
 
+/* ============================== ticker autocomplete ============================== */
+/* Suggestion dropdown for ticker inputs: type a company name ("apple",
+ * "sofi tech") or a partial ticker and pick the right symbol. Sources:
+ * Yahoo symbol search, falling back to Nasdaq's autocomplete — both ride
+ * the same relay race as the rest of the app. */
+async function tickerSuggestions(q) {
+  var query = String(q || '').trim();
+  if (query.length < 2) return [];
+  try {
+    var y = await relayJSON('https://query2.finance.yahoo.com/v1/finance/search?q=' + encodeURIComponent(query) + '&quotesCount=7&newsCount=0');
+    var yq = ((y && y.quotes) || []).filter(function (x) {
+      return x && x.symbol && (x.quoteType === 'EQUITY' || x.quoteType === 'ETF');
+    }).map(function (x) {
+      return { symbol: x.symbol, name: x.longname || x.shortname || '', exch: x.exchDisp || x.exchange || '' };
+    });
+    if (yq.length) return yq.slice(0, 7);
+  } catch (e) {}
+  try {
+    var n = await relayJSON('https://api.nasdaq.com/api/autocomplete/slookup/10?search=' + encodeURIComponent(query));
+    return ((n && n.data) || []).filter(function (x) {
+      return x && x.symbol && x.asset === 'STOCKS';
+    }).slice(0, 7).map(function (x) {
+      return { symbol: x.symbol, name: (x.name || '').replace(/\s+Common Stock$/i, ''), exch: x.exchange || '' };
+    });
+  } catch (e) {}
+  return [];
+}
+function attachAutocomplete(input, onPick) {
+  if (!input) return;
+  var list = document.createElement('div');
+  list.className = 'ac-list';
+  list.style.display = 'none';
+  document.body.appendChild(list);
+  var seq = 0, timer = null;
+  function hide() { list.style.display = 'none'; }
+  function place() {
+    var r = input.getBoundingClientRect();
+    list.style.left = r.left + 'px';
+    list.style.top = (r.bottom + 4) + 'px';
+    list.style.width = r.width + 'px';
+  }
+  function show(items) {
+    if (!items.length) { hide(); return; }
+    list.innerHTML = items.map(function (it) {
+      return '<button type="button" class="ac-item" data-sym="' + esc(it.symbol) + '">' +
+        '<span class="ac-sym">' + esc(it.symbol) + '</span>' +
+        '<span class="ac-name">' + esc(it.name) + (it.exch ? ' · ' + esc(it.exch) : '') + '</span></button>';
+    }).join('');
+    place();
+    list.style.display = 'block';
+    list.querySelectorAll('.ac-item').forEach(function (b) {
+      b.addEventListener('pointerdown', function (e) {
+        e.preventDefault();
+        var sym = b.getAttribute('data-sym');
+        input.value = sym;
+        hide();
+        input.blur();
+        if (onPick) onPick(sym);
+      });
+    });
+  }
+  input.addEventListener('input', function () {
+    var q = input.value;
+    var my = ++seq;
+    if (timer) clearTimeout(timer);
+    if (String(q).trim().length < 2) { hide(); return; }
+    timer = setTimeout(async function () {
+      var items = await tickerSuggestions(q);
+      if (my !== seq) return;
+      show(items);
+    }, 220);
+  });
+  input.addEventListener('blur', function () { setTimeout(hide, 180); });
+  input.addEventListener('keydown', function (e) { if (e.key === 'Escape') hide(); });
+  window.addEventListener('resize', function () { if (list.style.display !== 'none') place(); });
+}
+
 /* ============================== tabs & init ============================== */
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(function (s) { s.classList.toggle('active', s.id === 'tab-' + name); });
@@ -1511,6 +1588,13 @@ function initApp() {
     runSearch($('search-input').value);
     $('search-input').blur();
   });
+  attachAutocomplete($('search-input'), function (sym) { runSearch(sym); });
+  attachAutocomplete($('pj-ticker'), function () { loadProjectionTicker(); });
+  attachAutocomplete($('wl-ticker'), null);
+  attachAutocomplete($('cmp-1'), null);
+  attachAutocomplete($('cmp-2'), null);
+  attachAutocomplete($('cmp-3'), null);
+  attachAutocomplete($('j-ticker'), null);
   $('compare-form').addEventListener('submit', function (e) { e.preventDefault(); runCompare(); });
   $('pj-run').addEventListener('click', runProjection);
   $('pj-path').addEventListener('change', onPjPathEdit);
@@ -1613,5 +1697,5 @@ if (typeof document !== 'undefined' && document.getElementById) {
 }
 /* Node export for offline pipeline tests (ignored in the browser). */
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr, buildSwot: buildSwot };
+  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr, buildSwot: buildSwot, tickerSuggestions: tickerSuggestions };
 }
