@@ -1863,6 +1863,11 @@ function initApp() {
     $('btn-settings').setAttribute('aria-expanded', 'false');
     switchTab('glossary');
   });
+  $('menu-journal').addEventListener('click', function () {
+    settingsMenu.hidden = true;
+    $('btn-settings').setAttribute('aria-expanded', 'false');
+    switchTab('journal');
+  });
   $('btn-settings').addEventListener('click', function (e) {
     e.stopPropagation();
     var willOpen = settingsMenu.hidden;
