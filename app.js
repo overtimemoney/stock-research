@@ -1299,6 +1299,10 @@ async function renderWatchlist(refresh) {
       var sa = a.val ? a.val.score : -1, sb = b.val ? b.val.score : -1;
       return sb - sa;
     }
+    if (mode === 'valuation-asc') {
+      var sa2 = a.val ? a.val.score : 1000, sb2 = b.val ? b.val.score : 1000;
+      return sa2 - sb2;
+    }
     if (mode === 'target') {
       var da = (isNum(a.price) && isNum(a.item.target) && a.item.target > 0) ? (a.price / a.item.target - 1) : Infinity;
       var db = (isNum(b.price) && isNum(b.item.target) && b.item.target > 0) ? (b.price / b.item.target - 1) : Infinity;
@@ -1420,6 +1424,7 @@ async function renderPortfolio(doFetch) {
   var positions = getPortfolio();
   if (!positions.length) {
     sumBox.innerHTML = '';
+    var bb0 = $('pf-bench'); if (bb0) bb0.innerHTML = '';
     listBox.innerHTML = '<div class="card"><h3 style="margin-top:0">Nothing here yet</h3><p class="fineprint" style="margin:0">Add a stock you own above \u2014 the app asks how many shares you have and whether its dividends are reinvested \u2014 and it will track the value and dividend income here.</p></div>';
     if (status) status.textContent = '';
     return;
@@ -1581,6 +1586,7 @@ async function renderPortfolio(doFetch) {
       renderPortfolio(false);
     });
   });
+  renderBench(doFetch);
   listBox.querySelectorAll('[data-pf-research]').forEach(function (b) {
     b.addEventListener('click', function () { switchTab('scorecard'); $('search-input').value = b.getAttribute('data-pf-research'); runSearch(b.getAttribute('data-pf-research')); });
   });
@@ -1608,6 +1614,118 @@ async function renderPortfolio(doFetch) {
       renderPortfolio(false);
     });
   });
+}
+
+/* ============================== portfolio vs S&P 500 ============================== */
+/* Benchmark tracker: rebuilds the portfolio's daily value from the
+ * share counts entered (held constant) and races it against SPY.
+ * Price return only -- dividends are not in the lines. */
+var PF_HIST_KEY = 'sr_pfhist_v1';
+var PF_BENCH_KEY = 'sr_pfbench_v1';
+var pfBenchBusy = false;
+function pfHistAll() { return lsGet(PF_HIST_KEY, {}); }
+function pfBenchPeriod() { return lsGet(PF_BENCH_KEY, '1Y'); }
+function pfDkey(dt) { return dt.getFullYear() * 10000 + (dt.getMonth() + 1) * 100 + dt.getDate(); }
+
+async function fetchPfHist(T) {
+  var ch = await relayJSON('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(T) + '?range=1y&interval=1d');
+  var res = ch && ch.chart && ch.chart.result && ch.chart.result[0];
+  if (!res || !res.timestamp) throw new Error('no history');
+  var closes = (res.indicators && res.indicators.quote && res.indicators.quote[0].close) || [];
+  var pts = [];
+  res.timestamp.forEach(function (ts, i) {
+    if (isNum(closes[i])) pts.push([pfDkey(new Date(ts * 1000)), Math.round(closes[i] * 100) / 100]);
+  });
+  if (pts.length < 10) throw new Error('thin history');
+  return { ts: Date.now(), pts: pts };
+}
+
+function paintBench(box, hist, positions) {
+  var spy = hist['SPY'];
+  if (!spy || !spy.pts || spy.pts.length < 10) { box.innerHTML = ''; return; }
+  var period = pfBenchPeriod();
+  var days = period === '1M' ? 31 : period === '3M' ? 93 : period === '6M' ? 186 : 370;
+  var endKey = spy.pts[spy.pts.length - 1][0];
+  var endDt = new Date(Math.floor(endKey / 10000), Math.floor(endKey / 100) % 100 - 1, endKey % 100);
+  var cutDt = new Date(endDt); cutDt.setDate(cutDt.getDate() - days);
+  var cut = pfDkey(cutDt);
+  var win = spy.pts.filter(function (p) { return p[0] >= cut; });
+  if (win.length < 2) win = spy.pts.slice(-2);
+  var series = positions.map(function (p) {
+    var hh = hist[p.ticker];
+    return { shares: p.shares, pts: hh ? hh.pts : null, i: 0, last: null };
+  });
+  var missing = series.filter(function (s) { return !s.pts; }).length;
+  var pfVals = win.map(function (sp) {
+    var tot = 0, any = false;
+    series.forEach(function (s) {
+      if (!s.pts) return;
+      while (s.i < s.pts.length && s.pts[s.i][0] <= sp[0]) { s.last = s.pts[s.i][1]; s.i++; }
+      if (isNum(s.last)) { tot += s.shares * s.last; any = true; }
+    });
+    return any ? tot : null;
+  });
+  var k0 = pfVals.findIndex(function (v) { return isNum(v); });
+  if (k0 < 0 || win.length - k0 < 2) { box.innerHTML = ''; return; }
+  var pfIdx = [], spyIdx = [];
+  for (var k = k0; k < win.length; k++) {
+    pfIdx.push(pfVals[k] / pfVals[k0] * 100);
+    spyIdx.push(win[k][1] / win[k0][1] * 100);
+  }
+  var pfRet = pfIdx[pfIdx.length - 1] - 100, spyRet = spyIdx[spyIdx.length - 1] - 100;
+  var gap = pfRet - spyRet;
+  var all = pfIdx.concat(spyIdx);
+  var lo = Math.min.apply(null, all), hi = Math.max.apply(null, all), pad = (hi - lo) * 0.08 + 0.5;
+  lo -= pad; hi += pad;
+  function X(i) { return (6 + i / (pfIdx.length - 1) * 328).toFixed(1); }
+  function Y(v) { return (164 - (v - lo) / (hi - lo) * 158).toFixed(1); }
+  function line(arr) { return arr.map(function (v, i) { return X(i) + ',' + Y(v); }).join(' '); }
+  var chips = ['1M', '3M', '6M', '1Y'].map(function (p) {
+    return '<button type="button" data-bench="' + p + '"' + (p === period ? ' class="active"' : '') + '>' + p + '</button>';
+  }).join('');
+  box.innerHTML = '<div class="card">' +
+    '<div class="pf-bench-head"><span class="pf-bench-title">Portfolio vs S&amp;P 500</span>' +
+    '<span class="pf-bench-legend"><span><span class="pf-bench-dot" style="background:#F8C73D"></span>You</span><span><span class="pf-bench-dot" style="background:#61A5C2"></span>S&amp;P 500</span></span></div>' +
+    '<div class="seg pf-bench-seg" role="group" aria-label="Benchmark period">' + chips + '</div>' +
+    '<svg class="pf-bench-chart" viewBox="0 0 340 170" role="img" aria-label="Portfolio versus S&P 500 chart">' +
+    '<polyline points="' + line(spyIdx) + '" fill="none" stroke="#61A5C2" stroke-width="2" stroke-linejoin="round"/>' +
+    '<polyline points="' + line(pfIdx) + '" fill="none" stroke="#F8C73D" stroke-width="2.5" stroke-linejoin="round"/>' +
+    '<circle cx="' + X(pfIdx.length - 1) + '" cy="' + Y(pfIdx[pfIdx.length - 1]) + '" r="3.2" fill="#F8C73D"/>' +
+    '<circle cx="' + X(spyIdx.length - 1) + '" cy="' + Y(spyIdx[spyIdx.length - 1]) + '" r="3" fill="#61A5C2"/></svg>' +
+    '<div class="pf-bench-stats"><span>You <b class="' + (pfRet >= 0 ? 'up' : 'down') + '">' + fmtPct(pfRet) + '</b></span>' +
+    '<span>S&amp;P 500 <b class="' + (spyRet >= 0 ? 'up' : 'down') + '">' + fmtPct(spyRet) + '</b></span>' +
+    '<span>' + (gap >= 0 ? 'Ahead by' : 'Behind by') + ' <b class="' + (gap >= 0 ? 'up' : 'down') + '">' + fmtNum(Math.abs(gap), 1) + ' pts</b></span></div>' +
+    '<p class="fineprint" style="margin:8px 0 0">Both lines start at 100. Your line is rebuilt from the share counts you entered, held constant over the period -- price return only, dividends not included. S&amp;P 500 tracked via SPY.' +
+    (missing ? ' ' + missing + ' holding(s) without a price history are left out.' : '') + '</p></div>';
+  box.querySelectorAll('[data-bench]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      lsSet(PF_BENCH_KEY, b.getAttribute('data-bench'));
+      paintBench(box, pfHistAll(), getPortfolio());
+    });
+  });
+}
+
+async function renderBench(force) {
+  var box = $('pf-bench');
+  if (!box) return;
+  var positions = getPortfolio();
+  if (!positions.length) { box.innerHTML = ''; return; }
+  var hist = pfHistAll();
+  paintBench(box, hist, positions);
+  var need = ['SPY'].concat(positions.map(function (p) { return p.ticker; }));
+  var stale = need.some(function (t) { var hh = hist[t]; return !hh || (Date.now() - hh.ts > 12 * 3600 * 1000); });
+  if ((force || stale) && !pfBenchBusy) {
+    pfBenchBusy = true;
+    if (!hist['SPY']) box.innerHTML = '<div class="card"><span class="spinner"></span>Loading the S&amp;P 500 comparison\u2026</div>';
+    var updated = {};
+    Object.keys(hist).forEach(function (k) { updated[k] = hist[k]; });
+    await Promise.all(need.map(async function (t) {
+      try { updated[t] = await fetchPfHist(t); } catch (e) {}
+    }));
+    lsSet(PF_HIST_KEY, updated);
+    pfBenchBusy = false;
+    paintBench(box, pfHistAll(), getPortfolio());
+  }
 }
 
 /* ============================== journal ============================== */

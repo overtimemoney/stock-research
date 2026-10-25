@@ -391,3 +391,12 @@ table.scen td { padding: 8px 6px; }
 .pf-add-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; background: none; border: none; color: inherit; font: inherit; font-size: 16.5px; font-weight: 900; text-align: left; padding: 0; cursor: pointer; }
 .pf-add-card.open .pf-chev { transform: rotate(180deg); }
 #pf-add-body { margin-top: 12px; }
+
+/* ---------- portfolio vs S&P 500 ---------- */
+.pf-bench-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.pf-bench-title { font-size: 16.5px; font-weight: 900; }
+.pf-bench-legend { font-size: 12px; font-weight: 700; color: var(--muted); display: flex; gap: 12px; }
+.pf-bench-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+.pf-bench-seg { margin: 10px 0 6px; }
+.pf-bench-chart { width: 100%; height: auto; display: block; }
+.pf-bench-stats { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 14px; font-weight: 700; margin-top: 8px; }

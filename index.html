@@ -147,6 +147,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
           <select id="wl-sort" aria-label="Sort watchlist">
             <option value="added">Date added</option>
             <option value="valuation">Valuation: high → low</option>
+            <option value="valuation-asc">Valuation: low → high</option>
             <option value="target">Closest to target</option>
             <option value="ticker">Ticker A–Z</option>
           </select>
@@ -162,6 +163,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
   <section id="tab-portfolio" class="tab">
     <h2 class="tab-title">Port<span class="gold-text">folio</span></h2>
     <div id="pf-summary"></div>
+    <div id="pf-bench"></div>
     <div class="card pf-add-card">
       <button id="pf-add-toggle" class="pf-add-head" type="button" aria-expanded="false"><span>Add a holding</span><span class="pf-chev">▾</span></button>
       <div id="pf-add-body" hidden>
