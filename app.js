@@ -1489,9 +1489,7 @@ async function renderPortfolio(doFetch) {
       x = Math.min(86, Math.max(14, x)); y = Math.min(92, Math.max(8, y));
       pills += '<span class="pf-pill" style="left:' + x.toFixed(1) + '%;top:' + y.toFixed(1) + '%"><span class="pf-pill-dot" style="background:' + s.col + '">' + esc(s.initial) + (s.label !== 'Other' ? pfLogoImg(s.label) : '') + '</span>' + fmtNum(frac * 100, 0) + '%</span>';
     });
-    var center = isNum(dayPct)
-      ? '<text x="100" y="103" text-anchor="middle" class="pf-c-big ' + (dayPct >= 0 ? 'pf-c-up' : 'pf-c-dn') + '">' + fmtPct(dayPct) + '</text><text x="100" y="126" text-anchor="middle" class="pf-c-l">TODAY</text>'
-      : '<text x="100" y="103" text-anchor="middle" class="pf-c-v">' + fmtMoney(totVal, 0) + '</text><text x="100" y="126" text-anchor="middle" class="pf-c-l">TOTAL VALUE</text>';
+    var center = '<text x="100" y="103" text-anchor="middle" class="pf-c-v">' + fmtMoney(totVal, 0) + '</text><text x="100" y="126" text-anchor="middle" class="pf-c-l">TOTAL VALUE</text>';
     chartHtml = '<div class="pf-donut"><svg viewBox="0 0 200 200" role="img" aria-label="Portfolio allocation chart"><g transform="rotate(-90 100 100)">' + circles + '</g>' + center + '</svg>' + pills + '</div>';
   }
   var yld = (anyPx && totVal > 0) ? totInc / totVal * 100 : null;
