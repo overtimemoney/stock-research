@@ -149,6 +149,17 @@ function finvizPctBelowHigh(pairs) {
   return hi; // caller falls back to price math if this looks like a price
 }
 
+/* "$63.34B" / "$890M" style strings to plain numbers. */
+function parseRevStr(s) {
+  if (!s) return null;
+  var m = String(s).replace(/[$,]/g, '').trim().match(/^([\d.]+)\s*([BMK])?$/i);
+  if (!m) return null;
+  var v = parseFloat(m[1]);
+  if (!isNum(v)) return null;
+  var u = (m[2] || '').toUpperCase();
+  return u === 'B' ? v * 1e9 : u === 'M' ? v * 1e6 : u === 'K' ? v * 1e3 : v;
+}
+
 /* MarketBeat earnings page: the history table with Consensus Estimate vs
  * Reported EPS per quarter (newest first). Their free table carries the
  * last ~8-9 quarters — the deepest EPS-surprise history fetchable without
@@ -166,7 +177,10 @@ function parseMBEarnings(html) {
         var consensus = parseNum(cells[2]);
         var reported = parseNum(cells[3]);
         if (isNum(consensus) && isNum(reported)) {
-          rows.push({ date: cells[0], quarter: cells[1], consensus: consensus, reported: reported });
+          rows.push({
+            date: cells[0], quarter: cells[1], consensus: consensus, reported: reported,
+            rev: cells.length >= 8 ? parseRevStr(cells[7]) : null
+          });
         }
       }
     }
@@ -317,6 +331,11 @@ async function fetchStock(ticker, opts) {
     if (rows.length >= 4) {
       d.epsRecord = epsRecordStats(rows);
       d.sources.push('MarketBeat');
+    }
+    // Latest quarter's revenue growth: newest quarter vs the same
+    // quarter a year earlier (4 rows back in the newest-first table).
+    if (rows.length >= 5 && isNum(rows[0].rev) && isNum(rows[4].rev) && rows[4].rev > 0) {
+      d.revGrowthQtr = (rows[0].rev / rows[4].rev - 1) * 100;
     }
   } catch (e) { d.errors.push('EPS history: ' + e.message); } };
 
@@ -593,7 +612,10 @@ function renderScorecard(d) {
     html += kvItem('EPS miss rate · last ' + d.epsRecord.n + ' qtrs', d.epsRecord.missPct + '%');
     html += kvItem('EPS beat rate · last ' + d.epsRecord.n + ' qtrs', d.epsRecord.beatPct + '%');
   }
-  html += kvItem('Revenue growth', isNum(d.salesGrowthTTM) ? fmtPct(d.salesGrowthTTM) : '—');
+  html += kvItem('Revenue growth (TTM)', isNum(d.salesGrowthTTM) ? fmtPct(d.salesGrowthTTM) : '—');
+  if (isNum(d.revGrowthQtr)) {
+    html += kvItem('Revenue growth (latest qtr)', fmtPct(d.revGrowthQtr));
+  }
   html += kvItem('Gross margin', isNum(d.grossMargin) ? fmtNum(d.grossMargin, 1) + '%' : '—');
   html += kvItem('Operating margin', isNum(d.operMargin) ? fmtNum(d.operMargin, 1) + '%' : '—');
   html += kvItem('Profit margin', isNum(d.profitMargin) ? fmtNum(d.profitMargin, 1) + '%' : '—');
@@ -1124,7 +1146,24 @@ var GLOSSARY = [
   ['Moat', 'A durable advantage that keeps competitors from eating the business — brand, network effects, patents, switching costs. Wide moat = pricing power that lasts.'],
   ['CAGR', 'Compound annual growth rate: the smooth yearly rate that gets you from start to finish. Used for earnings growth assumptions and investment returns.'],
   ['Dividend yield', 'Yearly dividends divided by price. A 3% yield pays you 3% of your money back each year, before any price movement.'],
-  ['Analyst target', 'The average price analysts expect within ~12 months. Treat as a sentiment gauge, not a promise — targets chase prices as often as they predict them.']
+  ['Analyst target', 'The average price analysts expect within ~12 months. Treat as a sentiment gauge, not a promise — targets chase prices as often as they predict them.'],
+  ['TTM (trailing twelve months)', 'The last four reported quarters added together. TTM numbers are actual results, not estimates — but they blend old and new quarters, so they react slowly when a business speeds up or slows down.'],
+  ['YoY (year over year)', 'This quarter (or year) compared with the same one a year earlier. The standard way growth is quoted, because it cancels out seasonal patterns like holiday sales.'],
+  ['Consensus estimate', 'The average of all analysts\' forecasts for a number like EPS or revenue. It is the bar a company has to clear on earnings day — the stock often moves on whether the report beat or missed this, not on the raw number.'],
+  ['Earnings surprise', 'Reported EPS minus the consensus estimate, usually as a %. Positive = a "beat", negative = a "miss". The app\'s miss and beat rates count how often each happened over the last several quarters.'],
+  ['Adjusted (non-GAAP) EPS', 'Earnings with one-time items (lawsuits, restructuring, big write-downs) stripped out. This is the EPS analysts estimate and headlines quote. GAAP EPS follows the strict accounting rules and can look very different in a messy quarter.'],
+  ['Guidance', 'The company\'s own forecast for the coming quarter or year, given by management. Stocks often move more on guidance than on the results just reported — the market trades the future, not the past.'],
+  ['Fiscal year', 'A company\'s own 12-month reporting calendar. It often matches the calendar year, but not always — Walmart\'s fiscal 2026 ends in January 2026, for example. The FY labels in the Projection Builder refer to it.'],
+  ['Cyclical', 'A business whose earnings rise and fall with an economic cycle — memory chips, steel, airlines, hotels. Cyclicals look cheapest at peak earnings, which is exactly when they are most dangerous.'],
+  ['Value trap', 'A stock that looks cheap (low P/E, big drop from its high) because the business or its earnings are about to get worse. The discount is the market being right, not wrong.'],
+  ['Margin of safety', 'The gap between what you pay and what you think a stock is worth. The wider it is, the more wrong you can afford to be. Your value screen hunts for it; it does not guarantee it.'],
+  ['Exit P/E (exit multiple)', 'The P/E you assume the market will pay for a stock when you sell it in the future. The Projection Builder multiplies future EPS by this to get the implied price — small changes here swing the answer a lot.'],
+  ['Bear / Base / Bull case', 'Three versions of the same forecast: pessimistic, most likely, optimistic. In the Projection Builder they are your EPS path with growth shifted down 5 points, as-is, and up 5 points (plus a small exit P/E adjustment).'],
+  ['Implied price', 'The future price a projection works out to: future EPS × exit P/E. It is an "if these assumptions hold" number, not a prediction.'],
+  ['Enterprise value', 'Market cap plus total debt minus cash. The cost of buying the whole business outright, debts and all. Better than market cap for comparing companies with very different borrowing.'],
+  ['Buyback', 'When a company repurchases its own shares. Fewer shares means each remaining share owns a bigger slice of the profit, so EPS rises even if total profit doesn\'t.'],
+  ['Dilution', 'The opposite of a buyback: the company issues more shares (often to pay employees in stock), so each share owns a smaller slice. Profit can grow while EPS shrinks.'],
+  ['Drawdown', 'The fall from a peak. A stock 43.6% below its 52-week high is in a 43.6% drawdown from that high — deep enough to be opportunity or warning, which is what the research is for.']
 ];
 function renderGlossary(filter) {
   var f = (filter || '').toLowerCase();
@@ -1254,5 +1293,5 @@ if (typeof document !== 'undefined' && document.getElementById) {
 }
 /* Node export for offline pipeline tests (ignored in the browser). */
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats };
+  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr };
 }
