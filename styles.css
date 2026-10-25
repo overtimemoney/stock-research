@@ -218,3 +218,16 @@ table.scen td { padding: 8px 6px; }
 .pj-yrow { display: grid; grid-template-columns: 62px 1fr 1fr; gap: 8px; align-items: end; margin-bottom: 6px; }
 .pj-yrow .pj-ylab { font-size: 13.5px; font-weight: 800; color: var(--ink); padding-bottom: 11px; }
 .pj-yrow label { margin: 0; }
+
+/* SWOT grid (auto-generated from scorecard numbers) */
+.swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 6px 0 4px; }
+.swot-box { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.swot-box h5 { margin: 0 0 6px; font-size: 13px; display: flex; align-items: center; gap: 7px; }
+.swot-box ul { margin: 0; padding-left: 16px; }
+.swot-box li { font-size: 12.5px; line-height: 1.45; margin: 3px 0; color: #44403a; }
+.swot-badge { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 6px; font-size: 12px; font-weight: 700; color: #fff; }
+.sw-s { background: #f0f7ea; } .sw-s .swot-badge { background: #5b8a3c; }
+.sw-w { background: #fbf0ef; } .sw-w .swot-badge { background: #b04a44; }
+.sw-o { background: #edf3fa; } .sw-o .swot-badge { background: #3d6a99; }
+.sw-t { background: #fdf6e3; } .sw-t .swot-badge { background: #a97e14; }
+@media (max-width: 640px) { .swot-grid { grid-template-columns: 1fr; } }

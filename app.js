@@ -566,6 +566,73 @@ function lineChartSVG(closes, high52, w, h) {
 var lastStock = null;
 function kvItem(k, v) { return '<div class="kv-item"><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + '</div></div>'; }
 
+/* ============================== SWOT (auto) ============================== */
+/* A SWOT built from the numbers already on the scorecard — every bullet
+ * cites the metric behind it. It reads figures, not news: company-specific
+ * events (lawsuits, new rivals, regulation) can't appear here. */
+function buildSwot(d) {
+  var S = [], W = [], O = [], T = [];
+  var sc = scoreStock(d);
+  var traj = epsTrajectory(d);
+  var pts = traj.points;
+  // Implied growth between consecutive EPS points (TTM -> forecasts).
+  var gs = [];
+  for (var i = 1; i < pts.length; i++) {
+    if (isNum(pts[i - 1].eps) && isNum(pts[i].eps) && pts[i - 1].eps > 0) {
+      gs.push((pts[i].eps / pts[i - 1].eps - 1) * 100);
+    }
+  }
+  // Strengths
+  if (isNum(d.grossMargin) && d.grossMargin >= 50) S.push('Gross margin ' + fmtNum(d.grossMargin, 1) + '% — real pricing power; customers aren\'t buying on price alone.');
+  if (isNum(d.roe) && d.roe >= 20) S.push('ROE ' + fmtNum(d.roe, 1) + '% — owners\' capital is working hard.');
+  if (isNum(d.operMargin) && d.operMargin >= 20) S.push('Operating margin ' + fmtNum(d.operMargin, 1) + '% — the core business is solidly profitable.');
+  var bestRev = Math.max(isNum(d.salesGrowthTTM) ? d.salesGrowthTTM : -Infinity, isNum(d.revGrowthQtr) ? d.revGrowthQtr : -Infinity);
+  if (bestRev >= 15) S.push('Revenue growing ' + fmtPct(bestRev) + ' — demand is expanding, not just prices rising.');
+  if (d.epsRecord && d.epsRecord.n >= 6 && d.epsRecord.beatPct >= 75) S.push('Beats EPS estimates ' + d.epsRecord.beatPct + '% of the time (last ' + d.epsRecord.n + ' quarters) — management tends to deliver.');
+  if (isNum(d.debtEq) && d.debtEq <= 0.5) S.push('Light debt load (Debt/Equity ' + fmtNum(d.debtEq, 2) + ') — room to weather a downturn.');
+  if (isNum(d.divYield) && d.divYield >= 2) S.push('Pays a ' + fmtNum(d.divYield, 2) + '% dividend — cash back while you wait.');
+  if (isNum(d.marketCap) && d.marketCap >= 1e11) S.push('Large, established company (' + fmtCap(d.marketCap) + ' market cap) — liquid and widely followed.');
+  // Weaknesses
+  if (isNum(d.profitMargin) && d.profitMargin < 0) W.push('Currently unprofitable — net margin ' + fmtNum(d.profitMargin, 1) + '%.');
+  if (isNum(d.debtEq) && d.debtEq >= 2) W.push('Heavy debt load (Debt/Equity ' + fmtNum(d.debtEq, 2) + ') — interest eats flexibility, and refinancing risk is real if rates stay high.');
+  if (isNum(d.grossMargin) && d.grossMargin < 20) W.push('Thin gross margin ' + fmtNum(d.grossMargin, 1) + '% — little pricing power; cost rises land straight on profit.');
+  if (isNum(d.epsGrowthTTM) && d.epsGrowthTTM < 0) W.push('EPS shrank ' + fmtPct(d.epsGrowthTTM) + ' over the last year.');
+  if (isNum(d.revGrowthQtr) && d.revGrowthQtr < 0) W.push('Revenue fell ' + fmtPct(d.revGrowthQtr) + ' in the latest quarter vs a year earlier.');
+  else if (isNum(d.salesGrowthTTM) && d.salesGrowthTTM < 3) W.push('Revenue barely growing — ' + fmtPct(d.salesGrowthTTM) + ' over the last year.');
+  if (d.epsRecord && d.epsRecord.n >= 4 && d.epsRecord.missPct >= 40) W.push('Misses EPS estimates ' + d.epsRecord.missPct + '% of the time (last ' + d.epsRecord.n + ' quarters) — forecasts here are unreliable.');
+  if (isNum(d.beta) && d.beta >= 1.8) W.push('Beta ' + fmtNum(d.beta, 2) + ' — swings roughly ' + fmtNum(d.beta, 1) + '× the market, both ways. Position size matters.');
+  // Opportunities
+  if (isNum(d.pctBelowHigh) && d.pctBelowHigh >= 25 && sc.score != null && sc.score >= 55) O.push(fmtNum(d.pctBelowHigh, 1) + '% below its 52-week high while the scorecard still rates it ' + sc.score + '/100 — a possible price dislocation.');
+  if (isNum(d.target1Y) && isNum(d.price) && d.price > 0 && d.target1Y > d.price * 1.1) O.push('Analysts\' 1-yr target (' + fmtMoney(d.target1Y) + ') implies ' + fmtPct((d.target1Y / d.price - 1) * 100) + ' upside from here.');
+  if (gs.length >= 2) {
+    var avgG = gs.reduce(function (a, b) { return a + b; }, 0) / gs.length;
+    if (avgG >= 15) O.push('Consensus sees EPS compounding ~' + fmtNum(avgG, 0) + '%/yr (' + pts[0].label + ' ' + fmtNum(pts[0].eps) + ' → ' + pts[pts.length - 1].label + ' ' + fmtNum(pts[pts.length - 1].eps) + ').');
+  }
+  if (isNum(d.peg) && d.peg < 1 && isNum(d.epsGrowth5Y) && d.epsGrowth5Y >= 10) O.push('PEG ' + fmtNum(d.peg, 2) + ' — the market isn\'t fully pricing the expected ~' + fmtNum(d.epsGrowth5Y, 0) + '%/yr growth.');
+  if (isNum(d.revGrowthQtr) && isNum(d.salesGrowthTTM) && d.revGrowthQtr > d.salesGrowthTTM + 3) O.push('Revenue growth is accelerating — latest quarter ' + fmtPct(d.revGrowthQtr) + ' vs ' + fmtPct(d.salesGrowthTTM) + ' trailing.');
+  // Threats
+  var peak = -Infinity, peakLabel = '', cliff = null;
+  for (var j = 0; j < pts.length; j++) {
+    if (isNum(pts[j].eps) && pts[j].eps > peak) { peak = pts[j].eps; peakLabel = pts[j].label; }
+    else if (peak > 0 && isNum(pts[j].eps) && pts[j].eps < peak * 0.90) { cliff = pts[j]; break; }
+  }
+  if (cliff) T.push('Earnings cliff in consensus — EPS peaks at ' + fmtNum(peak) + ' (' + peakLabel + '), then falls to ' + fmtNum(cliff.eps) + ' by ' + cliff.label + '.');
+  else if (pts.length >= 2 && isNum(pts[1].eps) && isNum(pts[0].eps) && pts[1].eps < pts[0].eps) T.push('Consensus expects EPS to fall next year (' + fmtNum(pts[0].eps) + ' → ' + fmtNum(pts[1].eps) + ').');
+  if (isNum(d.revGrowthQtr) && isNum(d.salesGrowthTTM) && d.revGrowthQtr < d.salesGrowthTTM - 3) T.push('Revenue growth is decelerating — latest quarter ' + fmtPct(d.revGrowthQtr) + ' vs ' + fmtPct(d.salesGrowthTTM) + ' trailing.');
+  if (isNum(d.epsGrowthTTM) && d.epsGrowthTTM >= 60 && isNum(d.forwardPE) && d.forwardPE <= 12) T.push('Earnings look cyclically hot — EPS up ' + fmtPct(d.epsGrowthTTM) + ' in a year rarely lasts, and peak earnings make the P/E look deceptively cheap.');
+  if (isNum(d.forwardPE) && d.forwardPE >= 35) T.push('Rich valuation (forward P/E ' + fmtNum(d.forwardPE, 1) + ') — priced for perfection; any miss hurts.');
+  if (isNum(d.peg) && d.peg >= 2) T.push('PEG ' + fmtNum(d.peg, 2) + ' — paying a lot for the growth that\'s expected.');
+  if (isNum(d.pctBelowHigh) && d.pctBelowHigh >= 45) T.push('Down ' + fmtNum(d.pctBelowHigh, 1) + '% from its 52-week high — a fall that deep can signal structural problems, not just a sale.');
+  var cap4 = function (a) { return a.slice(0, 4); };
+  return { S: cap4(S), W: cap4(W), O: cap4(O), T: cap4(T) };
+}
+function swotBox(letter, title, items, cls) {
+  var lis = items.length
+    ? items.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('')
+    : '<li>Nothing stands out in the data.</li>';
+  return '<div class="swot-box ' + cls + '"><h5><span class="swot-badge">' + letter + '</span>' + esc(title) + '</h5><ul>' + lis + '</ul></div>';
+}
+
 function renderScorecard(d) {
   lastStock = d;
   var sc = scoreStock(d);
@@ -642,6 +709,13 @@ function renderScorecard(d) {
   } else {
     html += '<p class="fineprint">Not enough EPS data came back to run the cliff check for this ticker.</p>';
   }
+
+  var swot = buildSwot(d);
+  html += '<div class="section-h">SWOT — <span class="gold-text">from the numbers</span></div>';
+  html += '<div class="swot-grid">' +
+    swotBox('S', 'Strengths', swot.S, 'sw-s') + swotBox('W', 'Weaknesses', swot.W, 'sw-w') +
+    swotBox('O', 'Opportunities', swot.O, 'sw-o') + swotBox('T', 'Threats', swot.T, 'sw-t') + '</div>';
+  html += '<p class="fineprint">Auto-generated from the figures on this page — it reads the numbers, not the news, so company-specific events (lawsuits, new rivals, regulation) won\'t show up here.</p>';
 
   if (d.history && d.history.length >= 2) {
     html += '<div class="section-h">Price — <span class="gold-text">1 year</span></div><div class="chart-wrap">' + lineChartSVG(d.history, d.high52) + '</div>';
@@ -1299,5 +1373,5 @@ if (typeof document !== 'undefined' && document.getElementById) {
 }
 /* Node export for offline pipeline tests (ignored in the browser). */
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr };
+  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr, buildSwot: buildSwot };
 }
