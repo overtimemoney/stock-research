@@ -1508,19 +1508,27 @@ async function renderPortfolio(doFetch) {
         pfKv('Dividends', p.drip ? 'Reinvested (DRIP)' : 'Paid as cash') +
         (function () {
           var hh = pfHistAll()[p.ticker];
-          var buysHtml = '';
+          var buysHtml = '', headExtra = '';
           if (p.buys && p.buys.length) {
+            var logged2 = 0;
             buysHtml = p.buys.map(function (b, bi) {
+              logged2 += b.sh;
               var bk = pfDkey(new Date(b.d + 'T12:00:00'));
               var pxTxt = '';
               if (hh) { for (var z = 0; z < hh.pts.length; z++) { if (hh.pts[z][0] <= bk) pxTxt = ' @ ' + fmtMoney(hh.pts[z][1]); else break; } }
               return '<div class="pf-buy-row"><span>' + esc(b.d) + '</span><span>' + fmtShares(b.sh) + ' shares' + pxTxt + '</span><button class="link-btn danger pf-buy-del" data-pf-buydel="' + esc(p.ticker) + '|' + bi + '">\u2715</button></div>';
             }).join('');
+            headExtra = ' <span class="pf-buys-n">' + fmtShares(Math.min(logged2, p.shares)) + ' / ' + fmtShares(p.shares) + ' shares logged</span>';
+            var rem2 = p.shares - logged2;
+            if (rem2 > 0.0001) {
+              var ek3 = (isNum(p.cost) && hh) ? pfEstBuyKey(hh.pts, p.cost) : null;
+              buysHtml += '<div class="pf-buy-row"><span>Remaining</span><span>' + fmtShares(rem2) + ' shares \u2014 ' + (ek3 ? 'est. ' + pfFmtDate(ek3) + ' (from avg cost)' : 'dated with your earliest purchase') + '</span></div>';
+            }
           } else if (isNum(p.cost) && hh) {
             var ek = pfEstBuyKey(hh.pts, p.cost);
             if (ek) buysHtml = '<div class="pf-buy-row"><span>Est. purchase</span><span>' + pfFmtDate(ek) + ' (from your avg cost)</span></div>';
           }
-          return '<div class="pf-buys"><div class="pf-buys-h"><span>Purchases</span><button class="link-btn" data-pf-buyadd="' + esc(p.ticker) + '">\uff0b Add purchase</button></div>' + buysHtml + '</div>';
+          return '<div class="pf-buys"><div class="pf-buys-h"><span>Purchases' + headExtra + '</span><button class="link-btn" data-pf-buyadd="' + esc(p.ticker) + '">\uff0b Add purchase</button></div>' + buysHtml + '</div>';
         })() +
         (isNum(r.inc) ? pfKv('Est. dividend income', '\u2248 ' + fmtMoney(r.inc, 0) + '/yr') : '') +
         (p.drip && isNum(r.inc) && isNum(r.px) && r.px > 0 ? pfKv('DRIP buys', '\u2248 ' + fmtShares(r.inc / r.px) + ' shares/yr') : '') +
@@ -1647,6 +1655,11 @@ async function renderPortfolio(doFetch) {
       var pf = getPortfolio();
       var pos = pf.filter(function (x) { return x.ticker === T; })[0];
       if (!pos) return;
+      var logged = (pos.buys || []).reduce(function (a2, b2) { return a2 + b2.sh; }, 0);
+      if (logged + sh > pos.shares + 1e-9) {
+        window.alert('That would make ' + fmtShares(logged + sh) + ' shares purchased, but you only hold ' + fmtShares(pos.shares) + ' of ' + T + '. Enter fewer shares, or bump your share count first with Edit.');
+        return;
+      }
       if (!pos.buys) pos.buys = [];
       pos.buys.push({ d: d, sh: sh });
       pos.buys.sort(function (x, y) { return x.d < y.d ? -1 : 1; });
@@ -1678,6 +1691,11 @@ async function renderPortfolio(doFetch) {
       if (c !== null) { var nc = parseFloat(c); pos.cost = isNum(nc) ? nc : null; }
       var dr = window.prompt('Are dividends reinvested for ' + T + '? Type yes or no:', pos.drip ? 'yes' : 'no');
       if (dr !== null) pos.drip = /^y/i.test(String(dr).trim());
+      var bt = (pos.buys || []).reduce(function (a3, b3) { return a3 + b3.sh; }, 0);
+      if (bt > pos.shares + 1e-9) {
+        window.alert('Your logged purchases for ' + T + ' add up to ' + fmtShares(bt) + ' shares, more than the ' + fmtShares(pos.shares) + ' you entered here. Remove some purchases first, or enter a higher share count. Nothing was changed.');
+        return;
+      }
       setPortfolio(pf);
       renderPortfolio(false);
     });
@@ -1750,12 +1768,22 @@ function paintBench(box, hist, positions) {
     var hh = hist[p.ticker];
     if (p.buys && p.buys.length) {
       if (!hh) { excluded++; return; }
-      p.buys.forEach(function (b) {
+      var room = p.shares, firstD = null;
+      p.buys.slice().sort(function (x, y) { return x.d < y.d ? -1 : 1; }).forEach(function (b) {
+        if (room <= 0) return;
+        var take = Math.min(b.sh, room);
         var bd = pfDkey(new Date(b.d + 'T12:00:00'));
+        if (firstD === null) firstD = bd;
         var bp = priceAt(hh.pts, bd);
-        lots.push({ d: bd, t: p.ticker, sh: b.sh, amt: isNum(bp) ? b.sh * bp : (isNum(p.cost) ? b.sh * p.cost : 0), pre: bd < w0 });
+        lots.push({ d: bd, t: p.ticker, sh: take, amt: isNum(bp) ? take * bp : (isNum(p.cost) ? take * p.cost : 0), pre: bd < w0 });
+        room -= take;
       });
       manualUsed++;
+      if (room > 0) {
+        var ek2 = isNum(p.cost) ? pfEstBuyKey(hh.pts, p.cost) : null;
+        if (ek2) { lots.push({ d: ek2, t: p.ticker, sh: room, amt: room * p.cost, pre: ek2 < w0 }); estUsed++; }
+        else if (firstD !== null) { var fp = priceAt(hh.pts, firstD); lots.push({ d: firstD, t: p.ticker, sh: room, amt: isNum(fp) ? room * fp : 0, pre: firstD < w0 }); }
+      }
     } else if (isNum(p.cost) && hh) {
       var ek = pfEstBuyKey(hh.pts, p.cost);
       if (ek) { lots.push({ d: ek, t: p.ticker, sh: p.shares, amt: p.shares * p.cost, pre: ek < w0 }); estUsed++; }
