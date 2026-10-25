@@ -1354,6 +1354,115 @@ async function renderWatchlist(refresh) {
 }
 
 
+/* ============================== portfolio ============================== */
+/* Manual holdings tracker. The app asks how many shares are owned and
+ * whether dividends are reinvested (DRIP); average cost is optional and
+ * powers the gain/loss figures. Prices and dividend yields come from the
+ * same light Finviz pass the watchlist valuation uses, and the last
+ * known quotes are cached so the tab paints instantly. */
+var PF_KEY = 'sr_portfolio_v1';
+var PF_PX_KEY = 'sr_pfpx_v1';
+var pfFetchedOnce = false;
+function getPortfolio() { return lsGet(PF_KEY, []); }
+function setPortfolio(p) { lsSet(PF_KEY, p); }
+function pfQuotes() { return lsGet(PF_PX_KEY, {}); }
+function fmtShares(v) { return isNum(v) ? String(parseFloat(v.toFixed(4))) : '—'; }
+
+async function fetchPfQuote(T) {
+  var html = await relayFetch('https://finviz.com/quote.ashx?t=' + encodeURIComponent(T));
+  var d = { ticker: T, sources: [], errors: [] };
+  fillFromFinviz(d, html);
+  if (!isNum(d.price)) throw new Error('no price');
+  var chg = d.sourceFinviz ? parseNum(d.sourceFinviz['Change']) : null;
+  return { price: d.price, divYield: isNum(d.divYield) ? d.divYield : null,
+           dayChg: isNum(chg) ? chg : null, ts: Date.now() };
+}
+
+async function renderPortfolio(doFetch) {
+  var listBox = $('pf-list'), sumBox = $('pf-summary'), status = $('pf-status');
+  if (!listBox || !sumBox) return;
+  var positions = getPortfolio();
+  if (!positions.length) {
+    sumBox.innerHTML = '';
+    listBox.innerHTML = '<div class="card"><h3 style="margin-top:0">Nothing here yet</h3><p class="fineprint" style="margin:0">Add a stock you own above — the app asks how many shares you have and whether its dividends are reinvested — and it will track the value and dividend income here.</p></div>';
+    if (status) status.textContent = '';
+    return;
+  }
+  if (doFetch) {
+    if (status) status.innerHTML = '<span class="spinner"></span>Fetching live prices\u2026';
+    var quotes = pfQuotes();
+    await Promise.all(positions.map(async function (p) {
+      try { quotes[p.ticker] = await fetchPfQuote(p.ticker); } catch (e) {}
+    }));
+    lsSet(PF_PX_KEY, quotes);
+    pfFetchedOnce = true;
+    if (status) status.textContent = '';
+  }
+  var q = pfQuotes();
+  var totVal = 0, totInc = 0, totCost = 0, anyPx = false, anyCost = false;
+  var html = '';
+  positions.forEach(function (p) {
+    var qt = q[p.ticker] || {};
+    var px = isNum(qt.price) ? qt.price : null;
+    var val = isNum(px) ? px * p.shares : null;
+    if (isNum(val)) { totVal += val; anyPx = true; }
+    var inc = (isNum(val) && isNum(qt.divYield)) ? val * qt.divYield / 100 : null;
+    if (isNum(inc)) totInc += inc;
+    var costTot = isNum(p.cost) ? p.cost * p.shares : null;
+    if (isNum(costTot)) { totCost += costTot; anyCost = true; }
+    var gain = (isNum(val) && isNum(costTot)) ? val - costTot : null;
+    var gainPct = (isNum(gain) && costTot > 0) ? gain / costTot * 100 : null;
+    html += '<div class="wl-row"><div class="wl-left"><span class="wl-t">' + esc(p.ticker) + '</span>' +
+      '<div class="wl-meta">' + fmtShares(p.shares) + ' shares' + (isNum(p.cost) ? ' \u00b7 avg cost ' + fmtMoney(p.cost) : '') + '</div>' +
+      '<div class="wl-meta">' + (p.drip ? 'Dividends reinvested (DRIP)' : 'Dividends paid as cash') +
+        (isNum(inc) ? ' \u00b7 \u2248 ' + fmtMoney(inc, 0) + '/yr income' : '') + '</div>' +
+      (isNum(gain) ? '<div class="wl-meta">Gain/loss <b class="' + (gain >= 0 ? 'up' : 'down') + '">' + (gain >= 0 ? '+' : '') + fmtMoney(gain, 0) + (isNum(gainPct) ? ' (' + fmtPct(gainPct) + ')' : '') + '</b></div>' : '') +
+      '</div>' +
+      '<div class="wl-right"><div class="wl-price">' + (isNum(val) ? fmtMoney(val, 0) : '—') + '</div>' +
+      '<div class="wl-meta" style="text-align:right">' + (isNum(px) ? fmtMoney(px) + '/share' : 'price unavailable') +
+        (isNum(qt.dayChg) ? ' \u00b7 <span class="' + (qt.dayChg >= 0 ? 'up' : 'down') + '">' + fmtPct(qt.dayChg) + ' today</span>' : '') + '</div>' +
+      (p.drip && isNum(inc) && isNum(px) && px > 0 ? '<div class="wl-meta" style="text-align:right">DRIP buys \u2248 ' + fmtShares(inc / px) + ' shares/yr</div>' : '') +
+      '<div class="wl-actions"><button class="link-btn" data-pf-research="' + esc(p.ticker) + '">Research</button>' +
+      '<button class="link-btn" data-pf-edit="' + esc(p.ticker) + '">Edit</button>' +
+      '<button class="link-btn danger" data-pf-del="' + esc(p.ticker) + '">Remove</button></div></div></div>';
+  });
+  listBox.innerHTML = html;
+  var yld = (anyPx && totVal > 0) ? totInc / totVal * 100 : null;
+  var totGain = totVal - totCost;
+  sumBox.innerHTML = '<div class="card"><div class="pf-sum-v">' + (anyPx ? fmtMoney(totVal, 0) : '—') + '</div>' +
+    '<div class="wl-meta">Total value \u00b7 ' + positions.length + ' holding' + (positions.length === 1 ? '' : 's') + '</div>' +
+    '<div class="pf-sum-row"><span>Est. dividends <b>' + fmtMoney(totInc, 0) + '/yr</b>' + (isNum(yld) ? ' \u00b7 ' + fmtNum(yld, 2) + '% yield' : '') + '</span>' +
+    (anyCost && totCost > 0 ? '<span>Total gain/loss <b class="' + (totGain >= 0 ? 'up' : 'down') + '">' + (totGain >= 0 ? '+' : '') + fmtMoney(totGain, 0) + ' (' + fmtPct(totGain / totCost * 100) + ')</b></span>' : '') +
+    '</div></div>';
+  listBox.querySelectorAll('[data-pf-research]').forEach(function (b) {
+    b.addEventListener('click', function () { switchTab('scorecard'); $('search-input').value = b.getAttribute('data-pf-research'); runSearch(b.getAttribute('data-pf-research')); });
+  });
+  listBox.querySelectorAll('[data-pf-del]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      setPortfolio(getPortfolio().filter(function (x) { return x.ticker !== b.getAttribute('data-pf-del'); }));
+      renderPortfolio(false);
+    });
+  });
+  listBox.querySelectorAll('[data-pf-edit]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var T = b.getAttribute('data-pf-edit');
+      var pf = getPortfolio();
+      var pos = pf.filter(function (x) { return x.ticker === T; })[0];
+      if (!pos) return;
+      var s = window.prompt('How many shares of ' + T + ' do you own?', pos.shares);
+      if (s === null) return;
+      var ns = parseFloat(s);
+      if (isNum(ns) && ns >= 0) pos.shares = ns;
+      var c = window.prompt('Average cost per share for ' + T + ' ($, leave blank for none):', isNum(pos.cost) ? pos.cost : '');
+      if (c !== null) { var nc = parseFloat(c); pos.cost = isNum(nc) ? nc : null; }
+      var dr = window.prompt('Are dividends reinvested for ' + T + '? Type yes or no:', pos.drip ? 'yes' : 'no');
+      if (dr !== null) pos.drip = /^y/i.test(String(dr).trim());
+      setPortfolio(pf);
+      renderPortfolio(false);
+    });
+  });
+}
+
 /* ============================== journal ============================== */
 var J_KEY = 'sr_journal_v1';
 function getJournal() { return lsGet(J_KEY, {}); }
@@ -1477,7 +1586,7 @@ function renderGlossary(filter) {
 /* ============================== data backup ============================== */
 function collectBackup() {
   return { app: 'stock-research', version: 1, exportedAt: new Date().toISOString(),
-           watchlist: getWatchlist(), journal: getJournal(), aiSwots: lsGet(AI_SWOT_KEY, {}) };
+           watchlist: getWatchlist(), portfolio: getPortfolio(), journal: getJournal(), aiSwots: lsGet(AI_SWOT_KEY, {}) };
 }
 function doExport() {
   var json = JSON.stringify(collectBackup(), null, 2);
@@ -1505,20 +1614,23 @@ function importBackupText(text) {
   var wl = obj && Array.isArray(obj.watchlist) ? obj.watchlist : null;
   var j = obj && obj.journal && typeof obj.journal === 'object' && !Array.isArray(obj.journal) ? obj.journal : null;
   var ai = obj && obj.aiSwots && typeof obj.aiSwots === 'object' && !Array.isArray(obj.aiSwots) ? obj.aiSwots : null;
-  if (!wl && !j && !ai) {
+  var pf = obj && Array.isArray(obj.portfolio) ? obj.portfolio : null;
+  if (!wl && !j && !ai && !pf) {
     status.className = 'status err';
-    status.textContent = 'That file has no watchlist, journal or AI SWOTs in it — not a Stock Research backup.';
+    status.textContent = 'That file has no watchlist, portfolio, journal or AI SWOTs in it — not a Stock Research backup.';
     return;
   }
-  if (!window.confirm('Replace your current watchlist, journal and saved AI SWOTs with this backup?')) return;
+  if (!window.confirm('Replace your current watchlist, portfolio, journal and saved AI SWOTs with this backup?')) return;
   if (wl) setWatchlist(wl);
+  if (pf) setPortfolio(pf);
   if (j) setJournal(j);
   if (ai) lsSet(AI_SWOT_KEY, ai);
   renderWatchlist(false);
+  renderPortfolio(false);
   renderJournal();
   if (lastStock) renderScorecard(lastStock);
   status.className = 'status';
-  status.textContent = 'Backup restored: ' + (wl ? wl.length : 0) + ' watchlist item(s), ' + (j ? Object.keys(j).length : 0) + ' journal entr(ies)' + (ai ? ', ' + Object.keys(ai).length + ' AI SWOT(s)' : '') + '.';
+  status.textContent = 'Backup restored: ' + (wl ? wl.length : 0) + ' watchlist item(s), ' + (pf ? pf.length : 0) + ' portfolio holding(s), ' + (j ? Object.keys(j).length : 0) + ' journal entr(ies)' + (ai ? ', ' + Object.keys(ai).length + ' AI SWOT(s)' : '') + '.';
 }
 
 /* ============================== theme & settings ============================== */
@@ -1639,6 +1751,26 @@ function initApp() {
   attachAutocomplete($('cmp-2'), null);
   attachAutocomplete($('cmp-3'), null);
   attachAutocomplete($('j-ticker'), null);
+  attachAutocomplete($('pf-ticker'), null);
+  $('pf-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var T = ($('pf-ticker').value || '').trim().toUpperCase();
+    var shares = parseFloat($('pf-shares').value);
+    var status = $('pf-status');
+    if (!T) { status.className = 'status err'; status.textContent = 'Enter a ticker first.'; return; }
+    if (!isNum(shares) || shares <= 0) { status.className = 'status err'; status.textContent = 'Enter how many shares you own.'; return; }
+    var cost = parseFloat($('pf-cost').value);
+    var pf = getPortfolio().filter(function (x) { return x.ticker !== T; });
+    pf.push({ ticker: T, shares: shares, drip: $('pf-drip').value === 'yes', cost: isNum(cost) && cost > 0 ? cost : null, addedAt: Date.now() });
+    setPortfolio(pf);
+    $('pf-ticker').value = ''; $('pf-shares').value = ''; $('pf-cost').value = '';
+    status.className = 'status'; status.textContent = '';
+    renderPortfolio(true);
+  });
+  $('pf-refresh').addEventListener('click', function () { renderPortfolio(true); });
+  var pfBtn = document.querySelector('.tabbar button[data-tab="portfolio"]');
+  if (pfBtn) pfBtn.addEventListener('click', function () { renderPortfolio(!pfFetchedOnce); });
+  renderPortfolio(false);
   $('compare-form').addEventListener('submit', function (e) { e.preventDefault(); runCompare(); });
   $('pj-run').addEventListener('click', runProjection);
   $('pj-path').addEventListener('change', onPjPathEdit);

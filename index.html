@@ -36,7 +36,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
           <button id="theme-light" type="button">☀️ Light</button>
         </div>
         <div class="set-h">Back up your data</div>
-        <p class="fineprint" style="margin:0 0 8px">Your watchlist, journal and saved AI SWOTs live only on this device. Export a backup and keep it somewhere safe (Files, iCloud, email it to yourself). Import a backup here to restore everything.</p>
+        <p class="fineprint" style="margin:0 0 8px">Your watchlist, portfolio, journal and saved AI SWOTs live only on this device. Export a backup and keep it somewhere safe (Files, iCloud, email it to yourself). Import a backup here to restore everything.</p>
         <div class="row-gap">
           <button id="btn-export" class="btn-gold" type="button">⬇ Export</button>
           <button id="btn-import" class="btn-ghost" type="button">⬆ Import</button>
@@ -155,6 +155,32 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
     <p class="fineprint">Your watchlist and journal live only on this device — back them up from the ⚙ settings menu (top right).</p>
   </section>
 
+  <!-- PORTFOLIO -->
+  <section id="tab-portfolio" class="tab">
+    <h2 class="tab-title">Port<span class="gold-text">folio</span></h2>
+    <div id="pf-summary"></div>
+    <div class="card">
+      <h3 style="margin-top:0">Add a holding</h3>
+      <form id="pf-form" autocomplete="off">
+        <div class="grid2">
+          <label>Ticker<input id="pf-ticker" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="e.g. KO"></label>
+          <label>How many shares do you own?<input id="pf-shares" type="number" step="any" min="0" placeholder="e.g. 12.5"></label>
+        </div>
+        <div class="grid2">
+          <label>Are dividends reinvested?<select id="pf-drip"><option value="yes">Yes — reinvested (DRIP)</option><option value="no">No — paid out as cash</option></select></label>
+          <label>Average cost per share $ (optional)<input id="pf-cost" type="number" step="any" min="0" placeholder="What you paid, on average"></label>
+        </div>
+        <button type="submit" class="btn-gold wide">Add to portfolio</button>
+      </form>
+    </div>
+    <div class="row-between wl-tools">
+      <span id="pf-status" class="status"></span>
+      <span class="wl-tools-r"><button id="pf-refresh" class="btn-mini" type="button">↻ Refresh prices</button></span>
+    </div>
+    <div id="pf-list"></div>
+    <p class="fineprint">Your portfolio lives only on this device — back it up from the ⚙ settings menu (top right). Prices and dividend figures are estimates from the latest data the app could fetch; your brokerage statement is the official record.</p>
+  </section>
+
   <!-- JOURNAL -->
   <section id="tab-journal" class="tab">
     <h2 class="tab-title">Research <span class="gold-text">Journal</span></h2>
@@ -192,6 +218,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
   <button data-tab="compare"><span class="tab-ico">⚖</span>Compare</button>
   <button data-tab="tools"><span class="tab-ico">✦</span>Tools</button>
   <button data-tab="watchlist"><span class="tab-ico">◎</span>Watchlist</button>
+  <button data-tab="portfolio"><span class="tab-ico">💼</span>Portfolio</button>
   <button data-tab="journal"><span class="tab-ico">✎</span>Journal</button>
   <button data-tab="glossary"><span class="tab-ico">?</span>Glossary</button>
 </nav>

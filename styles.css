@@ -248,7 +248,7 @@ table.scen td { padding: 8px 6px; }
 }
 .tabbar button {
   flex: 1; background: none; border: none; color: #bdb49c; cursor: pointer;
-  font-size: 10.5px; font-weight: 800; letter-spacing: .02em;
+  font-size: 10px; font-weight: 800; letter-spacing: .02em; white-space: nowrap;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
 }
 .tabbar button .tab-ico { font-size: 17px; line-height: 1; }
@@ -346,3 +346,7 @@ table.scen td { padding: 8px 6px; }
 .wl-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wl-actions { white-space: nowrap; }
 .wl-price { font-variant-numeric: tabular-nums; }
+
+/* ---------- portfolio ---------- */
+.pf-sum-v { font-size: 30px; font-weight: 900; letter-spacing: -.01em; line-height: 1.1; }
+.pf-sum-row { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 8px; font-size: 13.5px; font-weight: 600; }
