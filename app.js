@@ -1537,17 +1537,6 @@ async function renderPortfolio(doFetch) {
       if (!moved) break;
     }
     mids.forEach(function (m) {
-      var a = m.ang;
-      while (a > Math.PI) a -= 2 * Math.PI;
-      while (a < -Math.PI) a += 2 * Math.PI;
-      if (Math.abs(a) < ZONE) a = a < 0 ? -ZONE : ZONE;
-      if (Math.abs(Math.abs(a) - Math.PI) < ZONE) a = a < 0 ? -Math.PI + ZONE : Math.PI - ZONE;
-      m.ang = a;
-    });
-    mids.sort(function (p, q2) { return p.ang - q2.ang; });
-    for (var i2 = 1; i2 < mids.length; i2++) if (mids[i2].ang < mids[i2 - 1].ang + GAP) mids[i2].ang = mids[i2 - 1].ang + GAP;
-    for (var j2 = mids.length - 2; j2 >= 0; j2--) if (mids[j2].ang > mids[j2 + 1].ang - GAP) mids[j2].ang = mids[j2 + 1].ang - GAP;
-    mids.forEach(function (m) {
       var x = 50 + 44.5 * Math.cos(m.ang), y = 50 + 44.5 * Math.sin(m.ang);
       x = Math.min(90.5, Math.max(9.5, x)); y = Math.min(93.5, Math.max(6.5, y));
       pills += '<span class="pf-pill" style="left:' + x.toFixed(1) + '%;top:' + y.toFixed(1) + '%"><span class="pf-pill-dot" style="background:' + m.s.col + ';color:' + pfInk(m.s.col) + '">' + esc(m.s.initial) + (m.s.label !== 'Other' ? pfLogoImg(m.s.label) : '') + '</span>' + fmtNum(m.frac * 100, 0) + '%</span>';
