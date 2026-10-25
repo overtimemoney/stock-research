@@ -1552,7 +1552,7 @@ async function renderPortfolio(doFetch) {
               var bk = pfDkey(new Date(b.d + 'T12:00:00'));
               var pxTxt = '';
               if (hh) { for (var z = 0; z < hh.pts.length; z++) { if (hh.pts[z][0] <= bk) pxTxt = ' @ ' + fmtMoney(hh.pts[z][1]); else break; } }
-              return '<div class="pf-buy-row"><span>' + esc(b.d) + '</span><span>' + fmtShares(b.sh) + ' shares' + pxTxt + '</span><button class="link-btn danger pf-buy-del" data-pf-buydel="' + esc(p.ticker) + '|' + bi + '">\u2715</button></div>';
+              return '<div class="pf-buy-row"><button class="pf-buy-txt" data-pf-buyedit="' + esc(p.ticker) + '|' + bi + '"><span>' + esc(b.d) + '</span><span>' + fmtShares(b.sh) + ' shares' + pxTxt + '</span></button><button class="link-btn danger pf-buy-del" data-pf-buydel="' + esc(p.ticker) + '|' + bi + '">\u2715</button></div>';
             }).join('');
             var grossD = p.shares + pfSoldShares(p);
             headExtra = ' <span class="pf-buys-n">' + fmtShares(Math.min(logged2, grossD)) + ' / ' + fmtShares(grossD) + ' shares logged</span>';
@@ -1575,7 +1575,7 @@ async function renderPortfolio(doFetch) {
           var sl = p.sells || [];
           var rowsH = sl.map(function (s, si) {
             var sp2 = isNum(s.px) ? s.px : (hh2 ? pfPriceAt(hh2.pts, pfDkey(new Date(s.d + 'T12:00:00'))) : null);
-            return '<div class="pf-buy-row"><span>' + esc(s.d) + '</span><span>Sold ' + fmtShares(s.sh) + (isNum(sp2) ? ' @ ' + fmtMoney(sp2) : '') + '</span><button class="link-btn danger pf-buy-del" data-pf-selldel="' + esc(p.ticker) + '|' + si + '">\u2715</button></div>';
+            return '<div class="pf-buy-row"><button class="pf-buy-txt" data-pf-selledit="' + esc(p.ticker) + '|' + si + '"><span>' + esc(s.d) + '</span><span>Sold ' + fmtShares(s.sh) + (isNum(sp2) ? ' @ ' + fmtMoney(sp2) : '') + '</span></button><button class="link-btn danger pf-buy-del" data-pf-selldel="' + esc(p.ticker) + '|' + si + '">\u2715</button></div>';
           }).join('');
           var rz = pfRealized(p, hh2);
           var foot = (rz && isNum(rz.gain)) ? '<div class="pf-buy-row"><span>Realized</span><span class="' + (rz.gain >= 0 ? 'up' : 'down') + '">' + (rz.gain >= 0 ? '+' : '') + fmtMoney(rz.gain, 0) + (isNum(rz.pct) ? ' (' + fmtPct(rz.pct) + ')' : '') + '</span></div>' : '';
@@ -1769,6 +1769,60 @@ async function renderPortfolio(doFetch) {
       var pf = getPortfolio();
       var pos = pf.filter(function (x) { return x.ticker === parts[0]; })[0];
       if (pos && pos.sells) pos.sells.splice(parseInt(parts[1], 10), 1);
+      setPortfolio(pf);
+      renderPortfolio(false);
+    });
+  });
+  document.querySelectorAll('[data-pf-buyedit]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var parts = b.getAttribute('data-pf-buyedit').split('|');
+      var pf = getPortfolio();
+      var pos = pf.filter(function (x) { return x.ticker === parts[0]; })[0];
+      if (!pos || !pos.buys) return;
+      var idx = parseInt(parts[1], 10), cur = pos.buys[idx];
+      if (!cur) return;
+      var d = window.prompt('Purchase date for ' + parts[0] + ' (YYYY-MM-DD):', cur.d);
+      if (d === null) return;
+      d = String(d).trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || isNaN(new Date(d + 'T12:00:00').getTime())) { window.alert('That date does not look right -- use YYYY-MM-DD, like 2025-03-14.'); return; }
+      var s = window.prompt('How many shares did you buy on ' + d + '?', cur.sh);
+      if (s === null) return;
+      var sh = parseFloat(s);
+      if (!isNum(sh) || sh <= 0) { window.alert('Enter the number of shares bought.'); return; }
+      var others = pos.buys.reduce(function (a2, b2, i2) { return a2 + (i2 === idx ? 0 : b2.sh); }, 0);
+      if (others + sh > pos.shares + pfSoldShares(pos) + 1e-9) { window.alert('That would put purchases past the total shares this position accounts for. Raise the share count or lower the amount.'); return; }
+      pos.buys[idx] = { d: d, sh: sh };
+      pos.buys.sort(function (x, y) { return x.d < y.d ? -1 : 1; });
+      setPortfolio(pf);
+      renderPortfolio(false);
+    });
+  });
+  document.querySelectorAll('[data-pf-selledit]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var parts = b.getAttribute('data-pf-selledit').split('|');
+      var pf = getPortfolio();
+      var pos = pf.filter(function (x) { return x.ticker === parts[0]; })[0];
+      if (!pos || !pos.sells) return;
+      var idx = parseInt(parts[1], 10), cur = pos.sells[idx];
+      if (!cur) return;
+      var d = window.prompt('Sale date for ' + parts[0] + ' (YYYY-MM-DD):', cur.d);
+      if (d === null) return;
+      d = String(d).trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || isNaN(new Date(d + 'T12:00:00').getTime())) { window.alert('That date does not look right -- use YYYY-MM-DD, like 2025-03-14.'); return; }
+      var s = window.prompt('How many shares did you sell on ' + d + '?', cur.sh);
+      if (s === null) return;
+      var sh = parseFloat(s);
+      if (!isNum(sh) || sh <= 0) { window.alert('Enter the number of shares sold.'); return; }
+      var bought = (pos.buys || []).reduce(function (a2, b2) { return a2 + b2.sh; }, 0);
+      var otherSells = pos.sells.reduce(function (a2, b2, i2) { return a2 + (i2 === idx ? 0 : b2.sh); }, 0);
+      if (bought > 0 && otherSells + sh > bought + 1e-9) { window.alert('Sales cannot pass your logged purchases for ' + parts[0] + ' (' + fmtShares(bought) + ' shares).'); return; }
+      var pr = window.prompt('Sale price per share for ' + parts[0] + ' ($, blank = that day\u2019s closing price):', isNum(cur.px) ? cur.px : '');
+      if (pr === null) return;
+      var px = parseFloat(pr);
+      var entry = { d: d, sh: sh };
+      if (isNum(px) && px > 0) entry.px = px;
+      pos.sells[idx] = entry;
+      pos.sells.sort(function (x, y) { return x.d < y.d ? -1 : 1; });
       setPortfolio(pf);
       renderPortfolio(false);
     });
