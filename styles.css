@@ -331,3 +331,12 @@ table.scen td { padding: 8px 6px; }
 .ac-sym { font-weight: 900; font-size: 14.5px; }
 .ac-exch { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
 .ac-name { font-size: 12.5px; color: var(--muted); font-weight: 600; line-height: 1.35; white-space: normal; }
+
+/* Watchlist rows: locked two-column layout — the price column can never
+   wrap under the ticker column (long valuation lines truncate instead). */
+.wl-row { flex-wrap: nowrap; }
+.wl-left { flex: 1 1 auto; min-width: 0; }
+.wl-right { flex: 0 0 auto; text-align: right; }
+.wl-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wl-actions { white-space: nowrap; }
+.wl-price { font-variant-numeric: tabular-nums; }

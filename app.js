@@ -1283,11 +1283,11 @@ async function renderWatchlist(refresh) {
       else if (above <= 10) distHtml = '<span class="pill near">' + fmtNum(above, 1) + '% above target</span>';
       else distHtml = '<span class="pill far">' + fmtNum(above, 1) + '% above target</span>';
     }
-    html += '<div class="wl-row"><div><span class="wl-t">' + esc(item.ticker) + '</span>' +
+    html += '<div class="wl-row"><div class="wl-left"><span class="wl-t">' + esc(item.ticker) + '</span>' +
       '<div class="wl-meta">Target buy: ' + (isNum(item.target) ? fmtMoney(item.target) : '\u2014') + '</div>' +
       (r.val ? '<div class="wl-meta wl-val">Valuation <b>' + r.val.score + '</b> \u00b7 ' + esc(r.val.verdict) + '</div>' : '') +
       '</div>' +
-      '<div><div class="wl-price">' + (isNum(price) ? fmtMoney(price) : '\u2014') + '</div>' +
+      '<div class="wl-right"><div class="wl-price">' + (isNum(price) ? fmtMoney(price) : '\u2014') + '</div>' +
       '<div style="text-align:right">' + (r.err ? '<span class="factor-note">price unavailable</span>' : distHtml) + '</div>' +
       '<div class="wl-actions"><button class="link-btn" data-research="' + esc(item.ticker) + '">Research</button>' +
       '<button class="link-btn" data-wl-edit="' + esc(item.ticker) + '">Edit target</button>' +
