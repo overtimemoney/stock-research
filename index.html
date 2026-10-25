@@ -30,6 +30,8 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
     <div class="settings-wrap">
       <button id="btn-settings" class="gear-btn" type="button" aria-label="Settings" aria-haspopup="true" aria-expanded="false">⚙</button>
       <div id="settings-menu" class="settings-menu" hidden>
+        <div class="set-h">Reference</div>
+        <button id="menu-glossary" class="btn-ghost wide" type="button" style="margin-bottom:4px">📖 Glossary — plain-English terms</button>
         <div class="set-h">Appearance</div>
         <div class="seg" role="group" aria-label="Theme">
           <button id="theme-dark" type="button">🌙 Dark</button>
@@ -220,7 +222,6 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
   <button data-tab="watchlist"><span class="tab-ico">◎</span>Watchlist</button>
   <button data-tab="portfolio"><span class="tab-ico">💼</span>Portfolio</button>
   <button data-tab="journal"><span class="tab-ico">✎</span>Journal</button>
-  <button data-tab="glossary"><span class="tab-ico">?</span>Glossary</button>
 </nav>
 
 <script src="app.js"></script>

@@ -1819,6 +1819,11 @@ function initApp() {
   $('theme-dark').addEventListener('click', function () { applyTheme('dark'); });
   $('theme-light').addEventListener('click', function () { applyTheme('light'); });
   var settingsMenu = $('settings-menu');
+  $('menu-glossary').addEventListener('click', function () {
+    settingsMenu.hidden = true;
+    $('btn-settings').setAttribute('aria-expanded', 'false');
+    switchTab('glossary');
+  });
   $('btn-settings').addEventListener('click', function (e) {
     e.stopPropagation();
     var willOpen = settingsMenu.hidden;

@@ -67,16 +67,17 @@
   --val-l: 62%;
 }
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; background: var(--bg); overflow-x: clip; height: 100%; }
+html { -webkit-text-size-adjust: 100%; background: var(--bg); height: 100%; overflow: hidden; overscroll-behavior: none; }
 body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
   font-family: "Avenir Next", "Helvetica Neue", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-  overflow-x: clip;
+  overflow: hidden;
+  overscroll-behavior: none;
   /* App shell: a full-height column -- header, a scrolling main, and the
-   * tab bar as the last row. The bar is part of the layout, never a
-   * floating fixed layer, so it cannot drift or hover on any tab. */
+   * tab bar as the last row. The page itself never scrolls (html/body are
+   * locked); only <main> scrolls, between the static header and tab bar. */
   display: flex; flex-direction: column;
   height: 100vh; height: 100dvh;
 }
@@ -107,7 +108,7 @@ h2, h3 { font-weight: 800; letter-spacing: -0.01em; }
 .brand-tag { font-size: 12px; color: var(--muted); margin-top: 3px; font-weight: 600; }
 
 /* ---------- layout ---------- */
-main { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; width: 100%; max-width: 860px; margin: 0 auto; padding: 16px 14px 20px; }
+main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; width: 100%; max-width: 860px; margin: 0 auto; padding: 16px 14px 20px; }
 .tab { display: none; }
 .tab.active { display: block; }
 .tab-title { font-size: 24px; margin: 6px 0 14px; text-transform: uppercase; letter-spacing: .02em; }
@@ -248,7 +249,7 @@ table.scen td { padding: 8px 6px; }
 }
 .tabbar button {
   flex: 1; background: none; border: none; color: #bdb49c; cursor: pointer;
-  font-size: 10px; font-weight: 800; letter-spacing: .02em; white-space: nowrap;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .02em; white-space: nowrap;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
 }
 .tabbar button .tab-ico { font-size: 17px; line-height: 1; }
