@@ -1740,14 +1740,20 @@ function paintBench(box, hist, positions) {
   // otherwise one estimated lot (all shares at the date the price last
   // matched the average cost). No lots at all -> constant-shares mode.
   var lots = [], excluded = 0, estUsed = 0, manualUsed = 0;
+  var w0 = win[0][0];
   positions.forEach(function (p) {
     var hh = hist[p.ticker];
     if (p.buys && p.buys.length) {
-      p.buys.forEach(function (b) { lots.push({ d: pfDkey(new Date(b.d + 'T12:00:00')), t: p.ticker, sh: b.sh }); });
+      if (!hh) { excluded++; return; }
+      p.buys.forEach(function (b) {
+        var bd = pfDkey(new Date(b.d + 'T12:00:00'));
+        var bp = priceAt(hh.pts, bd);
+        lots.push({ d: bd, t: p.ticker, sh: b.sh, amt: isNum(bp) ? b.sh * bp : (isNum(p.cost) ? b.sh * p.cost : 0), pre: bd < w0 });
+      });
       manualUsed++;
     } else if (isNum(p.cost) && hh) {
       var ek = pfEstBuyKey(hh.pts, p.cost);
-      if (ek) { lots.push({ d: ek, t: p.ticker, sh: p.shares }); estUsed++; }
+      if (ek) { lots.push({ d: ek, t: p.ticker, sh: p.shares, amt: p.shares * p.cost, pre: ek < w0 }); estUsed++; }
       else excluded++;
     } else excluded++;
   });
@@ -1755,25 +1761,36 @@ function paintBench(box, hist, positions) {
 
   var pfSeries = [], spySeries = [];
   if (lots.length) {
-    var pxFns = {}, owned = {};
-    positions.forEach(function (p) { pxFns[p.ticker] = priceFn(hist[p.ticker] ? hist[p.ticker].pts : null); owned[p.ticker] = 0; });
-    var spyPx = priceFn(spy.pts);
-    var li = 0, spyShares = 0;
+    // Justin's equation: every dollar of cost basis starts the period
+    // sitting in the S&P 500. On each purchase day, that lot's dollars
+    // move out of the index and into the stock. The benchmark is the
+    // same starting pot left in SPY the whole time.
+    var owned = {};
+    positions.forEach(function (p) { owned[p.ticker] = 0; });
+    // The unspent cost basis rides the index as SPY shares, sized so
+    // each lot's sale on its purchase day raises exactly its cost.
+    var spyShares = 0;
+    lots.forEach(function (lot) {
+      if (lot.pre) owned[lot.t] += lot.sh;
+      else { var spx = priceAt(spy.pts, lot.d); if (isNum(spx) && spx > 0) spyShares += lot.amt / spx; }
+    });
+    var V0 = spyShares * win[0][1];
+    positions.forEach(function (p) {
+      if (owned[p.ticker] > 0) { var px0 = priceAt(hist[p.ticker] ? hist[p.ticker].pts : null, w0); if (isNum(px0)) V0 += owned[p.ticker] * px0; }
+    });
+    var li = 0;
     win.forEach(function (sp) {
       var d = sp[0];
       while (li < lots.length && lots[li].d <= d) {
-        var lot = lots[li];
-        var lp = priceAt(hist[lot.t] ? hist[lot.t].pts : null, lot.d);
-        var sp0 = priceAt(spy.pts, lot.d);
-        if (isNum(lp) && isNum(sp0) && sp0 > 0) spyShares += lot.sh * lp / sp0;
-        owned[lot.t] = (owned[lot.t] || 0) + lot.sh;
+        if (!lots[li].pre) { var spx2 = priceAt(spy.pts, lots[li].d); if (isNum(spx2) && spx2 > 0) spyShares -= lots[li].amt / spx2; owned[lots[li].t] += lots[li].sh; }
         li++;
       }
-      var tot = 0;
-      positions.forEach(function (p) { var px = pxFns[p.ticker](d); if (isNum(px) && owned[p.ticker] > 0) tot += owned[p.ticker] * px; });
-      pfSeries.push(tot > 0 ? tot : null);
-      var sv = spyPx(d);
-      spySeries.push(spyShares > 0 && isNum(sv) ? spyShares * sv : null);
+      var tot = spyShares * sp[1];
+      positions.forEach(function (p) {
+        if (owned[p.ticker] > 0) { var px = priceAt(hist[p.ticker] ? hist[p.ticker].pts : null, d); if (isNum(px)) tot += owned[p.ticker] * px; }
+      });
+      pfSeries.push(tot);
+      spySeries.push(V0 * sp[1] / win[0][1]);
     });
   } else {
     var series = positions.map(function (p) {
@@ -1812,7 +1829,7 @@ function paintBench(box, hist, positions) {
     return '<button type="button" data-bench="' + p + '"' + (p === period ? ' class="active"' : '') + '>' + p + '</button>';
   }).join('');
   var modeNote = lots.length
-    ? 'Your line replays your purchases day by day, and the S&amp;P line invests the same dollars in SPY on the same days.' +
+    ? 'Your line starts the period with all your cost-basis money sitting in the S&amp;P 500; on each purchase day that money moves into the stock you bought. The S&amp;P line is the same money never moved.' +
       (manualUsed ? ' ' + manualUsed + ' holding(s) use your entered purchase dates.' : '') +
       (estUsed ? ' ' + estUsed + ' use a date estimated from your average cost (the last day the price matched it).' : '') +
       ' Price return only, dividends not included.'
