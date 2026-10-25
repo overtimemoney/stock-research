@@ -80,6 +80,10 @@ function fetchWithTimeout(url, ms) {
 /* Race every route at once (direct + all relays); the first response that
  * validates wins. Sequential relay fallback could stack 4 timeouts per
  * source and look like a perpetual spinner, so everything runs parallel. */
+/* Which route served the first successful fetch of a lookup: 'your relay'
+ * (the user's Cloudflare Worker), 'public relay' (a backup) or 'direct'.
+ * Shown on the scorecard so the user can see what actually carried data. */
+var FIRST_ROUTE = null;
 function relayFetch(url, opts) {
   opts = opts || {};
   var timeout = opts.timeout || 10000;
@@ -90,7 +94,7 @@ function relayFetch(url, opts) {
     var killer = setTimeout(function () {
       if (!done) { done = true; reject(lastErr || new Error('data sources timed out')); }
     }, timeout);
-    attempts.forEach(function (u) {
+    attempts.forEach(function (u, ai) {
       fetchWithTimeout(u, timeout).then(function (resp) {
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         return resp.text();
@@ -100,7 +104,11 @@ function relayFetch(url, opts) {
           throw new Error('relay busy');
         }
         if (opts.validate && !opts.validate(text)) throw new Error('unexpected content');
-        if (!done) { done = true; clearTimeout(killer); resolve(text); }
+        if (!done) {
+          done = true; clearTimeout(killer);
+          if (!FIRST_ROUTE) FIRST_ROUTE = ai === 0 ? 'direct' : (ai === 1 ? 'your relay' : 'public relay');
+          resolve(text);
+        }
       }).catch(function (e) {
         lastErr = e; pending--;
         if (!done && pending === 0) { done = true; clearTimeout(killer); reject(lastErr || new Error('all relays failed')); }
@@ -196,6 +204,7 @@ async function fetchStock(ticker, opts) {
     return hit.data;
   }
   var d = { ticker: T, sources: [], errors: [] };
+  FIRST_ROUTE = null;
 
   // --- Finviz: fundamentals workhorse ---
   var srcFinviz = async function () { try {
@@ -335,6 +344,7 @@ async function fetchStock(ticker, opts) {
   deriveValues(d);
   if (opts.onStage && (isNum(d.price) || isNum(d.marketCap))) {
     d.partial = true;
+    d.route = FIRST_ROUTE;
     d.fetchedAt = Date.now();
     try { opts.onStage(d); } catch (e) {}
   }
@@ -370,9 +380,10 @@ async function fetchStock(ticker, opts) {
   }
   }
   d.fetchedAt = Date.now();
+  d.route = FIRST_ROUTE;
   d.fromCache = false;
   if (!isNum(d.price) && !isNum(d.marketCap)) {
-    throw new Error('Could not load data for "' + T + '" — the data relays may be busy. Check the ticker and try again in a moment.');
+    throw new Error('Could not load data for "' + T + '" — the data routes may be busy. Check the ticker and try again in a moment.');
   }
   cache[T] = { ts: Date.now(), data: d };
   lsSet(CACHE_KEY, cache);
@@ -617,7 +628,8 @@ function renderScorecard(d) {
   var when = d.fetchedAt ? new Date(d.fetchedAt).toLocaleString() : '';
   if (d.partial) html += '<div class="alert warn">Fast data is in — still pulling valuation details (forward P/E, PEG, margins)… the score updates when they land.</div>';
   html += '<p class="src-line">Sources: ' + esc(d.sources.join(', ') || '—') + ' · Fetched ' + esc(when) + (d.fromCache ? ' (cached, ≤15 min old)' : '') +
-    '. Live data via public feeds — figures can differ slightly between sources and from your broker. Research tool, not financial advice.</p>';
+    (d.route ? ' · Route: ' + esc(d.route === 'public relay' ? 'public relay (backup)' : d.route) : '') +
+    '. Figures can differ slightly between sources and from your broker. Research tool, not financial advice.</p>';
   html += '</div>';
   $('score-result').innerHTML = html;
   $('score-empty').style.display = 'none';
@@ -644,7 +656,7 @@ async function runSearch(ticker, fresh) {
   if (!T) return;
   var status = $('score-status');
   status.className = 'status';
-  status.innerHTML = '<span class="spinner"></span>Pulling live data for ' + esc(T) + ' — trying the public feeds…';
+  status.innerHTML = '<span class="spinner"></span>Pulling live data for ' + esc(T) + '…';
   // Instant paint: if this ticker was looked up before, show the saved
   // data right away (even if stale) and refresh over the top — repeat
   // lookups feel instant instead of staring at a spinner in a relay wave.
@@ -673,11 +685,11 @@ async function runSearch(ticker, fresh) {
       if (attempt >= 3) {
         status.className = 'status err';
         status.textContent = showedStale
-          ? 'Couldn\'t refresh ' + T + ' — the free relays are having a bad stretch. You\'re still seeing your last saved data above; try Refresh again in a minute.'
-          : (e.message || 'Something went wrong fetching that ticker.') + ' (Tried 3 times — the free relays are having a bad stretch. Give it a minute and tap Research again.)';
+          ? 'Couldn\'t refresh ' + T + ' — the data routes are having a bad stretch. You\'re still seeing your last saved data above; try Refresh again in a minute.'
+          : (e.message || 'Something went wrong fetching that ticker.') + ' (Tried 3 times — the data routes are having a bad stretch. Give it a minute and tap Research again.)';
         return;
       }
-      status.innerHTML = '<span class="spinner"></span>The free data relays are having a bad moment — retrying automatically (' + attempt + ' of 3)…';
+      status.innerHTML = '<span class="spinner"></span>A data route hiccuped — retrying automatically (' + attempt + ' of 3)…';
       await new Promise(function (res) { setTimeout(res, attempt * 1500); });
     }
   }
@@ -698,7 +710,7 @@ async function runCompare() {
   }
   status.textContent = '';
   var ok = results.filter(function (r) { return !r.error; });
-  if (!ok.length) { $('compare-result').innerHTML = '<div class="alert warn">None of those tickers loaded — the relays may be busy. Try again in a moment.</div>'; return; }
+  if (!ok.length) { $('compare-result').innerHTML = '<div class="alert warn">None of those tickers loaded — the data routes may be busy. Try again in a moment.</div>'; return; }
   var rows = [
     { label: 'Price', get: function (d) { return d.price; }, fmt: function (v) { return fmtMoney(v); }, best: null },
     { label: 'Market cap', get: function (d) { return d.marketCap; }, fmt: fmtCap, best: 'max' },
