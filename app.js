@@ -1689,14 +1689,16 @@ async function renderPortfolio(doFetch) {
  * share counts entered (held constant) and races it against SPY.
  * Price return only -- dividends are not in the lines. */
 var PF_HIST_KEY = 'sr_pfhist_v1';
+var PF_HIST5_KEY = 'sr_pfhist5_v1';
 var PF_BENCH_KEY = 'sr_pfbench_v1';
 var pfBenchBusy = false;
 function pfHistAll() { return lsGet(PF_HIST_KEY, {}); }
+function pfHist5All() { return lsGet(PF_HIST5_KEY, {}); }
 function pfBenchPeriod() { return lsGet(PF_BENCH_KEY, '1Y'); }
 function pfDkey(dt) { return dt.getFullYear() * 10000 + (dt.getMonth() + 1) * 100 + dt.getDate(); }
 
-async function fetchPfHist(T) {
-  var ch = await relayJSON('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(T) + '?range=1y&interval=1d');
+async function fetchPfHist(T, range, interval) {
+  var ch = await relayJSON('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(T) + '?range=' + (range || '1y') + '&interval=' + (interval || '1d'));
   var res = ch && ch.chart && ch.chart.result && ch.chart.result[0];
   if (!res || !res.timestamp) throw new Error('no history');
   var closes = (res.indicators && res.indicators.quote && res.indicators.quote[0].close) || [];
@@ -1712,7 +1714,7 @@ function paintBench(box, hist, positions) {
   var spy = hist['SPY'];
   if (!spy || !spy.pts || spy.pts.length < 10) { box.innerHTML = ''; return; }
   var period = pfBenchPeriod();
-  var days = period === '1M' ? 31 : period === '3M' ? 93 : period === '6M' ? 186 : 370;
+  var days = period === '1M' ? 31 : period === '3M' ? 93 : period === '6M' ? 186 : period === '5Y' ? 1827 : 370;
   var endKey = spy.pts[spy.pts.length - 1][0];
   var endDt = new Date(Math.floor(endKey / 10000), Math.floor(endKey / 100) % 100 - 1, endKey % 100);
   var cutDt = new Date(endDt); cutDt.setDate(cutDt.getDate() - days);
@@ -1825,7 +1827,23 @@ function paintBench(box, hist, positions) {
   function X(i) { return (6 + i / (pfIdx.length - 1) * 328).toFixed(1); }
   function Y(v) { return (164 - (v - lo) / (hi - lo) * 158).toFixed(1); }
   function line(arr) { return arr.map(function (v, i) { return X(i) + ',' + Y(v); }).join(' '); }
-  var chips = ['1M', '3M', '6M', '1Y'].map(function (p) {
+  // X-axis ticks: day numbers on the 1M view, months for the
+  // sub-year ranges, years only on the 5Y view.
+  var MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var tickIdx = [0, 0.25, 0.5, 0.75, 1].map(function (f) { return Math.round(f * (win.length - 1)); }).filter(function (v, i, a) { return a.indexOf(v) === i; });
+  var prevYr = null;
+  var ticksSvg = tickIdx.map(function (ti, ord) {
+    var key = win[ti][0];
+    var yr = Math.floor(key / 10000), mo = Math.floor(key / 100) % 100, dy = key % 100;
+    var lab;
+    if (period === '5Y') lab = String(yr);
+    else if (period === '1M') lab = MONS[mo - 1] + ' ' + dy;
+    else { lab = MONS[mo - 1] + (prevYr === null || yr !== prevYr ? " '" + String(yr).slice(2) : ''); prevYr = yr; }
+    var anchor = ord === 0 ? 'start' : ord === tickIdx.length - 1 ? 'end' : 'middle';
+    var tx = ord === 0 ? 6 : ord === tickIdx.length - 1 ? 334 : X(ti - k0);
+    return '<text x="' + tx + '" y="179" font-size="8.5" style="fill:var(--muted)" text-anchor="' + anchor + '">' + lab + '</text>';
+  }).join('');
+  var chips = ['1M', '3M', '6M', '1Y', '5Y'].map(function (p) {
     return '<button type="button" data-bench="' + p + '"' + (p === period ? ' class="active"' : '') + '>' + p + '</button>';
   }).join('');
   var modeNote = lots.length
@@ -1838,11 +1856,11 @@ function paintBench(box, hist, positions) {
     '<div class="pf-bench-head"><span class="pf-bench-title">Portfolio vs S&amp;P 500</span>' +
     '<span class="pf-bench-legend"><span><span class="pf-bench-dot" style="background:#F8C73D"></span>You</span><span><span class="pf-bench-dot" style="background:#61A5C2"></span>S&amp;P 500</span></span></div>' +
     '<div class="seg pf-bench-seg" role="group" aria-label="Benchmark period">' + chips + '</div>' +
-    '<svg class="pf-bench-chart" viewBox="0 0 340 170" role="img" aria-label="Portfolio versus S&P 500 chart">' +
+    '<svg class="pf-bench-chart" viewBox="0 0 340 186" role="img" aria-label="Portfolio versus S&P 500 chart">' +
     '<polyline points="' + line(spyIdx) + '" fill="none" stroke="#61A5C2" stroke-width="2" stroke-linejoin="round"/>' +
     '<polyline points="' + line(pfIdx) + '" fill="none" stroke="#F8C73D" stroke-width="2.5" stroke-linejoin="round"/>' +
     '<circle cx="' + X(pfIdx.length - 1) + '" cy="' + Y(pfIdx[pfIdx.length - 1]) + '" r="3.2" fill="#F8C73D"/>' +
-    '<circle cx="' + X(spyIdx.length - 1) + '" cy="' + Y(spyIdx[spyIdx.length - 1]) + '" r="3" fill="#61A5C2"/></svg>' +
+    '<circle cx="' + X(spyIdx.length - 1) + '" cy="' + Y(spyIdx[spyIdx.length - 1]) + '" r="3" fill="#61A5C2"/>' + ticksSvg + '</svg>' +
     '<div class="pf-bench-stats"><span>You <b class="' + (pfRet >= 0 ? 'up' : 'down') + '">' + fmtPct(pfRet) + '</b></span>' +
     '<span>S&amp;P 500 <b class="' + (spyRet >= 0 ? 'up' : 'down') + '">' + fmtPct(spyRet) + '</b></span>' +
     '<span>' + (gap >= 0 ? 'Ahead by' : 'Behind by') + ' <b class="' + (gap >= 0 ? 'up' : 'down') + '">' + fmtNum(Math.abs(gap), 1) + ' pts</b></span></div>' +
@@ -1851,7 +1869,7 @@ function paintBench(box, hist, positions) {
   box.querySelectorAll('[data-bench]').forEach(function (b) {
     b.addEventListener('click', function () {
       lsSet(PF_BENCH_KEY, b.getAttribute('data-bench'));
-      paintBench(box, pfHistAll(), getPortfolio());
+      renderBench(false);
     });
   });
 }
@@ -1861,21 +1879,23 @@ async function renderBench(force) {
   if (!box) return;
   var positions = getPortfolio();
   if (!positions.length) { box.innerHTML = ''; return; }
-  var hist = pfHistAll();
+  var five = pfBenchPeriod() === '5Y';
+  var cacheKey = five ? PF_HIST5_KEY : PF_HIST_KEY;
+  var hist = five ? pfHist5All() : pfHistAll();
   paintBench(box, hist, positions);
   var need = ['SPY'].concat(positions.map(function (p) { return p.ticker; }));
   var stale = need.some(function (t) { var hh = hist[t]; return !hh || (Date.now() - hh.ts > 12 * 3600 * 1000); });
   if ((force || stale) && !pfBenchBusy) {
     pfBenchBusy = true;
-    if (!hist['SPY']) box.innerHTML = '<div class="card"><span class="spinner"></span>Loading the S&amp;P 500 comparison\u2026</div>';
+    if (!hist['SPY']) box.innerHTML = '<div class="card"><span class="spinner"></span>Loading the S&P 500 comparison\u2026</div>';
     var updated = {};
     Object.keys(hist).forEach(function (k) { updated[k] = hist[k]; });
     await Promise.all(need.map(async function (t) {
-      try { updated[t] = await fetchPfHist(t); } catch (e) {}
+      try { updated[t] = await fetchPfHist(t, five ? '5y' : '1y', five ? '1wk' : '1d'); } catch (e) {}
     }));
-    lsSet(PF_HIST_KEY, updated);
+    lsSet(cacheKey, updated);
     pfBenchBusy = false;
-    paintBench(box, pfHistAll(), getPortfolio());
+    if ((pfBenchPeriod() === '5Y') === five) paintBench(box, five ? pfHist5All() : pfHistAll(), getPortfolio());
   }
 }
 
