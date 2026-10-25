@@ -1514,11 +1514,23 @@ async function renderPortfolio(doFetch) {
       mids.push({ s: s, frac: frac, ang: (off + frac * C / 2) / C * 2 * Math.PI - Math.PI / 2 });
       off += frac * C;
     });
-    // Label placement: pills ride an orbit around the ring. Two rules
-    // keep them readable -- never park a pill in the left/right zones
-    // (there is no room beside the ring there on a phone), and enforce
-    // a minimum angular gap so pills can never stack on each other.
-    var ZONE = 0.52, GAP = 0.34;
+    // Label placement: every pill sits centered on its own slice's
+    // mid-angle. Neighbours that would collide (tiny slices side by
+    // side) are relaxed apart by the smallest possible nudge, split
+    // evenly between the pair, so centering is preserved as closely
+    // as physics allows.
+    mids.sort(function (p, q2) { return p.ang - q2.ang; });
+    var GAP = 0.30;
+    for (var it = 0; it < 12 && mids.length > 1; it++) {
+      var moved = false;
+      for (var i3 = 1; i3 < mids.length; i3++) {
+        var need = mids[i3 - 1].ang + GAP - mids[i3].ang;
+        if (need > 0) { mids[i3 - 1].ang -= need / 2; mids[i3].ang += need / 2; moved = true; }
+      }
+      var wrapGap = (mids[0].ang + 2 * Math.PI) - mids[mids.length - 1].ang;
+      if (wrapGap < GAP) { var wd = (GAP - wrapGap) / 2; mids[mids.length - 1].ang -= wd; mids[0].ang += wd; moved = true; }
+      if (!moved) break;
+    }
     mids.forEach(function (m) {
       var a = m.ang;
       while (a > Math.PI) a -= 2 * Math.PI;
@@ -1532,7 +1544,7 @@ async function renderPortfolio(doFetch) {
     for (var j2 = mids.length - 2; j2 >= 0; j2--) if (mids[j2].ang > mids[j2 + 1].ang - GAP) mids[j2].ang = mids[j2 + 1].ang - GAP;
     mids.forEach(function (m) {
       var x = 50 + 44.5 * Math.cos(m.ang), y = 50 + 44.5 * Math.sin(m.ang);
-      x = Math.min(89, Math.max(11, x)); y = Math.min(93, Math.max(7, y));
+      x = Math.min(90.5, Math.max(9.5, x)); y = Math.min(93.5, Math.max(6.5, y));
       pills += '<span class="pf-pill" style="left:' + x.toFixed(1) + '%;top:' + y.toFixed(1) + '%"><span class="pf-pill-dot" style="background:' + m.s.col + ';color:' + pfInk(m.s.col) + '">' + esc(m.s.initial) + (m.s.label !== 'Other' ? pfLogoImg(m.s.label) : '') + '</span>' + fmtNum(m.frac * 100, 0) + '%</span>';
     });
     var center = '<text x="100" y="103" text-anchor="middle" class="pf-c-v">' + fmtMoney(totVal, 0) + '</text><text x="100" y="126" text-anchor="middle" class="pf-c-l">TOTAL VALUE</text>';
