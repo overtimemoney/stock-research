@@ -977,17 +977,26 @@ function pjFlatGrowth() {
 function pjGrowths(base, path) {
   var out = [], prev = base;
   for (var i = 0; i < path.length; i++) {
+    if (path[i].ttm) {
+      // The TTM row IS the current position: its growth is the actual
+      // trailing-twelve-month growth, a reported figure, not a step.
+      out.push(isNum(path[i].growth) ? path[i].growth : null);
+      prev = path[i].eps;
+      continue;
+    }
     out.push(isNum(prev) && prev !== 0 && isNum(path[i].eps) ? (path[i].eps / prev - 1) * 100 : null);
     prev = path[i].eps;
   }
   return out;
 }
+function pjTtmOffset() { return (pjPath.length && pjPath[0].ttm) ? 1 : 0; }
 /* Pure case math: chain the EPS path with every year's growth shifted by
  * deltaPts and return the exit-year EPS. Exported for testing. */
 function pjCaseEps(base, path, deltaPts) {
   var growths = pjGrowths(base, path);
   var eps = base;
   for (var i = 0; i < path.length; i++) {
+    if (path[i].ttm) { if (isNum(path[i].eps)) eps = path[i].eps; continue; }
     var g = growths[i];
     if (!isNum(g) || !isNum(eps)) { eps = path[i].eps; continue; }
     eps = eps * (1 + (g + deltaPts) / 100);
@@ -1016,8 +1025,8 @@ function pjEnsureYears(n) {
   }
 }
 /* No analyst path available: synthesize the rows from the flat rate. */
-function pjSynthPath() {
-  pjPath = [];
+function pjSynthPath(ttmRow) {
+  pjPath = ttmRow ? [ttmRow] : [];
   pjPathFromForecast = false;
   var base = pjBaseEps(), g = pjFlatGrowth(), n = pjYearsWanted();
   var eps = base;
@@ -1030,7 +1039,7 @@ function renderPjPath() {
   var box = $('pj-path');
   if (!box) return;
   var base = pjBaseEps();
-  var n = pjYearsWanted();
+  var n = pjYearsWanted() + pjTtmOffset();
   pjEnsureYears(n);
   var growths = pjGrowths(base, pjPath);
   var html = '';
@@ -1049,10 +1058,18 @@ function onPjPathEdit(e) {
   if (t.hasAttribute('data-pjeps')) {
     var i = parseInt(t.getAttribute('data-pjeps'), 10);
     var v = parseFloat(t.value);
-    if (isNum(v) && pjPath[i]) { pjPath[i].eps = v; pjPath[i].extrapolated = false; renderPjPath(); }
+    if (isNum(v) && pjPath[i]) {
+      pjPath[i].eps = v; pjPath[i].extrapolated = false;
+      if (pjPath[i].ttm) $('pj-eps').value = v;
+      renderPjPath();
+    }
   } else if (t.hasAttribute('data-pjg')) {
     var j = parseInt(t.getAttribute('data-pjg'), 10);
     var gv = parseFloat(t.value);
+    if (pjPath[j] && pjPath[j].ttm) {
+      if (isNum(gv)) { pjPath[j].growth = gv; renderPjPath(); }
+      return;
+    }
     var prev = j === 0 ? base : (pjPath[j - 1] ? pjPath[j - 1].eps : null);
     if (isNum(gv) && isNum(prev) && pjPath[j]) {
       pjPath[j].eps = +(prev * (1 + gv / 100)).toFixed(4);
@@ -1068,16 +1085,22 @@ function fillProjection(d) {
   if (isNum(base)) $('pj-eps').value = base;
   if (isNum(d.epsGrowth5Y)) $('pj-growth').value = Math.max(-20, Math.min(60, Math.round(d.epsGrowth5Y)));
   else if (isNum(d.epsGrowthNextY)) $('pj-growth').value = Math.round(Math.max(-20, Math.min(60, d.epsGrowthNextY)));
-  // Year-by-year analyst EPS path, up to 5 years.
+  // Year-by-year path: the first row is the current TTM position (EPS and
+  // its actual TTM growth), then the analysts' forecast years, up to 5.
+  var ttmRow = isNum(d.epsTTM) ? {
+    label: 'TTM', eps: d.epsTTM,
+    growth: isNum(d.epsGrowthTTM) ? d.epsGrowthTTM : null,
+    ttm: true, extrapolated: false
+  } : null;
   var fc = (d.epsForecasts || []).filter(function (r) { return r && isNum(r.eps); }).slice(0, 5);
   if (fc.length) {
     pjPathFromForecast = true;
-    pjPath = fc.map(function (r, i) {
+    pjPath = (ttmRow ? [ttmRow] : []).concat(fc.map(function (r, i) {
       var ym = String(r.fiscalEnd || '').match(/(\d{4})/);
       return { label: ym ? 'FY' + ym[1] : 'Year ' + (i + 1), eps: r.eps, extrapolated: false };
-    });
+    }));
   } else {
-    pjSynthPath();
+    pjSynthPath(ttmRow);
   }
   renderPjPath();
 }
@@ -1114,9 +1137,9 @@ function runProjection() {
     out.innerHTML = '<div class="alert warn">Fill in price, EPS base and exit P/E to build the projection.</div>'; return;
   }
   if (!pjPath.length) pjSynthPath();
-  pjEnsureYears(years);
+  pjEnsureYears(years + pjTtmOffset());
   renderPjPath();
-  var path = pjPath.slice(0, years);
+  var path = pjPath.slice(0, years + pjTtmOffset());
   var scen = [
     { name: 'Bear', d: -5, m: mult - 2, note: 'path −5 pts/yr' },
     { name: 'Base', d: 0, m: mult, note: 'your path' },
