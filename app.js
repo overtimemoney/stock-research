@@ -1722,13 +1722,34 @@ function attachAutocomplete(input, onPick) {
   function hide() { list.style.display = 'none'; }
   function place() {
     var r = input.getBoundingClientRect();
+    var vv = window.visualViewport;
+    var vw = vv ? vv.width : window.innerWidth;
+    var vh = vv ? vv.height : window.innerHeight;
+    var vL = vv ? vv.offsetLeft : 0;
+    var vT = vv ? vv.offsetTop : 0;
     // Wider than narrow inputs so full company names fit, but never
-    // wider than the screen and never hanging off the right edge.
-    var w = Math.min(Math.max(r.width, 270), window.innerWidth - 16);
-    var left = Math.min(r.left, window.innerWidth - w - 8);
-    list.style.left = Math.max(8, left) + 'px';
-    list.style.top = (r.bottom + 4) + 'px';
+    // wider than the screen and never hanging off either edge.
+    var w = Math.min(Math.max(r.width, 270), vw - 16);
+    var left = Math.min(Math.max(r.left, vL + 8), vL + vw - w - 8);
+    list.style.left = left + 'px';
     list.style.width = w + 'px';
+    // Cap the height to the space that is actually visible (an open
+    // keyboard shrinks it), open toward whichever side has more room,
+    // and clamp the result inside the viewport: the options can never
+    // run off the top or bottom of the screen again. Extra options
+    // scroll inside the list.
+    var below = (vT + vh) - r.bottom - 10;
+    var above = r.top - vT - 10;
+    var openUp = below < 200 && above > below;
+    list.style.maxHeight = Math.max(90, Math.min(302, openUp ? above : below)) + 'px';
+    var wasHidden = list.style.display === 'none';
+    if (wasHidden) { list.style.visibility = 'hidden'; list.style.display = 'block'; }
+    var h = list.offsetHeight;
+    var top = openUp ? r.top - 4 - h : r.bottom + 4;
+    var lo = vT + 6, hi = vT + vh - h - 6;
+    if (hi < lo) hi = lo;
+    list.style.top = Math.min(Math.max(top, lo), hi) + 'px';
+    if (wasHidden) { list.style.display = 'none'; list.style.visibility = ''; }
   }
   function show(items) {
     if (!items.length) { hide(); return; }
@@ -1765,6 +1786,8 @@ function attachAutocomplete(input, onPick) {
   input.addEventListener('blur', function () { setTimeout(hide, 180); });
   input.addEventListener('keydown', function (e) { if (e.key === 'Escape') hide(); });
   window.addEventListener('resize', function () { if (list.style.display !== 'none') place(); });
+  var mainEl = document.querySelector('main');
+  if (mainEl) mainEl.addEventListener('scroll', function () { if (list.style.display !== 'none') place(); }, { passive: true });
 }
 
 /* ============================== tabs & init ============================== */
