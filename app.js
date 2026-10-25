@@ -688,7 +688,7 @@ function aiSwotGridHtml(entry) {
   return '<div class="swot-grid">' +
     swotBox('S', 'Strengths', entry.swot.S, 'sw-s') + swotBox('W', 'Weaknesses', entry.swot.W, 'sw-w') +
     swotBox('O', 'Opportunities', entry.swot.O, 'sw-o') + swotBox('T', 'Threats', entry.swot.T, 'sw-t') + '</div>' +
-    '<p class="fineprint">AI-generated ' + esc(entry.asOf || '') + ' by Llama 4 on your Cloudflare account, from the live numbers above plus recent headlines. Strengths/Weaknesses are internal to the company; Opportunities/Threats are external factors. AI can be wrong or out of date — a starting point, not gospel. <button class="btn-ghost" id="ai-swot-btn" type="button">↻ Regenerate</button></p>';
+    '<p class="fineprint">AI-generated ' + esc(entry.asOf || '') + ' by Llama 4 on your Cloudflare account, from the live numbers above, recent headlines' + (entry.tenk ? ', and the Risk Factors section of its most recent 10-K (filed ' + esc(entry.tenk.filed) + ')' : '') + '. Strengths/Weaknesses are internal to the company; Opportunities/Threats are external factors. AI can be wrong or out of date — a starting point, not gospel. <button class="btn-ghost" id="ai-swot-btn" type="button">↻ Regenerate</button></p>';
 }
 function bindAiSwotBtn(d) {
   var b = $('ai-swot-btn');
@@ -697,7 +697,7 @@ function bindAiSwotBtn(d) {
 async function runAiSwot(d) {
   var zone = $('ai-swot-zone');
   if (!zone) return;
-  zone.innerHTML = '<p class="fineprint"><span class="spinner"></span>Writing the SWOT — the AI is reading the numbers and recent headlines; give it up to ~30 seconds…</p>';
+  zone.innerHTML = '<p class="fineprint"><span class="spinner"></span>Writing the SWOT — the AI is reading the numbers, recent headlines and the 10-K risk factors; give it up to ~30 seconds…</p>';
   try {
     var ctrl = ('AbortController' in window) ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 90000) : null;
@@ -716,7 +716,7 @@ async function runAiSwot(d) {
     if (timer) clearTimeout(timer);
     var data = await resp.json();
     if (!resp.ok || !data.swot) throw new Error((data && data.error) || ('HTTP ' + resp.status));
-    var entry = { asOf: data.asOf || '', swot: data.swot };
+    var entry = { asOf: data.asOf || '', swot: data.swot, tenk: data.tenk || null };
     saveAiSwot(d.ticker, entry);
     var z2 = $('ai-swot-zone');
     if (z2) { z2.innerHTML = aiSwotGridHtml(entry); bindAiSwotBtn(d); }
@@ -1401,6 +1401,8 @@ var GLOSSARY = [
   ['Profit margin', 'Final net profit as a % of revenue. What\'s left for shareholders after everything.'],
   ['Debt / Equity', 'Total debt divided by shareholder equity. Above ~2 means the company leans heavily on borrowed money — fine in good times, dangerous in bad ones.'],
   ['ROE (return on equity)', 'Profit divided by shareholder equity. How hard the owners\' money is working. Consistently above 15% is strong.'],
+  ['Assets', 'Everything a company owns that has value: cash, inventory, buildings, equipment, patents, and money customers owe it. One side of the balance sheet. The accounting equation ties it together: assets = liabilities + shareholder equity — everything a company owns is claimed by either its lenders or its owners.'],
+  ['Liabilities', 'Everything a company owes: loans, bonds, unpaid bills, wages and taxes due. The other side of the balance sheet, across from assets. Paying liabilities down strengthens a company; piling them up is how the debt/equity ratio gets ugly.'],
   ['Shareholder equity', 'What would be left for the owners if the company sold everything it owns and paid off every debt: total assets minus total liabilities. Also called book value. It is the yardstick inside ROE and Debt/Equity — and it is an accounting number, not what the market will pay: market cap is the market\'s (usually much bigger) price tag on that same equity.'],
   ['Free cash flow', 'Cash left after running the business and maintaining it. The hardest number to fake — earnings are an opinion, cash is a fact.'],
   ['Beta', 'How much a stock moves versus the market. Beta 2 = roughly twice the market\'s swings, both ways. High beta + small position size, or hold on tight.'],
