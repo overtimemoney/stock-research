@@ -1497,15 +1497,17 @@ async function renderPortfolio(doFetch) {
     var slices = [], otherVal = 0;
     ranked.forEach(function (r, i) {
       if (ranked.length > 8 && i >= 7) otherVal += r.val;
-      else slices.push({ label: r.p.ticker, val: r.val, col: colorOf[r.p.ticker], initial: r.p.ticker.charAt(0) });
+      else slices.push({ label: r.p.ticker, name: r.qt.name || r.p.ticker, val: r.val, col: colorOf[r.p.ticker], initial: r.p.ticker.charAt(0) });
     });
-    if (otherVal > 0) slices.push({ label: 'Other', val: otherVal, col: '#5B7183', initial: '\u2022' });
+    if (otherVal > 0) slices.push({ label: 'Other', name: 'Other holdings', val: otherVal, col: '#5B7183', initial: '\u2022' });
     var C = 2 * Math.PI * 78, off = 0, circles = '', pills = '';
     var mids = [];
+    var sliceByLabel = {};
+    slices.forEach(function (s) { sliceByLabel[s.label] = s; });
     slices.forEach(function (s) {
       var frac = s.val / totVal;
       var seg = Math.max(frac * C - 2, 0.5);
-      circles += '<circle cx="100" cy="100" r="78" fill="none" stroke="' + s.col + '" stroke-width="30" stroke-dasharray="' + seg.toFixed(1) + ' ' + (C - seg).toFixed(1) + '" stroke-dashoffset="' + (-off).toFixed(1) + '"/>';
+      circles += '<circle data-slice="' + esc(s.label) + '" cx="100" cy="100" r="78" fill="none" stroke="' + s.col + '" stroke-width="30" stroke-dasharray="' + seg.toFixed(1) + ' ' + (C - seg).toFixed(1) + '" stroke-dashoffset="' + (-off).toFixed(1) + '"/>';
       mids.push({ s: s, frac: frac, ang: (off + frac * C / 2) / C * 2 * Math.PI - Math.PI / 2 });
       off += frac * C;
     });
@@ -1531,7 +1533,7 @@ async function renderPortfolio(doFetch) {
       pills += '<span class="pf-pill" style="left:' + x.toFixed(1) + '%;top:' + y.toFixed(1) + '%"><span class="pf-pill-dot" style="background:' + m.s.col + ';color:' + pfInk(m.s.col) + '">' + esc(m.s.initial) + (m.s.label !== 'Other' ? pfLogoImg(m.s.label) : '') + '</span>' + fmtNum(m.frac * 100, 0) + '%</span>';
     });
     var center = '<text x="100" y="103" text-anchor="middle" class="pf-c-v">' + fmtMoney(totVal, 0) + '</text><text x="100" y="126" text-anchor="middle" class="pf-c-l">TOTAL VALUE</text>';
-    chartHtml = '<div class="pf-donut"><svg viewBox="0 0 200 200" role="img" aria-label="Portfolio allocation chart"><g transform="rotate(-90 100 100)">' + circles + '</g>' + center + '</svg>' + pills + '</div>';
+    chartHtml = '<div class="pf-donut"><svg viewBox="0 0 200 200" role="img" aria-label="Portfolio allocation chart"><g transform="rotate(-90 100 100)">' + circles + '</g>' + center + '</svg>' + pills + '</div><div class="pf-pop" hidden></div>';
   }
   var yld = (anyPx && totVal > 0) ? totInc / totVal * 100 : null;
   var totGain = totVal - totCost;
@@ -1540,6 +1542,23 @@ async function renderPortfolio(doFetch) {
     '<div class="pf-sum-row"><span>Est. dividends <b>' + fmtMoney(totInc, 0) + '/yr</b>' + (isNum(yld) ? ' \u00b7 ' + fmtNum(yld, 2) + '% yield' : '') + '</span>' +
     (anyCost && totCost > 0 ? '<span>Total gain/loss <b class="' + (totGain >= 0 ? 'up' : 'down') + '">' + (totGain >= 0 ? '+' : '') + fmtMoney(totGain, 0) + ' (' + fmtPct(totGain / totCost * 100) + ')</b></span>' : '') +
     '</div>' + chartHtml + '</div>';
+  var popEl = sumBox.querySelector('.pf-pop');
+  var circEls = sumBox.querySelectorAll('[data-slice]');
+  circEls.forEach(function (c) {
+    c.addEventListener('click', function () {
+      var label = c.getAttribute('data-slice');
+      var wasOn = c.getAttribute('data-on') === '1';
+      circEls.forEach(function (o) { o.style.opacity = ''; o.removeAttribute('data-on'); });
+      if (wasOn) { if (popEl) popEl.hidden = true; return; }
+      c.setAttribute('data-on', '1');
+      circEls.forEach(function (o) { if (o !== c) o.style.opacity = '0.35'; });
+      var s = sliceByLabel[label];
+      if (popEl && s) {
+        popEl.innerHTML = '<b>' + esc(s.name) + '</b><span>' + esc(s.label) + ' \u00b7 ' + fmtNum(s.val / totVal * 100, 1) + '% of portfolio \u00b7 ' + fmtMoney(s.val, 0) + '</span>';
+        popEl.hidden = false;
+      }
+    });
+  });
   listBox.querySelectorAll('[data-pf-toggle]').forEach(function (b) {
     b.addEventListener('click', function () {
       var T = b.getAttribute('data-pf-toggle');

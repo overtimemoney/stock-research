@@ -382,3 +382,8 @@ table.scen td { padding: 8px 6px; }
 .pf-kv > span { color: var(--muted); font-weight: 600; }
 .pf-kv > b { font-weight: 800; text-align: right; }
 .pf-detail .wl-actions { justify-content: flex-end; margin-top: 8px; }
+
+.pf-donut circle[data-slice] { cursor: pointer; transition: opacity .15s ease; }
+.pf-pop { margin-top: 10px; text-align: center; background: var(--chip-bg); border: 1px solid var(--line); border-radius: 12px; padding: 9px 12px; }
+.pf-pop b { display: block; font-size: 15.5px; font-weight: 900; }
+.pf-pop span { font-size: 12.5px; color: var(--muted); font-weight: 600; }
