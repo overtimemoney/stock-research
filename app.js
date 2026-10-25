@@ -1401,6 +1401,7 @@ var GLOSSARY = [
   ['Profit margin', 'Final net profit as a % of revenue. What\'s left for shareholders after everything.'],
   ['Debt / Equity', 'Total debt divided by shareholder equity. Above ~2 means the company leans heavily on borrowed money — fine in good times, dangerous in bad ones.'],
   ['ROE (return on equity)', 'Profit divided by shareholder equity. How hard the owners\' money is working. Consistently above 15% is strong.'],
+  ['Shareholder equity', 'What would be left for the owners if the company sold everything it owns and paid off every debt: total assets minus total liabilities. Also called book value. It is the yardstick inside ROE and Debt/Equity — and it is an accounting number, not what the market will pay: market cap is the market\'s (usually much bigger) price tag on that same equity.'],
   ['Free cash flow', 'Cash left after running the business and maintaining it. The hardest number to fake — earnings are an opinion, cash is a fact.'],
   ['Beta', 'How much a stock moves versus the market. Beta 2 = roughly twice the market\'s swings, both ways. High beta + small position size, or hold on tight.'],
   ['Moat', 'A durable advantage that keeps competitors from eating the business — brand, network effects, patents, switching costs. Wide moat = pricing power that lasts.'],
