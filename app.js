@@ -1419,6 +1419,10 @@ function pfEstBuyKey(pts, cost) {
   }
   return null;
 }
+function pfEstKeyFor(p, hh) {
+  if (p.estOverride) { var dk = pfDkey(new Date(p.estOverride + 'T12:00:00')); if (isNum(dk) && dk > 0) return dk; }
+  return (hh && isNum(p.cost)) ? pfEstBuyKey(hh.pts, p.cost) : null;
+}
 function pfFmtDate(key) {
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return MON[(Math.floor(key / 100) % 100) - 1] + ' ' + (key % 100) + ', ' + Math.floor(key / 10000);
@@ -1521,12 +1525,15 @@ async function renderPortfolio(doFetch) {
             headExtra = ' <span class="pf-buys-n">' + fmtShares(Math.min(logged2, p.shares)) + ' / ' + fmtShares(p.shares) + ' shares logged</span>';
             var rem2 = p.shares - logged2;
             if (rem2 > 0.0001) {
-              var ek3 = (isNum(p.cost) && hh) ? pfEstBuyKey(hh.pts, p.cost) : null;
-              buysHtml += '<div class="pf-buy-row"><span>Remaining</span><span>' + fmtShares(rem2) + ' shares \u2014 ' + (ek3 ? 'est. ' + pfFmtDate(ek3) + ' (from avg cost)' : 'dated with your earliest purchase') + '</span></div>';
+              var ek3 = hh ? pfEstKeyFor(p, hh) : null;
+              buysHtml += '<div class="pf-buy-row"><span>Remaining</span><span>' + fmtShares(rem2) + ' shares \u2014 ' + (ek3 ? (p.estOverride ? 'set to ' + pfFmtDate(ek3) + ' (edited)' : 'est. ' + pfFmtDate(ek3) + ' (from avg cost)') : 'dated with your earliest purchase') + '</span>' +
+                (hh ? '<button class="link-btn pf-buy-del" data-pf-estedit="' + esc(p.ticker) + '">Edit date</button>' : '') + '</div>';
             }
-          } else if (isNum(p.cost) && hh) {
-            var ek = pfEstBuyKey(hh.pts, p.cost);
-            if (ek) buysHtml = '<div class="pf-buy-row"><span>Est. purchase</span><span>' + pfFmtDate(ek) + ' (from your avg cost)</span></div>';
+          } else if (hh && (isNum(p.cost) || p.estOverride)) {
+            var ekA = pfEstKeyFor(p, hh);
+            if (ekA) buysHtml = '<div class="pf-buy-row"><span>' + (p.estOverride ? 'Purchase date' : 'Est. purchase') + '</span><span>' + pfFmtDate(ekA) + (p.estOverride ? ' (edited)' : ' (from your avg cost)') + '</span>' +
+              '<button class="link-btn pf-buy-del" data-pf-estedit="' + esc(p.ticker) + '">Edit date</button>' +
+              (p.estOverride ? '<button class="link-btn danger" data-pf-estreset="' + esc(p.ticker) + '">Reset</button>' : '') + '</div>';
           }
           return '<div class="pf-buys"><div class="pf-buys-h"><span>Purchases' + headExtra + '</span><button class="link-btn" data-pf-buyadd="' + esc(p.ticker) + '">\uff0b Add purchase</button></div>' + buysHtml + '</div>';
         })() +
@@ -1677,6 +1684,34 @@ async function renderPortfolio(doFetch) {
       renderPortfolio(false);
     });
   });
+  listBox.querySelectorAll('[data-pf-estedit]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var T = b.getAttribute('data-pf-estedit');
+      var pf = getPortfolio();
+      var pos = pf.filter(function (x) { return x.ticker === T; })[0];
+      if (!pos) return;
+      var hh = pfHistAll()[T];
+      var cur = hh ? pfEstKeyFor(pos, hh) : null;
+      var d = window.prompt('Purchase date for ' + T + ' (YYYY-MM-DD). This replaces the estimate for any shares you have not logged purchases for:', cur ? pfKeyToISO(cur) : '');
+      if (d === null) return;
+      d = String(d).trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || isNaN(new Date(d + 'T12:00:00').getTime())) { window.alert('That date does not look right -- use YYYY-MM-DD, like 2025-03-14.'); return; }
+      pos.estOverride = d;
+      setPortfolio(pf);
+      renderPortfolio(false);
+    });
+  });
+  listBox.querySelectorAll('[data-pf-estreset]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var T = b.getAttribute('data-pf-estreset');
+      var pf = getPortfolio();
+      var pos = pf.filter(function (x) { return x.ticker === T; })[0];
+      if (!pos) return;
+      delete pos.estOverride;
+      setPortfolio(pf);
+      renderPortfolio(false);
+    });
+  });
   listBox.querySelectorAll('[data-pf-edit]').forEach(function (b) {
     b.addEventListener('click', function () {
       var T = b.getAttribute('data-pf-edit');
@@ -1780,13 +1815,13 @@ function paintBench(box, hist, positions) {
       });
       manualUsed++;
       if (room > 0) {
-        var ek2 = isNum(p.cost) ? pfEstBuyKey(hh.pts, p.cost) : null;
+        var ek2 = pfEstKeyFor(p, hh);
         if (ek2) { lots.push({ d: ek2, t: p.ticker, sh: room, amt: room * p.cost, pre: ek2 < w0 }); estUsed++; }
         else if (firstD !== null) { var fp = priceAt(hh.pts, firstD); lots.push({ d: firstD, t: p.ticker, sh: room, amt: isNum(fp) ? room * fp : 0, pre: firstD < w0 }); }
       }
-    } else if (isNum(p.cost) && hh) {
-      var ek = pfEstBuyKey(hh.pts, p.cost);
-      if (ek) { lots.push({ d: ek, t: p.ticker, sh: p.shares, amt: p.shares * p.cost, pre: ek < w0 }); estUsed++; }
+    } else if (hh && (isNum(p.cost) || p.estOverride)) {
+      var ek = pfEstKeyFor(p, hh);
+      if (ek) { var ep = priceAt(hh.pts, ek); lots.push({ d: ek, t: p.ticker, sh: p.shares, amt: isNum(p.cost) ? p.shares * p.cost : (isNum(ep) ? p.shares * ep : 0), pre: ek < w0 }); estUsed++; }
       else excluded++;
     } else excluded++;
   });
