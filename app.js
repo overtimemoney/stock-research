@@ -63,6 +63,9 @@ function lsSet(key, val) {
 
 /* ============================== relay fetch ============================== */
 var RELAYS = [
+  // The user's own Cloudflare Worker relay (deployed 2026-10-24) — first
+  // route: fast and reliable. The free public relays below stay as backup.
+  function (u) { return 'https://stock-research-relay.supplessayings-6e6.workers.dev/?url=' + encodeURIComponent(u); },
   function (u) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); },
   function (u) { return 'https://api.cors.lol/?url=' + encodeURIComponent(u); },
   function (u) { return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u); },
