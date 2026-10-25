@@ -654,7 +654,6 @@ function saveAiSwot(ticker, entry) {
 function aiMetricsText(d) {
   var sc = scoreStock(d);
   var parts = [];
-  if (isNum(d.price)) parts.push('Price ' + fmtMoney(d.price));
   if (isNum(d.marketCap)) parts.push('market cap ' + fmtCap(d.marketCap));
   if (isNum(d.forwardPE)) parts.push('forward P/E ' + fmtNum(d.forwardPE, 1));
   if (isNum(d.pe)) parts.push('trailing P/E ' + fmtNum(d.pe, 1));
@@ -677,18 +676,13 @@ function aiMetricsText(d) {
     parts.push('EPS beat rate ' + d.epsRecord.beatPct + '% / miss rate ' + d.epsRecord.missPct + '% over last ' + d.epsRecord.n + ' quarters');
   }
   if (isNum(d.divYield)) parts.push('dividend yield ' + fmtNum(d.divYield, 2) + '%');
-  if (isNum(d.pctBelowHigh)) parts.push(fmtNum(d.pctBelowHigh, 1) + '% below its 52-week high');
-  if (isNum(d.target1Y) && isNum(d.price) && d.price > 0) {
-    parts.push('analyst 1-yr target ' + fmtMoney(d.target1Y) + ' (' + fmtPct((d.target1Y / d.price - 1) * 100) + ' vs price)');
-  }
-  if (sc.score != null) parts.push('app valuation score ' + sc.score + '/100 (' + sc.verdict + ')');
   return parts.join('; ') + '.';
 }
 function aiSwotGridHtml(entry) {
   return '<div class="swot-grid">' +
     swotBox('S', 'Strengths', entry.swot.S, 'sw-s') + swotBox('W', 'Weaknesses', entry.swot.W, 'sw-w') +
     swotBox('O', 'Opportunities', entry.swot.O, 'sw-o') + swotBox('T', 'Threats', entry.swot.T, 'sw-t') + '</div>' +
-    '<p class="fineprint">AI-generated ' + esc(entry.asOf || '') + ' by Llama 4 on your Cloudflare account, from the live numbers above plus recent headlines. AI can be wrong or out of date — a starting point, not gospel. <button class="btn-ghost" id="ai-swot-btn" type="button">↻ Regenerate</button></p>';
+    '<p class="fineprint">AI-generated ' + esc(entry.asOf || '') + ' by Llama 4 on your Cloudflare account, from the live numbers above plus recent headlines. Strengths/Weaknesses are internal to the company; Opportunities/Threats are external factors. AI can be wrong or out of date — a starting point, not gospel. <button class="btn-ghost" id="ai-swot-btn" type="button">↻ Regenerate</button></p>';
 }
 function bindAiSwotBtn(d) {
   var b = $('ai-swot-btn');
@@ -811,7 +805,7 @@ function renderScorecard(d) {
   if (aiSaved && aiSaved.swot) {
     html += aiSwotGridHtml(aiSaved);
   } else {
-    html += '<p class="fineprint">Written on demand by an AI (Llama 4, running free on your own Cloudflare account) from the live numbers on this page plus recent headlines — the qualitative side the numbers can\'t show: brand, rivals, regulation.</p>' +
+    html += '<p class="fineprint">Written on demand by an AI (Llama 4, running free on your own Cloudflare account) from the live numbers on this page plus recent headlines — the qualitative side the numbers can\'t show: brand, rivals, regulation. Classic rules: Strengths and Weaknesses are internal to the company; Opportunities and Threats are external factors.</p>' +
       '<button class="btn-ghost" id="ai-swot-btn" type="button">✦ Generate AI SWOT</button>';
   }
   html += '</div>';
@@ -1344,6 +1338,7 @@ var GLOSSARY = [
   ['Cyclical', 'A business whose earnings rise and fall with an economic cycle — memory chips, steel, airlines, hotels. Cyclicals look cheapest at peak earnings, which is exactly when they are most dangerous.'],
   ['Value trap', 'A stock that looks cheap (low P/E, big drop from its high) because the business or its earnings are about to get worse. The discount is the market being right, not wrong.'],
   ['Margin of safety', 'The gap between what you pay and what you think a stock is worth. The wider it is, the more wrong you can afford to be. Your value screen hunts for it; it does not guarantee it.'],
+  ['SWOT analysis', 'A four-box check of a business. Strengths and Weaknesses are INTERNAL — what the company itself excels at or falls short on: a strong brand, a loyal customer base, a strong balance sheet, unique technology; or high debt, a weak supply chain, a lack of capital. Opportunities and Threats are EXTERNAL — outside factors that could help or harm: a country cutting tariffs opens a new market (opportunity); rising material costs, tougher competition or tight labor supply squeeze the business (threats).'],
   ['Exit P/E (exit multiple)', 'The P/E you assume the market will pay for a stock when you sell it in the future. The Projection Builder multiplies future EPS by this to get the implied price — small changes here swing the answer a lot.'],
   ['Bear / Base / Bull case', 'Three versions of the same forecast: pessimistic, most likely, optimistic. In the Projection Builder they are your EPS path with growth shifted down 5 points, as-is, and up 5 points (plus a small exit P/E adjustment).'],
   ['Implied price', 'The future price a projection works out to: future EPS × exit P/E. It is an "if these assumptions hold" number, not a prediction.'],
