@@ -566,6 +566,66 @@ function lineChartSVG(closes, high52, w, h) {
 var lastStock = null;
 function kvItem(k, v) { return '<div class="kv-item"><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + '</div></div>'; }
 
+/* ============================== classic SWOT library ============================== */
+/* Researched, qualitative SWOTs (brand, rivals, regulation, strategy) —
+ * written by Luna, dated, and built into the app. The app itself can't
+ * write these on the fly for an arbitrary ticker: there is no news feed or
+ * AI engine inside it, and an auto-invented "classic" SWOT would be made-up
+ * text. So the library covers major names, and any ticker can be added on
+ * request. The numbers-based SWOT below covers every ticker. */
+var SWOTS = {
+  META: { asOf: 'Oct 2026',
+    S: ['Owns Facebook, Instagram, WhatsApp and Messenger — billions of daily users and network effects no rival can copy.', 'Best-in-class ad targeting machine, funded by enormous free cash flow.', 'Instagram Reels competes head-on with TikTok for short video.'],
+    W: ['Almost entirely dependent on advertising (~98% of revenue).', 'Reality Labs has burned tens of billions with no mainstream hit yet.', 'Founder super-voting shares leave outside shareholders with little say.'],
+    O: ['AI assistants and AI ad tools can deepen engagement and ad pricing.', 'WhatsApp business messaging and ads are still early-stage revenue.', 'Threads is growing into a real text-platform contender.'],
+    T: ['FTC antitrust cases could force divesting Instagram or WhatsApp.', 'EU privacy rules and Apple tracking limits keep squeezing ad targeting.', 'AI capex is enormous — returns must show up to justify it.'] },
+  NFLX: { asOf: 'Oct 2026',
+    S: ['Largest paid streaming base in the world (~300M members) with proven pricing power.', 'Global content engine plus recommendation data at unmatched scale.', 'The brand is synonymous with streaming itself.'],
+    W: ['Content costs are enormous and never stop — the hits must keep coming.', 'Growth in mature markets is slowing (visible in the latest quarters).', 'Still essentially one business: streaming subscriptions plus a young ad tier.'],
+    O: ['The advertising tier is a second revenue engine still ramping.', 'Live events, sports and games can stretch engagement beyond series/film.', 'International pricing is still well below US levels — headroom remains.'],
+    T: ['Deep-pocketed rivals (Disney, Amazon, YouTube, Apple) bid up content and talent.', 'Each price rise tests churn; password crackdown gains eventually run out.', 'A weak content slate shows up in growth within a quarter or two.'] },
+  KO: { asOf: 'Oct 2026',
+    S: ['One of the world\'s most valuable brands, sold in ~200 countries through a distribution network startups can\'t replicate.', '60+ consecutive years of dividend increases — extreme cash reliability.', 'Asset-light concentrate model produces high margins.'],
+    W: ['Core product is sugary drinks in a health-conscious era; volume growth is slow.', 'Depends on bottling partners it doesn\'t fully control.', 'Carries a significant debt load for its size.'],
+    O: ['Zero-sugar, functional drinks, coffee (Costa) and dairy brands grow faster than soda.', 'Emerging-market consumers are still trading up to branded drinks.', 'Pricing power has held up through inflation.'],
+    T: ['Sugar taxes and health regulation keep spreading globally.', 'GLP-1 weight-loss drugs may curb snack and soda consumption over time.', 'Most revenue is earned abroad — a strong dollar shrinks reported results.'] },
+  AAPL: { asOf: 'Oct 2026',
+    S: ['Ecosystem lock-in: 2B+ active devices, high-margin recurring Services, real switching costs.', 'Brand and balance sheet support buybacks at massive scale.', 'Controls its own silicon — performance per watt leads the industry.'],
+    W: ['iPhone is still roughly half of revenue — one product cycle matters enormously.', 'App Store fees, its richest Services cut, face legal pressure worldwide.', 'China is both a key market and the manufacturing base — a two-way exposure.'],
+    O: ['Apple Intelligence could trigger a device upgrade supercycle.', 'Services (payments, ads, health, TV) keep compounding off the installed base.', 'India as a growth market and a manufacturing hedge.'],
+    T: ['Antitrust remedies could hit the Google search payments and App Store rules.', 'Tariffs on China-made goods squeeze the supply chain.', 'Perceived as behind Google/Microsoft in AI — the narrative can punish the stock.'] },
+  NVDA: { asOf: 'Oct 2026',
+    S: ['Near-monopoly in AI training chips, plus the CUDA software lock-in built over 15+ years.', 'Data-center gross margins around 75% — exceptional pricing power.', 'Every hyperscaler building AI must come to Nvidia first.'],
+    W: ['A handful of hyperscaler customers drive most of the growth.', 'One business (data-center AI) now dwarfs everything else — a capex pause hits all of it.', 'Expectations embedded in the price are extremely high.'],
+    O: ['Inference, sovereign AI buildouts, robotics and edge AI expand the market beyond training.', 'Annual product cadence (Blackwell → Rubin) keeps rivals a step behind.'],
+    T: ['Big customers are building their own chips (Google TPU, Amazon Trainium, Microsoft).', 'China export controls close off a huge market.', 'If AI spending is a bubble, the chip supplier feels the pop first.'] },
+  MSFT: { asOf: 'Oct 2026',
+    S: ['Azure is #2 in cloud and riding AI demand; Office and Windows are entrenched in enterprise.', 'Copilot AI is woven into products businesses already pay for.', 'Genuinely diversified: cloud, software, LinkedIn, gaming, security.'],
+    W: ['Huge AI capex weighs on margins and free cash flow near-term.', 'The OpenAI relationship is both an edge and a concentration risk.', 'Consumer Windows is mature; growth must come from cloud and AI.'],
+    O: ['AI agent and Copilot seats are a new per-user revenue line across a giant installed base.', 'Cloud migration and security/data platforms still have years of runway.'],
+    T: ['AWS and Google contest every cloud and AI deal.', 'Ongoing antitrust scrutiny in the US and EU.', 'If AI returns disappoint, the capex bill remains.'] },
+  AMZN: { asOf: 'Oct 2026',
+    S: ['AWS is the cloud profit engine; Prime locks in hundreds of millions of members.', 'The logistics network is a moat rivals can\'t afford to copy.', 'Advertising is high-margin and still fast-growing.'],
+    W: ['Retail margins are razor-thin by design — the model leans on AWS profits.', 'A vast warehouse and headcount footprint makes costs hard to flex down.', 'International retail has a long history of losses.'],
+    O: ['Ads keep taking product-search share from Google and Meta.', 'AWS AI services (Bedrock and its own chips) ride the AI buildout.', 'Grocery and healthcare are large markets it has barely penetrated.'],
+    T: ['The FTC antitrust case targets its marketplace practices directly.', 'Seller fee fatigue pushes merchants toward Walmart and discount rivals.', 'Labor cost and unionization pressure across the warehouse network.'] },
+  GOOGL: { asOf: 'Oct 2026',
+    S: ['Search is the default gateway to the web (~90% share) with an unmatched ads business.', 'YouTube is the world\'s largest video platform; Android and Chrome control distribution.', 'Frontier AI research (DeepMind) sits in-house.'],
+    W: ['Search is both the cash cow and the product AI chatbots threaten — a real innovator\'s dilemma.', 'Advertising is roughly three-quarters of revenue.', 'Other Bets consume cash with little to show so far.'],
+    O: ['Gemini across Search, Workspace and Android can defend and extend the core.', 'Google Cloud is #3 and growing fast on AI demand.', 'Waymo leads robotaxis — a genuine option on autonomous transport.'],
+    T: ['US courts have ruled its search business a monopoly — remedies could reach Chrome or default deals.', 'AI answers (including Google\'s own) reduce the ad clicks the model depends on.', 'EU digital-market rules and fines keep coming.'] },
+  TSLA: { asOf: 'Oct 2026',
+    S: ['EV brand leader; the Supercharger network became the North American standard.', 'Direct sales plus software (FSD subscriptions) give it a different margin model than legacy auto.', 'Manufacturing scale and cost lead over traditional rivals.'],
+    W: ['An aging lineup — Model 3/Y carry the company — and price cuts have squeezed margins.', 'Extreme key-person risk: the brand and the CEO are fused.', 'Full Self-Driving promises have slipped for years.'],
+    O: ['Robotaxi service is the big option value if autonomy scales.', 'Energy storage (Megapack) is growing fast off the same battery skills.', 'Cheaper models open the mass market; Optimus robots are a long-dated option.'],
+    T: ['Chinese rivals (BYD and peers) match it on price and features.', 'EV incentives and politics cut both ways.', 'The valuation assumes autonomy succeeds — little margin for disappointment.'] },
+  MU: { asOf: 'Oct 2026',
+    S: ['One of only three makers of DRAM and high-bandwidth memory (HBM) — a true oligopoly.', 'HBM for AI accelerators is effectively sold out well in advance.', 'US-based, with CHIPS Act support for domestic fabs.'],
+    W: ['Memory is the textbook commodity cycle — Micron doesn\'t set prices, the market does.', 'Fabs cost billions; the business eats capital in good years and bad.', 'Current demand is heavily concentrated in AI data centers.'],
+    O: ['Every AI accelerator needs more HBM, and memory content per server keeps rising.', 'On-device AI lifts memory in PCs and phones too.', 'Multi-year supply agreements can smooth the cycle somewhat.'],
+    T: ['The cycle itself: oversupply years crush prices and EPS — the classic cliff.', 'Samsung and SK hynix compete head-on; Chinese makers (CXMT) are coming up behind.', 'Any AI capex slowdown hits memory orders first.'] }
+};
+
 /* ============================== SWOT (auto) ============================== */
 /* A SWOT built from the numbers already on the scorecard — every bullet
  * cites the metric behind it. It reads figures, not news: company-specific
@@ -710,12 +770,22 @@ function renderScorecard(d) {
     html += '<p class="fineprint">Not enough EPS data came back to run the cliff check for this ticker.</p>';
   }
 
+  var classic = SWOTS[d.ticker] || null;
+  if (classic) {
+    html += '<div class="section-h">Classic <span class="gold-text">SWOT</span></div>';
+    html += '<div class="swot-grid">' +
+      swotBox('S', 'Strengths', classic.S, 'sw-s') + swotBox('W', 'Weaknesses', classic.W, 'sw-w') +
+      swotBox('O', 'Opportunities', classic.O, 'sw-o') + swotBox('T', 'Threats', classic.T, 'sw-t') + '</div>';
+    html += '<p class="fineprint">Researched SWOT, written ' + esc(classic.asOf) + ' — the qualitative side (brand, rivals, regulation) the numbers can\'t show. It ages, so check for newer developments.</p>';
+  }
+
   var swot = buildSwot(d);
   html += '<div class="section-h">SWOT — <span class="gold-text">from the numbers</span></div>';
   html += '<div class="swot-grid">' +
     swotBox('S', 'Strengths', swot.S, 'sw-s') + swotBox('W', 'Weaknesses', swot.W, 'sw-w') +
     swotBox('O', 'Opportunities', swot.O, 'sw-o') + swotBox('T', 'Threats', swot.T, 'sw-t') + '</div>';
-  html += '<p class="fineprint">Auto-generated from the figures on this page — it reads the numbers, not the news, so company-specific events (lawsuits, new rivals, regulation) won\'t show up here.</p>';
+  html += '<p class="fineprint">Auto-generated from the figures on this page — it reads the numbers, not the news, so company-specific events (lawsuits, new rivals, regulation) won\'t show up here.' +
+    (classic ? '' : ' No researched SWOT for this ticker yet — ask Luna to add one.') + '</p>';
 
   if (d.history && d.history.length >= 2) {
     html += '<div class="section-h">Price — <span class="gold-text">1 year</span></div><div class="chart-wrap">' + lineChartSVG(d.history, d.high52) + '</div>';
@@ -1373,5 +1443,5 @@ if (typeof document !== 'undefined' && document.getElementById) {
 }
 /* Node export for offline pipeline tests (ignored in the browser). */
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr, buildSwot: buildSwot };
+  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr, buildSwot: buildSwot, SWOTS: SWOTS };
 }
