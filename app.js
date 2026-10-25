@@ -1620,7 +1620,8 @@ function attachAutocomplete(input, onPick) {
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(function (s) { s.classList.toggle('active', s.id === 'tab-' + name); });
   document.querySelectorAll('.tabbar button').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-tab') === name); });
-  window.scrollTo(0, 0);
+  var mn = document.querySelector('main');
+  if (mn) mn.scrollTop = 0;
 }
 function initApp() {
   document.querySelectorAll('.tabbar button').forEach(function (b) {
