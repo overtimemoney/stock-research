@@ -1382,9 +1382,12 @@ var pfOpen = {};
 /* The user's Coolors palette (deep navy -> pale sky). When there are
  * more slices than palette colors, new colors are interpolated between
  * neighbouring palette stops so the gradient just gets finer. */
-var PF_PALETTE = ['#012A4A', '#013A63', '#01497C', '#014F86', '#2A6F97', '#2C7DA0', '#468FAF', '#61A5C2', '#89C2D9', '#A9D6E5'];
+var PF_PALETTE = ['#012A4A', '#013A63', '#01497C', '#014F86', '#2A6F97', '#2C7DA0', '#468FAF', '#61A5C2', '#89C2D9', '#A9D6E5', '#95D5B2', '#F4E285', '#FFD6A5', '#FBC4D6'];
 function pfPaletteColors(n) {
-  if (n <= PF_PALETTE.length) return PF_PALETTE.slice(0, Math.max(n, 0));
+  // Always spread the picks across the whole palette (not just its
+  // first stops), so the lighter, varied tones show even with only a
+  // handful of holdings; extra colors are blended between stops.
+  if (n <= 1) return PF_PALETTE.slice(0, Math.max(n, 0));
   function hx(c) { return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]; }
   var stops = PF_PALETTE.map(hx), out = [];
   for (var i = 0; i < n; i++) {
