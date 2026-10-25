@@ -1907,6 +1907,14 @@ function initApp() {
   attachAutocomplete($('cmp-3'), null);
   attachAutocomplete($('j-ticker'), null);
   attachAutocomplete($('pf-ticker'), null);
+  var pfAddBody = $('pf-add-body');
+  function pfSetForm(open) {
+    pfAddBody.hidden = !open;
+    document.querySelector('.pf-add-card').classList.toggle('open', open);
+    $('pf-add-toggle').setAttribute('aria-expanded', String(open));
+  }
+  $('pf-add-toggle').addEventListener('click', function () { pfSetForm(pfAddBody.hidden); });
+  if (!getPortfolio().length) pfSetForm(true);
   $('pf-form').addEventListener('submit', function (e) {
     e.preventDefault();
     var T = ($('pf-ticker').value || '').trim().toUpperCase();
@@ -1920,6 +1928,7 @@ function initApp() {
     setPortfolio(pf);
     $('pf-ticker').value = ''; $('pf-shares').value = ''; $('pf-cost').value = '';
     status.className = 'status'; status.textContent = '';
+    pfSetForm(false);
     renderPortfolio(true);
   });
   $('pf-refresh').addEventListener('click', function () { renderPortfolio(true); });

@@ -162,8 +162,9 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
   <section id="tab-portfolio" class="tab">
     <h2 class="tab-title">Port<span class="gold-text">folio</span></h2>
     <div id="pf-summary"></div>
-    <div class="card">
-      <h3 style="margin-top:0">Add a holding</h3>
+    <div class="card pf-add-card">
+      <button id="pf-add-toggle" class="pf-add-head" type="button" aria-expanded="false"><span>Add a holding</span><span class="pf-chev">▾</span></button>
+      <div id="pf-add-body" hidden>
       <form id="pf-form" autocomplete="off">
         <div class="grid2">
           <label>Ticker<input id="pf-ticker" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="e.g. KO"></label>
@@ -175,6 +176,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
         </div>
         <button type="submit" class="btn-gold wide">Add to portfolio</button>
       </form>
+      </div>
     </div>
     <div class="row-between wl-tools">
       <span id="pf-status" class="status"></span>

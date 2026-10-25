@@ -387,3 +387,7 @@ table.scen td { padding: 8px 6px; }
 .pf-pop { margin-top: 10px; text-align: center; background: var(--chip-bg); border: 1px solid var(--line); border-radius: 12px; padding: 9px 12px; }
 .pf-pop b { display: block; font-size: 15.5px; font-weight: 900; }
 .pf-pop span { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+
+.pf-add-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; background: none; border: none; color: inherit; font: inherit; font-size: 16.5px; font-weight: 900; text-align: left; padding: 0; cursor: pointer; }
+.pf-add-card.open .pf-chev { transform: rotate(180deg); }
+#pf-add-body { margin-top: 12px; }
