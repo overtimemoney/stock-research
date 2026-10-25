@@ -633,6 +633,102 @@ function swotBox(letter, title, items, cls) {
   return '<div class="swot-box ' + cls + '"><h5><span class="swot-badge">' + letter + '</span>' + esc(title) + '</h5><ul>' + lis + '</ul></div>';
 }
 
+/* ============================== AI SWOT ============================== */
+/* Classic qualitative SWOT generated on demand by the Llama 4 model on
+ * the user's own Cloudflare Worker (/swot endpoint, Workers AI free
+ * tier). The app sends the ticker plus a summary of the live metrics it
+ * already fetched; the worker adds recent Yahoo headlines and returns
+ * the four lists. Saved on-device per ticker so it persists. */
+var AI_SWOT_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/swot';
+var AI_SWOT_KEY = 'sr_aiswot_v1';
+
+function getAiSwot(ticker) {
+  var all = lsGet(AI_SWOT_KEY, {});
+  return all[ticker] || null;
+}
+function saveAiSwot(ticker, entry) {
+  var all = lsGet(AI_SWOT_KEY, {});
+  all[ticker] = entry;
+  lsSet(AI_SWOT_KEY, all);
+}
+function aiMetricsText(d) {
+  var sc = scoreStock(d);
+  var parts = [];
+  if (isNum(d.price)) parts.push('Price ' + fmtMoney(d.price));
+  if (isNum(d.marketCap)) parts.push('market cap ' + fmtCap(d.marketCap));
+  if (isNum(d.forwardPE)) parts.push('forward P/E ' + fmtNum(d.forwardPE, 1));
+  if (isNum(d.pe)) parts.push('trailing P/E ' + fmtNum(d.pe, 1));
+  if (isNum(d.peg)) parts.push('PEG ' + fmtNum(d.peg, 2));
+  if (isNum(d.grossMargin)) parts.push('gross margin ' + fmtNum(d.grossMargin, 1) + '%');
+  if (isNum(d.operMargin)) parts.push('operating margin ' + fmtNum(d.operMargin, 1) + '%');
+  if (isNum(d.profitMargin)) parts.push('profit margin ' + fmtNum(d.profitMargin, 1) + '%');
+  if (isNum(d.roe)) parts.push('ROE ' + fmtNum(d.roe, 1) + '%');
+  if (isNum(d.debtEq)) parts.push('debt/equity ' + fmtNum(d.debtEq, 2));
+  if (isNum(d.beta)) parts.push('beta ' + fmtNum(d.beta, 2));
+  if (isNum(d.salesGrowthTTM)) parts.push('revenue growth (TTM) ' + fmtPct(d.salesGrowthTTM));
+  if (isNum(d.revGrowthQtr)) parts.push('revenue growth latest quarter ' + fmtPct(d.revGrowthQtr));
+  if (isNum(d.epsGrowthTTM)) parts.push('EPS growth (TTM) ' + fmtPct(d.epsGrowthTTM));
+  var traj = epsTrajectory(d);
+  if (traj.points.length >= 2) {
+    parts.push('consensus EPS path: ' + traj.points.map(function (p) { return p.label + ' ' + fmtNum(p.eps); }).join(' -> '));
+  }
+  if (traj.warning) parts.push('note: ' + traj.warning);
+  if (d.epsRecord && d.epsRecord.n >= 4) {
+    parts.push('EPS beat rate ' + d.epsRecord.beatPct + '% / miss rate ' + d.epsRecord.missPct + '% over last ' + d.epsRecord.n + ' quarters');
+  }
+  if (isNum(d.divYield)) parts.push('dividend yield ' + fmtNum(d.divYield, 2) + '%');
+  if (isNum(d.pctBelowHigh)) parts.push(fmtNum(d.pctBelowHigh, 1) + '% below its 52-week high');
+  if (isNum(d.target1Y) && isNum(d.price) && d.price > 0) {
+    parts.push('analyst 1-yr target ' + fmtMoney(d.target1Y) + ' (' + fmtPct((d.target1Y / d.price - 1) * 100) + ' vs price)');
+  }
+  if (sc.score != null) parts.push('app valuation score ' + sc.score + '/100 (' + sc.verdict + ')');
+  return parts.join('; ') + '.';
+}
+function aiSwotGridHtml(entry) {
+  return '<div class="swot-grid">' +
+    swotBox('S', 'Strengths', entry.swot.S, 'sw-s') + swotBox('W', 'Weaknesses', entry.swot.W, 'sw-w') +
+    swotBox('O', 'Opportunities', entry.swot.O, 'sw-o') + swotBox('T', 'Threats', entry.swot.T, 'sw-t') + '</div>' +
+    '<p class="fineprint">AI-generated ' + esc(entry.asOf || '') + ' by Llama 4 on your Cloudflare account, from the live numbers above plus recent headlines. AI can be wrong or out of date — a starting point, not gospel. <button class="btn-ghost" id="ai-swot-btn" type="button">↻ Regenerate</button></p>';
+}
+function bindAiSwotBtn(d) {
+  var b = $('ai-swot-btn');
+  if (b) b.addEventListener('click', function () { runAiSwot(d); });
+}
+async function runAiSwot(d) {
+  var zone = $('ai-swot-zone');
+  if (!zone) return;
+  zone.innerHTML = '<p class="fineprint"><span class="spinner"></span>Writing the SWOT — the AI is reading the numbers and recent headlines; give it up to ~30 seconds…</p>';
+  try {
+    var ctrl = ('AbortController' in window) ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 90000) : null;
+    var resp = await fetch(AI_SWOT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ticker: d.ticker,
+        name: d.companyName || d.ticker,
+        sector: d.sector || '',
+        industry: d.industry || '',
+        metrics: aiMetricsText(d)
+      }),
+      signal: ctrl ? ctrl.signal : undefined
+    });
+    if (timer) clearTimeout(timer);
+    var data = await resp.json();
+    if (!resp.ok || !data.swot) throw new Error((data && data.error) || ('HTTP ' + resp.status));
+    var entry = { asOf: data.asOf || '', swot: data.swot };
+    saveAiSwot(d.ticker, entry);
+    var z2 = $('ai-swot-zone');
+    if (z2) { z2.innerHTML = aiSwotGridHtml(entry); bindAiSwotBtn(d); }
+  } catch (e) {
+    var z3 = $('ai-swot-zone');
+    if (z3) {
+      z3.innerHTML = '<div class="alert warn">The AI SWOT didn\'t come back (' + esc(e.message || 'network error') + '). <button class="btn-ghost" id="ai-swot-btn" type="button">Try again</button></div>';
+      bindAiSwotBtn(d);
+    }
+  }
+}
+
 function renderScorecard(d) {
   lastStock = d;
   var sc = scoreStock(d);
@@ -710,6 +806,16 @@ function renderScorecard(d) {
     html += '<p class="fineprint">Not enough EPS data came back to run the cliff check for this ticker.</p>';
   }
 
+  var aiSaved = getAiSwot(d.ticker);
+  html += '<div class="section-h">Classic SWOT — <span class="gold-text">AI</span></div><div id="ai-swot-zone">';
+  if (aiSaved && aiSaved.swot) {
+    html += aiSwotGridHtml(aiSaved);
+  } else {
+    html += '<p class="fineprint">Written on demand by an AI (Llama 4, running free on your own Cloudflare account) from the live numbers on this page plus recent headlines — the qualitative side the numbers can\'t show: brand, rivals, regulation.</p>' +
+      '<button class="btn-ghost" id="ai-swot-btn" type="button">✦ Generate AI SWOT</button>';
+  }
+  html += '</div>';
+
   var swot = buildSwot(d);
   html += '<div class="section-h">SWOT — <span class="gold-text">from the numbers</span></div>';
   html += '<div class="swot-grid">' +
@@ -736,6 +842,7 @@ function renderScorecard(d) {
   $('score-result').innerHTML = html;
   $('score-empty').style.display = 'none';
 
+  bindAiSwotBtn(d);
   $('sc-watch').addEventListener('click', function () {
     addToWatchlist(d.ticker, isNum(d.price) ? d.price : null);
     switchTab('watchlist');
