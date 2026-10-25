@@ -1379,6 +1379,14 @@ async function fetchPfQuote(T) {
 }
 
 var pfOpen = {};
+function pfLogoErr(img) {
+  var fb = img.getAttribute('data-fb');
+  if (fb) { img.removeAttribute('data-fb'); img.src = fb; }
+  else img.style.display = 'none';
+}
+function pfLogoImg(ticker) {
+  return '<img class="pf-logo" src="https://financialmodelingprep.com/image-stock/' + encodeURIComponent(ticker) + '.png" data-fb="https://assets.parqet.com/logos/symbol/' + encodeURIComponent(ticker) + '?format=png" onerror="pfLogoErr(this)" alt="">';
+}
 function pfKv(k, v) { return '<div class="pf-kv"><span>' + k + '</span><b>' + v + '</b></div>'; }
 
 async function renderPortfolio(doFetch) {
@@ -1435,7 +1443,7 @@ async function renderPortfolio(doFetch) {
     var col = colorOf[p.ticker] || '#5A5A5E';
     html += '<div class="wl-row pf-row' + (open ? ' open' : '') + '">' +
       '<button class="pf-head" data-pf-toggle="' + esc(p.ticker) + '" aria-expanded="' + open + '">' +
-        '<span class="pf-avatar" style="background:' + col + '">' + esc(p.ticker.charAt(0)) + '</span>' +
+        '<span class="pf-avatar" style="background:' + col + '">' + esc(p.ticker.charAt(0)) + pfLogoImg(p.ticker) + '</span>' +
         '<span class="wl-left"><span class="wl-t">' + esc(p.ticker) + '</span>' +
         (qt.name ? '<span class="pf-name">' + esc(qt.name) + '</span>' : '') + '</span>' +
         '<span class="pf-alloc">' + (isNum(frac) ? fmtNum(frac, 1) + '%' : '\u2014') + '</span>' +
@@ -1477,9 +1485,9 @@ async function renderPortfolio(doFetch) {
       circles += '<circle cx="100" cy="100" r="78" fill="none" stroke="' + s.col + '" stroke-width="30" stroke-dasharray="' + seg.toFixed(1) + ' ' + (C - seg).toFixed(1) + '" stroke-dashoffset="' + (-off).toFixed(1) + '"/>';
       var mid = (off + frac * C / 2) / C * 2 * Math.PI - Math.PI / 2;
       off += frac * C;
-      var x = 50 + 57 * Math.cos(mid), y = 50 + 57 * Math.sin(mid);
-      x = Math.min(88, Math.max(12, x)); y = Math.min(93, Math.max(7, y));
-      pills += '<span class="pf-pill" style="left:' + x.toFixed(1) + '%;top:' + y.toFixed(1) + '%"><span class="pf-pill-dot" style="background:' + s.col + '">' + esc(s.initial) + '</span>' + fmtNum(frac * 100, 0) + '%</span>';
+      var x = 50 + 42 * Math.cos(mid), y = 50 + 42 * Math.sin(mid);
+      x = Math.min(86, Math.max(14, x)); y = Math.min(92, Math.max(8, y));
+      pills += '<span class="pf-pill" style="left:' + x.toFixed(1) + '%;top:' + y.toFixed(1) + '%"><span class="pf-pill-dot" style="background:' + s.col + '">' + esc(s.initial) + (s.label !== 'Other' ? pfLogoImg(s.label) : '') + '</span>' + fmtNum(frac * 100, 0) + '%</span>';
     });
     var center = isNum(dayPct)
       ? '<text x="100" y="103" text-anchor="middle" class="pf-c-big ' + (dayPct >= 0 ? 'pf-c-up' : 'pf-c-dn') + '">' + fmtPct(dayPct) + '</text><text x="100" y="126" text-anchor="middle" class="pf-c-l">TODAY</text>'
