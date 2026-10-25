@@ -1479,15 +1479,34 @@ async function renderPortfolio(doFetch) {
     });
     if (otherVal > 0) slices.push({ label: 'Other', val: otherVal, col: '#5A5A5E', initial: '\u2022' });
     var C = 2 * Math.PI * 78, off = 0, circles = '', pills = '';
+    var mids = [];
     slices.forEach(function (s) {
       var frac = s.val / totVal;
       var seg = Math.max(frac * C - 2, 0.5);
       circles += '<circle cx="100" cy="100" r="78" fill="none" stroke="' + s.col + '" stroke-width="30" stroke-dasharray="' + seg.toFixed(1) + ' ' + (C - seg).toFixed(1) + '" stroke-dashoffset="' + (-off).toFixed(1) + '"/>';
-      var mid = (off + frac * C / 2) / C * 2 * Math.PI - Math.PI / 2;
+      mids.push({ s: s, frac: frac, ang: (off + frac * C / 2) / C * 2 * Math.PI - Math.PI / 2 });
       off += frac * C;
-      var x = 50 + 44 * Math.cos(mid), y = 50 + 44 * Math.sin(mid);
-      x = Math.min(90, Math.max(10, x)); y = Math.min(94, Math.max(6, y));
-      pills += '<span class="pf-pill" data-ang="' + mid.toFixed(3) + '" style="left:' + x.toFixed(1) + '%;top:' + y.toFixed(1) + '%"><span class="pf-pill-dot" style="background:' + s.col + '">' + esc(s.initial) + (s.label !== 'Other' ? pfLogoImg(s.label) : '') + '</span>' + fmtNum(frac * 100, 0) + '%</span>';
+    });
+    // Label placement: pills ride an orbit around the ring. Two rules
+    // keep them readable -- never park a pill in the left/right zones
+    // (there is no room beside the ring there on a phone), and enforce
+    // a minimum angular gap so pills can never stack on each other.
+    var ZONE = 0.52, GAP = 0.34;
+    mids.forEach(function (m) {
+      var a = m.ang;
+      while (a > Math.PI) a -= 2 * Math.PI;
+      while (a < -Math.PI) a += 2 * Math.PI;
+      if (Math.abs(a) < ZONE) a = a < 0 ? -ZONE : ZONE;
+      if (Math.abs(Math.abs(a) - Math.PI) < ZONE) a = a < 0 ? -Math.PI + ZONE : Math.PI - ZONE;
+      m.ang = a;
+    });
+    mids.sort(function (p, q2) { return p.ang - q2.ang; });
+    for (var i2 = 1; i2 < mids.length; i2++) if (mids[i2].ang < mids[i2 - 1].ang + GAP) mids[i2].ang = mids[i2 - 1].ang + GAP;
+    for (var j2 = mids.length - 2; j2 >= 0; j2--) if (mids[j2].ang > mids[j2 + 1].ang - GAP) mids[j2].ang = mids[j2 + 1].ang - GAP;
+    mids.forEach(function (m) {
+      var x = 50 + 44.5 * Math.cos(m.ang), y = 50 + 44.5 * Math.sin(m.ang);
+      x = Math.min(89, Math.max(11, x)); y = Math.min(93, Math.max(7, y));
+      pills += '<span class="pf-pill" style="left:' + x.toFixed(1) + '%;top:' + y.toFixed(1) + '%"><span class="pf-pill-dot" style="background:' + m.s.col + '">' + esc(m.s.initial) + (m.s.label !== 'Other' ? pfLogoImg(m.s.label) : '') + '</span>' + fmtNum(m.frac * 100, 0) + '%</span>';
     });
     var center = '<text x="100" y="103" text-anchor="middle" class="pf-c-v">' + fmtMoney(totVal, 0) + '</text><text x="100" y="126" text-anchor="middle" class="pf-c-l">TOTAL VALUE</text>';
     chartHtml = '<div class="pf-donut"><svg viewBox="0 0 200 200" role="img" aria-label="Portfolio allocation chart"><g transform="rotate(-90 100 100)">' + circles + '</g>' + center + '</svg>' + pills + '</div>';
@@ -1499,28 +1518,6 @@ async function renderPortfolio(doFetch) {
     '<div class="pf-sum-row"><span>Est. dividends <b>' + fmtMoney(totInc, 0) + '/yr</b>' + (isNum(yld) ? ' \u00b7 ' + fmtNum(yld, 2) + '% yield' : '') + '</span>' +
     (anyCost && totCost > 0 ? '<span>Total gain/loss <b class="' + (totGain >= 0 ? 'up' : 'down') + '">' + (totGain >= 0 ? '+' : '') + fmtMoney(totGain, 0) + ' (' + fmtPct(totGain / totCost * 100) + ')</b></span>' : '') +
     '</div>' + chartHtml + '</div>';
-  var donutEl = sumBox.querySelector('.pf-donut');
-  if (donutEl && donutEl.clientWidth > 0) {
-    var SW = donutEl.clientWidth, SH = donutEl.clientHeight;
-    var ringR = SW * 0.80 * 0.465;
-    donutEl.querySelectorAll('.pf-pill').forEach(function (el) {
-      var pw = el.offsetWidth, ph = el.offsetHeight;
-      var ang = parseFloat(el.getAttribute('data-ang') || '0');
-      var cx = SW / 2, cy = SH / 2;
-      for (var tries = 0; tries < 40; tries++) {
-        cx = SW / 2 + Math.cos(ang) * SW * 0.44;
-        cy = SH / 2 + Math.sin(ang) * SH * 0.44;
-        cx = Math.min(SW - pw / 2 - 2, Math.max(pw / 2 + 2, cx));
-        cy = Math.min(SH - ph / 2 - 2, Math.max(ph / 2 + 2, cy));
-        var ddx = Math.max(Math.abs(SW / 2 - cx) - pw / 2, 0);
-        var ddy = Math.max(Math.abs(SH / 2 - cy) - ph / 2, 0);
-        if (Math.sqrt(ddx * ddx + ddy * ddy) >= ringR + 3) break;
-        ang += 0.09;
-      }
-      el.style.left = (cx / SW * 100) + '%';
-      el.style.top = (cy / SH * 100) + '%';
-    });
-  }
   listBox.querySelectorAll('[data-pf-toggle]').forEach(function (b) {
     b.addEventListener('click', function () {
       var T = b.getAttribute('data-pf-toggle');
