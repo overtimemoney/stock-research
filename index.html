@@ -137,9 +137,19 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
       <input id="wl-target" type="number" step="any" min="0" placeholder="Target buy $" aria-label="Target buy price">
       <button type="submit" class="btn-gold">Add</button>
     </form>
-    <div class="row-between">
+    <div class="row-between wl-tools">
       <span id="wl-status" class="status"></span>
-      <button id="wl-refresh" class="btn-ghost" type="button">↻ Refresh prices</button>
+      <span class="wl-tools-r">
+        <label class="wl-sort-lab">Sort
+          <select id="wl-sort" aria-label="Sort watchlist">
+            <option value="added">Date added</option>
+            <option value="valuation">Valuation: high → low</option>
+            <option value="target">Closest to target</option>
+            <option value="ticker">Ticker A–Z</option>
+          </select>
+        </label>
+        <button id="wl-refresh" class="btn-mini" type="button">↻ Refresh prices</button>
+      </span>
     </div>
     <div id="wl-list"></div>
     <p class="fineprint">Your watchlist and journal live only on this device — back them up from the ⚙ settings menu (top right).</p>

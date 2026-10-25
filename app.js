@@ -207,6 +207,54 @@ function epsRecordStats(rows) {
 var CACHE_KEY = 'sr_qcache_v1';
 var CACHE_TTL = 15 * 60 * 1000;
 
+/* Fill a stock object from a parsed Finviz snapshot. Shared by the
+ * full scorecard fetch and the watchlist's light valuation pass. */
+function fillFromFinviz(d, fvHtml) {
+  var p = parseFinviz(fvHtml);
+  if (!p['Price'] && !p['Market Cap']) throw new Error('no snapshot');
+  d.sourceFinviz = p;
+  d.name = d.name || null;
+  d.price = parseNum(p['Price']);
+  d.marketCap = parseCapStr(p['Market Cap']);
+  d.pe = parseNum(p['P/E']);
+  d.forwardPE = parseNum(p['Forward P/E']);
+  d.peg = parseNum(p['PEG']);
+  d.epsTTM = parseNum(p['EPS (ttm)']);
+  d.epsNextY = parseNum(p['EPS next Y']);
+  var g5 = p['EPS next 5Y'] || '';
+  d.epsGrowth5Y = parseNum(g5);
+  d.epsGrowthTTM = parseNum(p['EPS Y/Y TTM']);
+  d.salesGrowthTTM = parseNum(p['Sales Y/Y TTM']);
+  d.grossMargin = parseNum(p['Gross Margin']);
+  d.operMargin = parseNum(p['Oper. Margin']);
+  d.profitMargin = parseNum(p['Profit Margin']);
+  d.debtEq = parseNum(p['Debt/Eq']);
+  d.beta = parseNum(p['Beta']);
+  d.roe = parseNum(p['ROE']);
+  // Finviz renamed "Dividend %" away: the yield now rides in parens in
+  // "Dividend TTM" / "Dividend Est." — e.g. "2.10 (2.27%)". "-" when the
+  // stock pays no dividend.
+  var divRaw = p['Dividend TTM'] || p['Dividend Est.'] || '';
+  var divM = divRaw.match(/\(([\d.]+)%\)/);
+  if (divM) d.divYield = parseFloat(divM[1]);
+  else if (isNum(parseNum(p['Dividend %']))) d.divYield = parseNum(p['Dividend %']);
+  var hiParts = (p['52W High'] || '').split(/\s+/);
+  var loParts = (p['52W Low'] || '').split(/\s+/);
+  d.high52 = parseNum(hiParts[0]);
+  d.low52 = parseNum(loParts[0]);
+  var pctM = (p['52W High'] || '').match(/(-?[\d.]+)%/);
+  if (pctM) d.pctBelowHigh = Math.abs(parseFloat(pctM[1]));
+  d.companyName = null; // finviz quote page title handled by Nasdaq below
+  var titleM = fvHtml.match(/<title>([^<]+)<\/title>/i);
+  if (titleM) {
+    var nm = titleM[1].replace(/\s+Stock Price.*$/i, '').replace(/\s+Quote.*$/i, '').trim();
+    // Finviz titles look like "MU - Micron Technology Inc Stock Price and Quote"
+    var dashParts = nm.split(' - ');
+    if (dashParts.length > 1) d.companyName = dashParts.slice(1).join(' - ').trim();
+  }
+  d.sources.push('Finviz');
+}
+
 async function fetchStock(ticker, opts) {
   opts = opts || {};
   var T = String(ticker || '').trim().toUpperCase();
@@ -225,49 +273,7 @@ async function fetchStock(ticker, opts) {
     var fvHtml = await relayFetch('https://finviz.com/stock?t=' + encodeURIComponent(T), {
       validate: function (t) { return t.indexOf('snapshot-td-label') !== -1; }
     });
-    var p = parseFinviz(fvHtml);
-    if (!p['Price'] && !p['Market Cap']) throw new Error('no snapshot');
-    d.sourceFinviz = p;
-    d.name = d.name || null;
-    d.price = parseNum(p['Price']);
-    d.marketCap = parseCapStr(p['Market Cap']);
-    d.pe = parseNum(p['P/E']);
-    d.forwardPE = parseNum(p['Forward P/E']);
-    d.peg = parseNum(p['PEG']);
-    d.epsTTM = parseNum(p['EPS (ttm)']);
-    d.epsNextY = parseNum(p['EPS next Y']);
-    var g5 = p['EPS next 5Y'] || '';
-    d.epsGrowth5Y = parseNum(g5);
-    d.epsGrowthTTM = parseNum(p['EPS Y/Y TTM']);
-    d.salesGrowthTTM = parseNum(p['Sales Y/Y TTM']);
-    d.grossMargin = parseNum(p['Gross Margin']);
-    d.operMargin = parseNum(p['Oper. Margin']);
-    d.profitMargin = parseNum(p['Profit Margin']);
-    d.debtEq = parseNum(p['Debt/Eq']);
-    d.beta = parseNum(p['Beta']);
-    d.roe = parseNum(p['ROE']);
-    // Finviz renamed "Dividend %" away: the yield now rides in parens in
-    // "Dividend TTM" / "Dividend Est." — e.g. "2.10 (2.27%)". "-" when the
-    // stock pays no dividend.
-    var divRaw = p['Dividend TTM'] || p['Dividend Est.'] || '';
-    var divM = divRaw.match(/\(([\d.]+)%\)/);
-    if (divM) d.divYield = parseFloat(divM[1]);
-    else if (isNum(parseNum(p['Dividend %']))) d.divYield = parseNum(p['Dividend %']);
-    var hiParts = (p['52W High'] || '').split(/\s+/);
-    var loParts = (p['52W Low'] || '').split(/\s+/);
-    d.high52 = parseNum(hiParts[0]);
-    d.low52 = parseNum(loParts[0]);
-    var pctM = (p['52W High'] || '').match(/(-?[\d.]+)%/);
-    if (pctM) d.pctBelowHigh = Math.abs(parseFloat(pctM[1]));
-    d.companyName = null; // finviz quote page title handled by Nasdaq below
-    var titleM = fvHtml.match(/<title>([^<]+)<\/title>/i);
-    if (titleM) {
-      var nm = titleM[1].replace(/\s+Stock Price.*$/i, '').replace(/\s+Quote.*$/i, '').trim();
-      // Finviz titles look like "MU - Micron Technology Inc Stock Price and Quote"
-      var dashParts = nm.split(' - ');
-      if (dashParts.length > 1) d.companyName = dashParts.slice(1).join(' - ').trim();
-    }
-    d.sources.push('Finviz');
+    fillFromFinviz(d, fvHtml);
   } catch (e) { d.errors.push('Finviz: ' + e.message); } };
 
   // --- Nasdaq: quote + summary + EPS forecasts ---
@@ -1187,6 +1193,40 @@ async function fetchLightPrice(T) {
   var d = await fetchStock(T);
   return d.price;
 }
+
+/* ---- watchlist valuation scores + sorting ---- */
+var WLVAL_KEY = 'sr_wlval_v1';
+var WLSORT_KEY = 'sr_wlsort_v1';
+function getWlSort() {
+  try { return localStorage.getItem(WLSORT_KEY) || 'added'; } catch (e) { return 'added'; }
+}
+/* Best available valuation for a watchlist row, synchronously: a recent
+ * full scorecard fetch wins; otherwise the saved Finviz-only score. */
+function wlValuationDisplay(T) {
+  var cache = lsGet(CACHE_KEY, {});
+  var hit = cache[T];
+  if (hit && hit.data && (Date.now() - hit.ts) < 24 * 3600 * 1000) {
+    var sc = scoreStock(hit.data);
+    if (sc.score != null) return { score: sc.score, verdict: sc.verdict, fresh: (Date.now() - hit.ts) < CACHE_TTL };
+  }
+  var map = lsGet(WLVAL_KEY, {});
+  var e = map[T];
+  if (e && isNum(e.score)) return { score: e.score, verdict: e.verdict, fresh: (Date.now() - (e.at || 0)) < 24 * 3600 * 1000 };
+  return null;
+}
+/* Finviz-only valuation pass for the watchlist (one fetch per ticker). */
+async function fetchWlValuation(T) {
+  var d = { ticker: T, sources: [], errors: [] };
+  try {
+    var fvHtml = await relayFetch('https://finviz.com/stock?t=' + encodeURIComponent(T), {
+      validate: function (t) { return t.indexOf('snapshot-td-label') !== -1; }
+    });
+    fillFromFinviz(d, fvHtml);
+  } catch (e) {}
+  var sc = scoreStock(d);
+  return sc.score != null ? { score: sc.score, verdict: sc.verdict } : null;
+}
+
 async function renderWatchlist(refresh) {
   var wl = getWatchlist();
   var box = $('wl-list');
@@ -1194,27 +1234,65 @@ async function renderWatchlist(refresh) {
     box.innerHTML = '<div class="empty-note"><h2>Nothing here yet</h2><p>Add a ticker and the buy price you\'re waiting for. Prices refresh live; the list lives only on this device.</p></div>';
     return;
   }
-  if (refresh) $('wl-status').innerHTML = '<span class="spinner"></span>Refreshing prices…';
-  var html = '';
+  if (refresh) $('wl-status').innerHTML = '<span class="spinner"></span>Refreshing\u2026';
+  // Gather prices first so the list can be sorted on real numbers.
+  var rows = [];
   for (var i = 0; i < wl.length; i++) {
     var item = wl[i];
     var price = null, err = null;
     try { price = await fetchLightPrice(item.ticker); } catch (e) { err = e.message; }
+    rows.push({ item: item, price: price, err: err, val: wlValuationDisplay(item.ticker) });
+  }
+  // On an explicit refresh, fill in missing or stale valuation scores
+  // with a Finviz-only pass (a fresh full scorecard score wins as-is).
+  if (refresh) {
+    var vmap = lsGet(WLVAL_KEY, {});
+    var dirty = false;
+    await Promise.all(rows.map(async function (r) {
+      if (r.val && r.val.fresh) return;
+      var v = await fetchWlValuation(r.item.ticker);
+      if (v) {
+        vmap[r.item.ticker] = { score: v.score, verdict: v.verdict, at: Date.now() };
+        r.val = { score: v.score, verdict: v.verdict, fresh: true };
+        dirty = true;
+      }
+    }));
+    if (dirty) lsSet(WLVAL_KEY, vmap);
+  }
+  var mode = getWlSort();
+  rows.sort(function (a, b) {
+    if (mode === 'valuation') {
+      var sa = a.val ? a.val.score : -1, sb = b.val ? b.val.score : -1;
+      return sb - sa;
+    }
+    if (mode === 'target') {
+      var da = (isNum(a.price) && isNum(a.item.target) && a.item.target > 0) ? (a.price / a.item.target - 1) : Infinity;
+      var db = (isNum(b.price) && isNum(b.item.target) && b.item.target > 0) ? (b.price / b.item.target - 1) : Infinity;
+      return da - db;
+    }
+    if (mode === 'ticker') return a.item.ticker.localeCompare(b.item.ticker);
+    return (a.item.addedAt || 0) - (b.item.addedAt || 0);
+  });
+  var html = '';
+  rows.forEach(function (r) {
+    var item = r.item, price = r.price;
     var distHtml = '<span class="pill far">no target set</span>';
     if (isNum(price) && isNum(item.target) && item.target > 0) {
       var above = (price / item.target - 1) * 100;
-      if (price <= item.target) distHtml = '<span class="pill hit">✓ AT / BELOW TARGET</span>';
+      if (price <= item.target) distHtml = '<span class="pill hit">\u2713 AT / BELOW TARGET</span>';
       else if (above <= 10) distHtml = '<span class="pill near">' + fmtNum(above, 1) + '% above target</span>';
       else distHtml = '<span class="pill far">' + fmtNum(above, 1) + '% above target</span>';
     }
     html += '<div class="wl-row"><div><span class="wl-t">' + esc(item.ticker) + '</span>' +
-      '<div class="wl-meta">Target buy: ' + (isNum(item.target) ? fmtMoney(item.target) : '—') + '</div></div>' +
-      '<div><div class="wl-price">' + (isNum(price) ? fmtMoney(price) : '—') + '</div>' +
-      '<div style="text-align:right">' + (err ? '<span class="factor-note">price unavailable</span>' : distHtml) + '</div>' +
-      '<div style="text-align:right"><button class="link-btn" data-research="' + esc(item.ticker) + '">Research</button>' +
+      '<div class="wl-meta">Target buy: ' + (isNum(item.target) ? fmtMoney(item.target) : '\u2014') + '</div>' +
+      (r.val ? '<div class="wl-meta wl-val">Valuation <b>' + r.val.score + '</b> \u00b7 ' + esc(r.val.verdict) + '</div>' : '') +
+      '</div>' +
+      '<div><div class="wl-price">' + (isNum(price) ? fmtMoney(price) : '\u2014') + '</div>' +
+      '<div style="text-align:right">' + (r.err ? '<span class="factor-note">price unavailable</span>' : distHtml) + '</div>' +
+      '<div class="wl-actions"><button class="link-btn" data-research="' + esc(item.ticker) + '">Research</button>' +
       '<button class="link-btn" data-wl-edit="' + esc(item.ticker) + '">Edit target</button>' +
       '<button class="link-btn danger" data-wl-del="' + esc(item.ticker) + '">Remove</button></div></div></div>';
-  }
+  });
   $('wl-status').textContent = '';
   box.innerHTML = html;
   box.querySelectorAll('[data-research]').forEach(function (b) {
@@ -1240,6 +1318,7 @@ async function renderWatchlist(refresh) {
     });
   });
 }
+
 
 /* ============================== journal ============================== */
 var J_KEY = 'sr_journal_v1';
@@ -1454,6 +1533,14 @@ function initApp() {
     $('wl-ticker').value = ''; $('wl-target').value = '';
   });
   $('wl-refresh').addEventListener('click', function () { renderWatchlist(true); });
+  var wlSortSel = $('wl-sort');
+  if (wlSortSel) {
+    wlSortSel.value = getWlSort();
+    wlSortSel.addEventListener('change', function () {
+      try { localStorage.setItem(WLSORT_KEY, wlSortSel.value); } catch (e) {}
+      renderWatchlist(false);
+    });
+  }
   $('btn-export').addEventListener('click', doExport);
   $('btn-import').addEventListener('click', function () { $('import-file').click(); });
   $('import-file').addEventListener('change', function () {
