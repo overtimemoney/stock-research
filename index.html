@@ -106,7 +106,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
         <label>Years<input id="pj-years" type="number" step="1" min="1" max="5" value="3"></label>
         <label>Exit P/E<input id="pj-mult" type="number" step="any" value="18"></label>
       </div>
-      <div class="pj-path-head">Year-by-year EPS <span>— the first row is the TTM (the last twelve months, already reported, with its actual growth); the rest is the analysts' forecast path, auto-filled when you load a stock. Every box is editable: change an EPS and its growth % updates; change a growth % and that year's EPS updates. * = extrapolated past the last analyst year.</span></div>
+      <div class="pj-path-head">Year-by-year EPS <span>— the first row is the TTM (the last twelve months, already reported, with its actual growth); the rest is the analysts' forecast path, auto-filled when you load a stock. Every box is editable: change an EPS and its growth % updates; change a growth % and that year's EPS updates. * = extrapolated past the last analyst year, with growth fading toward the long-run rate instead of repeating the last year forever.</span></div>
       <div id="pj-path"></div>
       <button id="pj-run" class="btn-gold wide" type="button">Build projections</button>
       <div id="pj-result" class="tool-result"></div>

@@ -973,6 +973,14 @@ function pjFlatGrowth() {
   var g = parseFloat($('pj-growth').value);
   return isNum(g) ? g : 15;
 }
+/* Extrapolated years fade from the last known growth toward the long-run
+ * rate (the flat-growth box), closing half the remaining gap per year --
+ * so a one-year spike like +84.6% cools off instead of repeating forever. */
+function pjFadeGrowth(lastG, anchor) {
+  if (!isNum(lastG)) return anchor;
+  if (!isNum(anchor)) return lastG;
+  return anchor + (lastG - anchor) / 2;
+}
 /* Growth % of each path year vs the prior year's EPS (year 1 vs base). */
 function pjGrowths(base, path) {
   var out = [], prev = base;
@@ -1011,7 +1019,7 @@ function pjEnsureYears(n) {
     var prevEps = pjPath.length ? pjPath[pjPath.length - 1].eps : base;
     var growths = pjGrowths(base, pjPath);
     var lastG = growths.length ? growths[growths.length - 1] : null;
-    var g = isNum(lastG) ? lastG : pjFlatGrowth();
+    var g = pjFadeGrowth(lastG, pjFlatGrowth());
     var yr = null;
     if (pjPath.length) {
       var m = String(pjPath[pjPath.length - 1].label).match(/(\d{4})/);
@@ -1732,5 +1740,5 @@ if (typeof document !== 'undefined' && document.getElementById) {
 }
 /* Node export for offline pipeline tests (ignored in the browser). */
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr, buildSwot: buildSwot, tickerSuggestions: tickerSuggestions };
+  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr, buildSwot: buildSwot, tickerSuggestions: tickerSuggestions, pjFadeGrowth: pjFadeGrowth };
 }
