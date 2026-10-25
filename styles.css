@@ -37,6 +37,7 @@
   --sw-text: #44403a;
   --sw-s-bg: #f0f7ea; --sw-w-bg: #fbf0ef; --sw-o-bg: #edf3fa; --sw-t-bg: #fdf6e3;
   --chart-line: #141414;
+  --val-l: 38%;
 }
 :root[data-theme="dark"] {
   --ink: #f4efe3;
@@ -63,6 +64,7 @@
   --sw-text: #d8d2c2;
   --sw-s-bg: #152410; --sw-w-bg: #2a1512; --sw-o-bg: #101e2c; --sw-t-bg: #2a2110;
   --chart-line: #F8C73D;
+  --val-l: 62%;
 }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; background: var(--bg); overflow-x: clip; }

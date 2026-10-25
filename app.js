@@ -1285,7 +1285,7 @@ async function renderWatchlist(refresh) {
     }
     html += '<div class="wl-row"><div class="wl-left"><span class="wl-t">' + esc(item.ticker) + '</span>' +
       '<div class="wl-meta">Target buy: ' + (isNum(item.target) ? fmtMoney(item.target) : '\u2014') + '</div>' +
-      (r.val ? '<div class="wl-meta wl-val">Valuation <b>' + r.val.score + '</b> \u00b7 ' + esc(r.val.verdict) + '</div>' : '') +
+      (r.val ? '<div class="wl-meta wl-val">Valuation <b style="color:hsl(' + Math.round(r.val.score * 1.2) + ', 78%, var(--val-l))">' + r.val.score + '</b> \u00b7 ' + esc(r.val.verdict) + '</div>' : '') +
       '</div>' +
       '<div class="wl-right"><div class="wl-price">' + (isNum(price) ? fmtMoney(price) : '\u2014') + '</div>' +
       '<div style="text-align:right">' + (r.err ? '<span class="factor-note">price unavailable</span>' : distHtml) + '</div>' +
