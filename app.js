@@ -1378,13 +1378,16 @@ async function fetchPfQuote(T) {
            dayChg: isNum(chg) ? chg : null, ts: Date.now() };
 }
 
+var pfOpen = {};
+function pfKv(k, v) { return '<div class="pf-kv"><span>' + k + '</span><b>' + v + '</b></div>'; }
+
 async function renderPortfolio(doFetch) {
   var listBox = $('pf-list'), sumBox = $('pf-summary'), status = $('pf-status');
   if (!listBox || !sumBox) return;
   var positions = getPortfolio();
   if (!positions.length) {
     sumBox.innerHTML = '';
-    listBox.innerHTML = '<div class="card"><h3 style="margin-top:0">Nothing here yet</h3><p class="fineprint" style="margin:0">Add a stock you own above — the app asks how many shares you have and whether its dividends are reinvested — and it will track the value and dividend income here.</p></div>';
+    listBox.innerHTML = '<div class="card"><h3 style="margin-top:0">Nothing here yet</h3><p class="fineprint" style="margin:0">Add a stock you own above \u2014 the app asks how many shares you have and whether its dividends are reinvested \u2014 and it will track the value and dividend income here.</p></div>';
     if (status) status.textContent = '';
     return;
   }
@@ -1413,19 +1416,29 @@ async function renderPortfolio(doFetch) {
     if (isNum(costTot)) { totCost += costTot; anyCost = true; }
     var gain = (isNum(val) && isNum(costTot)) ? val - costTot : null;
     var gainPct = (isNum(gain) && costTot > 0) ? gain / costTot * 100 : null;
-    html += '<div class="wl-row"><div class="wl-left"><span class="wl-t">' + esc(p.ticker) + '</span>' +
-      '<div class="wl-meta">' + fmtShares(p.shares) + ' shares' + (isNum(p.cost) ? ' \u00b7 avg cost ' + fmtMoney(p.cost) : '') + '</div>' +
-      '<div class="wl-meta">' + (p.drip ? 'Dividends reinvested (DRIP)' : 'Dividends paid as cash') +
-        (isNum(inc) ? ' \u00b7 \u2248 ' + fmtMoney(inc, 0) + '/yr income' : '') + '</div>' +
-      (isNum(gain) ? '<div class="wl-meta">Gain/loss <b class="' + (gain >= 0 ? 'up' : 'down') + '">' + (gain >= 0 ? '+' : '') + fmtMoney(gain, 0) + (isNum(gainPct) ? ' (' + fmtPct(gainPct) + ')' : '') + '</b></div>' : '') +
-      '</div>' +
-      '<div class="wl-right"><div class="wl-price">' + (isNum(val) ? fmtMoney(val, 0) : '—') + '</div>' +
-      '<div class="wl-meta" style="text-align:right">' + (isNum(px) ? fmtMoney(px) + '/share' : 'price unavailable') +
-        (isNum(qt.dayChg) ? ' \u00b7 <span class="' + (qt.dayChg >= 0 ? 'up' : 'down') + '">' + fmtPct(qt.dayChg) + ' today</span>' : '') + '</div>' +
-      (p.drip && isNum(inc) && isNum(px) && px > 0 ? '<div class="wl-meta" style="text-align:right">DRIP buys \u2248 ' + fmtShares(inc / px) + ' shares/yr</div>' : '') +
-      '<div class="wl-actions"><button class="link-btn" data-pf-research="' + esc(p.ticker) + '">Research</button>' +
-      '<button class="link-btn" data-pf-edit="' + esc(p.ticker) + '">Edit</button>' +
-      '<button class="link-btn danger" data-pf-del="' + esc(p.ticker) + '">Remove</button></div></div></div>';
+    var open = !!pfOpen[p.ticker];
+    html += '<div class="wl-row pf-row' + (open ? ' open' : '') + '">' +
+      '<button class="pf-head" data-pf-toggle="' + esc(p.ticker) + '" aria-expanded="' + open + '">' +
+        '<span class="wl-left"><span class="wl-t">' + esc(p.ticker) + '</span></span>' +
+        '<span class="wl-right"><span class="wl-price">' + (isNum(val) ? fmtMoney(val, 0) : '\u2014') + '</span>' +
+        '<span class="wl-meta" style="text-align:right">' + (isNum(px) ? fmtMoney(px) + '/share' : 'price unavailable') + '</span></span>' +
+        '<span class="pf-chev">\u25be</span>' +
+      '</button>';
+    if (open) {
+      html += '<div class="pf-detail">' +
+        pfKv('Shares', fmtShares(p.shares)) +
+        (isNum(p.cost) ? pfKv('Average cost', fmtMoney(p.cost) + '/share') : '') +
+        (isNum(qt.dayChg) ? pfKv('Today', '<span class="' + (qt.dayChg >= 0 ? 'up' : 'down') + '">' + fmtPct(qt.dayChg) + '</span>') : '') +
+        (isNum(gain) ? pfKv('Gain/loss', '<span class="' + (gain >= 0 ? 'up' : 'down') + '">' + (gain >= 0 ? '+' : '') + fmtMoney(gain, 0) + (isNum(gainPct) ? ' (' + fmtPct(gainPct) + ')' : '') + '</span>') : '') +
+        pfKv('Dividends', p.drip ? 'Reinvested (DRIP)' : 'Paid as cash') +
+        (isNum(inc) ? pfKv('Est. dividend income', '\u2248 ' + fmtMoney(inc, 0) + '/yr') : '') +
+        (p.drip && isNum(inc) && isNum(px) && px > 0 ? pfKv('DRIP buys', '\u2248 ' + fmtShares(inc / px) + ' shares/yr') : '') +
+        '<div class="wl-actions"><button class="link-btn" data-pf-research="' + esc(p.ticker) + '">Research</button>' +
+        '<button class="link-btn" data-pf-edit="' + esc(p.ticker) + '">Edit</button>' +
+        '<button class="link-btn danger" data-pf-del="' + esc(p.ticker) + '">Remove</button></div>' +
+      '</div>';
+    }
+    html += '</div>';
   });
   listBox.innerHTML = html;
   var yld = (anyPx && totVal > 0) ? totInc / totVal * 100 : null;
@@ -1448,11 +1461,18 @@ async function renderPortfolio(doFetch) {
       '<text x="90" y="106" text-anchor="middle" class="pf-c-l">TOTAL VALUE</text></svg>' +
       '<div class="pf-legend">' + legend + '</div></div>';
   }
-  sumBox.innerHTML = '<div class="card"><div class="pf-sum-v">' + (anyPx ? fmtMoney(totVal, 0) : '—') + '</div>' +
+  sumBox.innerHTML = '<div class="card"><div class="pf-sum-v">' + (anyPx ? fmtMoney(totVal, 0) : '\u2014') + '</div>' +
     '<div class="wl-meta">Total value \u00b7 ' + positions.length + ' holding' + (positions.length === 1 ? '' : 's') + '</div>' +
     '<div class="pf-sum-row"><span>Est. dividends <b>' + fmtMoney(totInc, 0) + '/yr</b>' + (isNum(yld) ? ' \u00b7 ' + fmtNum(yld, 2) + '% yield' : '') + '</span>' +
     (anyCost && totCost > 0 ? '<span>Total gain/loss <b class="' + (totGain >= 0 ? 'up' : 'down') + '">' + (totGain >= 0 ? '+' : '') + fmtMoney(totGain, 0) + ' (' + fmtPct(totGain / totCost * 100) + ')</b></span>' : '') +
     '</div>' + chartHtml + '</div>';
+  listBox.querySelectorAll('[data-pf-toggle]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var T = b.getAttribute('data-pf-toggle');
+      pfOpen[T] = !pfOpen[T];
+      renderPortfolio(false);
+    });
+  });
   listBox.querySelectorAll('[data-pf-research]').forEach(function (b) {
     b.addEventListener('click', function () { switchTab('scorecard'); $('search-input').value = b.getAttribute('data-pf-research'); runSearch(b.getAttribute('data-pf-research')); });
   });
