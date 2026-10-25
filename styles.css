@@ -72,7 +72,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: "Avenir Next", "Helvetica Neue", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
   overflow: hidden;
   overscroll-behavior: none;
   /* App shell: a full-height column -- header, a scrolling main, and the
@@ -420,3 +420,7 @@ table.scen td { padding: 8px 6px; }
 .tab-ico .ico { width: 23px; height: 23px; vertical-align: 0; }
 .gear-btn .ico { width: 25px; height: 25px; vertical-align: 0; }
 .btn-gold .ico, .btn-ghost .ico, .seg .ico { margin-right: 2px; }
+
+.ico { stroke-width: 2.1; }
+.ico-f { fill: currentColor; stroke: none; }
+.pf-closed-h { margin: 20px 0 8px; font-size: 15px; letter-spacing: .01em; }
