@@ -1694,6 +1694,9 @@ var PF_BENCH_KEY = 'sr_pfbench_v1';
 var pfBenchBusy = false;
 function pfHistAll() { return lsGet(PF_HIST_KEY, {}); }
 function pfHist5All() { return lsGet(PF_HIST5_KEY, {}); }
+/* Long comparison periods (5Y/10Y/15Y) share the weekly history cache;
+ * returns the span in years, or 0 for the daily short periods. */
+function pfLongYears(period) { return period === '5Y' ? 5 : period === '10Y' ? 10 : period === '15Y' ? 15 : 0; }
 function pfBenchPeriod() { return lsGet(PF_BENCH_KEY, '1Y'); }
 function pfDkey(dt) { return dt.getFullYear() * 10000 + (dt.getMonth() + 1) * 100 + dt.getDate(); }
 
@@ -1714,7 +1717,7 @@ function paintBench(box, hist, positions) {
   var spy = hist['SPY'];
   if (!spy || !spy.pts || spy.pts.length < 10) { box.innerHTML = ''; return; }
   var period = pfBenchPeriod();
-  var days = period === '1M' ? 31 : period === '3M' ? 93 : period === '6M' ? 186 : period === '5Y' ? 1827 : 370;
+  var days = period === '1M' ? 31 : period === '3M' ? 93 : period === '6M' ? 186 : period === '5Y' ? 1827 : period === '10Y' ? 3652 : period === '15Y' ? 5478 : 370;
   var endKey = spy.pts[spy.pts.length - 1][0];
   var endDt = new Date(Math.floor(endKey / 10000), Math.floor(endKey / 100) % 100 - 1, endKey % 100);
   var cutDt = new Date(endDt); cutDt.setDate(cutDt.getDate() - days);
@@ -1836,14 +1839,14 @@ function paintBench(box, hist, positions) {
     var key = win[ti][0];
     var yr = Math.floor(key / 10000), mo = Math.floor(key / 100) % 100, dy = key % 100;
     var lab;
-    if (period === '5Y') lab = String(yr);
+    if (pfLongYears(period)) lab = String(yr);
     else if (period === '1M') lab = MONS[mo - 1] + ' ' + dy;
     else { lab = MONS[mo - 1] + (prevYr === null || yr !== prevYr ? " '" + String(yr).slice(2) : ''); prevYr = yr; }
     var anchor = ord === 0 ? 'start' : ord === tickIdx.length - 1 ? 'end' : 'middle';
     var tx = ord === 0 ? 6 : ord === tickIdx.length - 1 ? 334 : X(ti - k0);
     return '<text x="' + tx + '" y="179" font-size="8.5" style="fill:var(--muted)" text-anchor="' + anchor + '">' + lab + '</text>';
   }).join('');
-  var chips = ['1M', '3M', '6M', '1Y', '5Y'].map(function (p) {
+  var chips = ['1M', '3M', '6M', '1Y', '5Y', '10Y', '15Y'].map(function (p) {
     return '<button type="button" data-bench="' + p + '"' + (p === period ? ' class="active"' : '') + '>' + p + '</button>';
   }).join('');
   var modeNote = lots.length
@@ -1879,23 +1882,32 @@ async function renderBench(force) {
   if (!box) return;
   var positions = getPortfolio();
   if (!positions.length) { box.innerHTML = ''; return; }
-  var five = pfBenchPeriod() === '5Y';
+  var period = pfBenchPeriod();
+  var needYears = pfLongYears(period);
+  var five = needYears > 0;
   var cacheKey = five ? PF_HIST5_KEY : PF_HIST_KEY;
   var hist = five ? pfHist5All() : pfHistAll();
   paintBench(box, hist, positions);
   var need = ['SPY'].concat(positions.map(function (p) { return p.ticker; }));
   var stale = need.some(function (t) { var hh = hist[t]; return !hh || (Date.now() - hh.ts > 12 * 3600 * 1000); });
+  if (five) {
+    var haveMeta = lsGet('sr_pfhist5_range', '');
+    var haveYears = haveMeta === '15y' ? 15 : haveMeta === '5y' ? 5 : 0;
+    if (haveYears < needYears) stale = true;
+  }
   if ((force || stale) && !pfBenchBusy) {
     pfBenchBusy = true;
     if (!hist['SPY']) box.innerHTML = '<div class="card"><span class="spinner"></span>Loading the S&P 500 comparison\u2026</div>';
     var updated = {};
     Object.keys(hist).forEach(function (k) { updated[k] = hist[k]; });
+    var fetchRange = five ? (Math.max(needYears, haveYears) <= 5 ? '5y' : '15y') : '1y';
     await Promise.all(need.map(async function (t) {
-      try { updated[t] = await fetchPfHist(t, five ? '5y' : '1y', five ? '1wk' : '1d'); } catch (e) {}
+      try { updated[t] = await fetchPfHist(t, fetchRange, five ? '1wk' : '1d'); } catch (e) {}
     }));
     lsSet(cacheKey, updated);
+    if (five) lsSet('sr_pfhist5_range', fetchRange);
     pfBenchBusy = false;
-    if ((pfBenchPeriod() === '5Y') === five) paintBench(box, five ? pfHist5All() : pfHistAll(), getPortfolio());
+    if (pfLongYears(pfBenchPeriod()) > 0 === five) paintBench(box, five ? pfHist5All() : pfHistAll(), getPortfolio());
   }
 }
 
