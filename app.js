@@ -1373,7 +1373,7 @@ async function fetchPfQuote(T) {
   var d = { ticker: T, sources: [], errors: [] };
   fillFromFinviz(d, html);
   if (!isNum(d.price)) throw new Error('no price');
-  var chg = d.sourceFinviz ? parseNum(d.sourceFinviz['Change']) : null;
+  var chg = d.sourceFinviz ? parseNum(d.sourceFinviz['Change %']) : null;
   return { price: d.price, divYield: isNum(d.divYield) ? d.divYield : null,
            dayChg: isNum(chg) ? chg : null, ts: Date.now() };
 }
