@@ -1533,16 +1533,21 @@ function attachAutocomplete(input, onPick) {
   function hide() { list.style.display = 'none'; }
   function place() {
     var r = input.getBoundingClientRect();
-    list.style.left = r.left + 'px';
+    // Wider than narrow inputs so full company names fit, but never
+    // wider than the screen and never hanging off the right edge.
+    var w = Math.min(Math.max(r.width, 270), window.innerWidth - 16);
+    var left = Math.min(r.left, window.innerWidth - w - 8);
+    list.style.left = Math.max(8, left) + 'px';
     list.style.top = (r.bottom + 4) + 'px';
-    list.style.width = r.width + 'px';
+    list.style.width = w + 'px';
   }
   function show(items) {
     if (!items.length) { hide(); return; }
     list.innerHTML = items.map(function (it) {
       return '<button type="button" class="ac-item" data-sym="' + esc(it.symbol) + '">' +
-        '<span class="ac-sym">' + esc(it.symbol) + '</span>' +
-        '<span class="ac-name">' + esc(it.name) + (it.exch ? ' · ' + esc(it.exch) : '') + '</span></button>';
+        '<span class="ac-top"><span class="ac-sym">' + esc(it.symbol) + '</span>' +
+        (it.exch ? '<span class="ac-exch">' + esc(it.exch) + '</span>' : '') + '</span>' +
+        '<span class="ac-name">' + esc(it.name) + '</span></button>';
     }).join('');
     place();
     list.style.display = 'block';
