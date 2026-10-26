@@ -118,6 +118,28 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
       Projections are only as good as the assumptions — they're yours, not a forecast.</p>
     </div>
 
+    <h2 class="tab-title">Quarterly <span class="gold-text">Metrics</span></h2>
+    <div class="card">
+      <form id="qm-load-form" class="search-row" autocomplete="off" style="margin-bottom:12px">
+        <input id="qm-ticker" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="Ticker — quarterly fundamentals" aria-label="Quarterly metrics ticker">
+        <button type="submit" class="btn-gold">Load stock</button>
+      </form>
+      <div id="qm-status" class="status" role="status" style="margin:0 2px 8px"></div>
+      <div id="qm-body" hidden>
+        <div class="qm-chips" id="qm-chips">
+          <button type="button" data-qm="revenue" class="on">Revenue</button>
+          <button type="button" data-qm="netIncome">Net income</button>
+          <button type="button" data-qm="eps">EPS</button>
+          <button type="button" data-qm="fcf">Free cash flow</button>
+          <button type="button" data-qm="grossMargin">Gross margin</button>
+          <button type="button" data-qm="operMargin">Operating margin</button>
+          <button type="button" data-qm="netMargin">Net margin</button>
+        </div>
+        <div id="qm-chart"></div>
+        <p class="fineprint" id="qm-note"></p>
+      </div>
+    </div>
+
     <h2 class="tab-title">Compound <span class="gold-text">Calculator</span></h2>
     <div class="card">
       <div class="grid2">

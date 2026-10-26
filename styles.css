@@ -473,3 +473,6 @@ table.scen td { padding: 8px 6px; }
 .score-bar.risk-bar > div { background: linear-gradient(90deg, #e8b34b, #ff6b57); }
 .pj-saved-head { display: flex; justify-content: space-between; align-items: center; width: 100%; background: none; border: 0; padding: 6px 0; font: inherit; font-size: 13.5px; font-weight: 800; color: var(--ink); cursor: pointer; text-align: left; }
 .pj-saved-chev { color: var(--gold); font-size: 13px; }
+.qm-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 12px; }
+.qm-chips button { border: 1px solid var(--line); background: none; color: var(--muted); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer; }
+.qm-chips button.on { background: var(--gold-grad); color: #141414; border-color: transparent; }

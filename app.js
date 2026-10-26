@@ -325,6 +325,17 @@ async function fetchStock(ticker, opts) {
   } catch (e) { d.errors.push('Nasdaq forecasts: ' + e.message); d.epsForecasts = []; } };
 
   // --- MarketBeat: EPS surprise history (consensus vs reported) ---
+  // --- StockAnalysis forecast page: annual revenue, actual + estimated,
+  // --- by fiscal year. Feeds the boom-bust risk factor. ---
+  var srcRevPath = async function () { try {
+    var html = await relayFetch('https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/forecast/', {
+      timeout: 20000,
+      validate: function (t) { return t.indexOf('Fiscal Year') !== -1 && t.indexOf('Revenue') !== -1; }
+    });
+    var rp = parseSAForecast(html);
+    if (rp.length >= 3) { d.revPath = rp; d.sources.push('StockAnalysis'); }
+  } catch (e) { d.errors.push('Revenue path: ' + e.message); } };
+
   var srcSurprise = async function () { try {
     var ex = String(d.exchange || '').toUpperCase();
     var segs = [];
@@ -386,7 +397,7 @@ async function fetchStock(ticker, opts) {
   }
   // Slow stage: Finviz fundamentals + MarketBeat EPS-surprise history in
   // parallel — both are big HTML pages through the relays.
-  await Promise.all([srcFinviz(), srcSurprise()]);
+  await Promise.all([srcFinviz(), srcSurprise(), srcRevPath()]);
   deriveValues(d);
   d.partial = false;
 
@@ -495,6 +506,99 @@ function scoreStock(d) {
  * whether it earns money (profit margin), how big it is (market cap),
  * whether earnings are heading down (next-year EPS trend), and whether
  * it can pay its near-term bills (current ratio). */
+/* Parse the StockAnalysis forecast page's annual table into a revenue
+ * path: [{label:'FY2027', rev:<dollars>, est:<bool>}] ascending by year.
+ * Values there use B/M suffixes ('20.25B'); 'Upgrade' cells are the
+ * site's paywall and are skipped. A year counts as estimated when its
+ * period-end date is still in the future. */
+function parseBMV(s) {
+  if (s == null) return null;
+  var t = String(s).replace(/[$,]/g, '').trim();
+  var m = t.match(/^(-?[\d.]+)\s*([BMTK])?$/i);
+  if (!m) return null;
+  var v = parseFloat(m[1]);
+  if (!isFinite(v)) return null;
+  var suf = (m[2] || '').toUpperCase();
+  if (suf === 'B') v *= 1e9; else if (suf === 'M') v *= 1e6;
+  else if (suf === 'T') v *= 1e12; else if (suf === 'K') v *= 1e3;
+  return v;
+}
+
+function saTables(html) {
+  var tables = [];
+  var tRe = /<table[\s\S]*?<\/table>/gi, tm;
+  while ((tm = tRe.exec(html))) {
+    var rows = [];
+    var rRe = /<tr[\s\S]*?<\/tr>/gi, rm;
+    while ((rm = rRe.exec(tm[0]))) {
+      var cells = [];
+      var cRe = /<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/gi, cm;
+      while ((cm = cRe.exec(rm[0]))) cells.push(cm[1].replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim());
+      if (cells.length) rows.push(cells);
+    }
+    if (rows.length) tables.push(rows);
+  }
+  return tables;
+}
+
+function parseSAForecast(html) {
+  var out = [];
+  saTables(html).forEach(function (rows) {
+    var fyRow = null, revRow = null, endRow = null;
+    rows.forEach(function (r) {
+      if (r[0] === 'Fiscal Year') fyRow = r;
+      else if (r[0] === 'Revenue' && !revRow) revRow = r;
+      else if (r[0] === 'Period Ending') endRow = r;
+    });
+    if (!fyRow || !revRow) return;
+    var now = Date.now();
+    for (var i = 1; i < fyRow.length; i++) {
+      var rev = parseBMV(revRow[i]);
+      if (!isNum(rev) || rev <= 0) continue;
+      var end = endRow ? Date.parse(endRow[i]) : NaN;
+      out.push({ label: fyRow[i].replace(/\s+/g, ' '), rev: rev, est: isNum(end) ? end > now : false });
+    }
+  });
+  out.sort(function (a, b) { return a.label.localeCompare(b.label); });
+  return out;
+}
+
+/* The EPS peak-cliff, same detection as the trajectory chart: a later
+ * consensus year falls 10%+ below the running peak. */
+function epsCliffInfo(d) {
+  var pts = epsTrajectory(d).points;
+  var peak = -Infinity, peakLabel = '';
+  for (var i = 0; i < pts.length; i++) {
+    if (pts[i].eps > peak) { peak = pts[i].eps; peakLabel = pts[i].label; }
+    else if (peak > 0 && pts[i].eps < peak * 0.90) {
+      return { peakLabel: peakLabel, dropLabel: pts[i].label, dropPct: (pts[i].eps / peak - 1) * 100 };
+    }
+  }
+  return null;
+}
+
+/* Justin's boom-bust rule (2026-10-26): when the EPS cliff check fires
+ * AND revenue doubled (actual or projected) within the 2 years leading
+ * up to the revenue top, the name carries peak-cycle risk — the classic
+ * value trap. Returns null when the pattern can't be tested. */
+function boomBust(d) {
+  var rp = d.revPath || [];
+  if (rp.length < 3) return null;
+  var top = 0;
+  for (var i = 1; i < rp.length; i++) { if (rp[i].rev > rp[top].rev) top = i; }
+  if (top < 2) return { testable: true, fires: false, ratio: null, topLabel: rp[top].label };
+  var ratio = rp[top].rev / rp[top - 2].rev;
+  var cliff = epsCliffInfo(d);
+  return {
+    testable: true,
+    fires: !!(cliff && ratio >= 2),
+    ratio: ratio,
+    topLabel: rp[top].label,
+    projected: rp[top].est,
+    cliff: cliff
+  };
+}
+
 function riskScore(d) {
   var factors = [];
   function band(v, bands) { // [[limitInclusive, riskPts], ...] ascending limits
@@ -533,6 +637,14 @@ function riskScore(d) {
     add('Current ratio', d.currentRatio, fmtNum(d.currentRatio, 2), 10,
       band(d.currentRatio, [[0.8, 10], [1, 8], [1.5, 5], [2, 2], [Infinity, 0]]),
       'Can it pay its near-term bills?');
+  }
+  var bb = boomBust(d);
+  if (bb && bb.testable) {
+    add('Boom-bust pattern', bb.ratio, isNum(bb.ratio) ? fmtNum(bb.ratio, 1) + '\u00d7 in 2 yrs' : '\u2014', 15,
+      bb.fires ? 15 : 0,
+      bb.fires
+        ? 'Revenue ' + (bb.projected ? 'is projected to top' : 'topped') + ' at ' + bb.topLabel + ' after doubling in 2 yrs, and EPS falls off a cliff after ' + (bb.cliff ? bb.cliff.peakLabel : 'its peak') + ' \u2014 the classic peak-cycle trap'
+        : 'No doubling-into-a-cliff pattern in the revenue path');
   }
   var got = factors.reduce(function (s, f) { return s + f.pts; }, 0);
   var maxAvailable = factors.reduce(function (s, f) { return s + f.max; }, 0);
@@ -1470,6 +1582,175 @@ function runProjection() {
   var svB = $('pj-save'); if (svB) svB.addEventListener('click', pjSaveCurrent);
   var dlB = $('pj-del'); if (dlB) dlB.addEventListener('click', function () { var all = getProjections(); delete all[curT]; setProjections(all); renderPjSaved(); runProjection(); });
 }
+/* ================= Quarterly metrics tool =================
+ * 12 reported quarters of fundamentals (StockAnalysis statement
+ * pages, which normalize SEC filings), one metric at a time as a bar
+ * chart. EPS also gets analyst-consensus bars for the next few
+ * quarters (Nasdaq) — the only metric with a published quarterly
+ * consensus; the rest are reported quarters only. */
+var QM_KEY = 'sr_qmetrics_v1';
+var qmMetric = 'revenue';
+var qmData = null;
+
+function parseSAValueM(s) {
+  if (s == null) return null;
+  var t = String(s).replace(/[$,]/g, '').trim();
+  if (!t || t === '-' || t === '\u2014') return null;
+  var v = parseFloat(t);
+  return isFinite(v) ? v : null;
+}
+
+function parseSAQuarterly(htmlIs, htmlCf) {
+  var periods = null, byLabel = {};
+  [htmlIs, htmlCf].forEach(function (html) {
+    if (!html) return;
+    saTables(html).forEach(function (rows) {
+      if (!rows.length || rows[0][0] !== 'Fiscal Quarter') return;
+      if (!periods) periods = rows[0].slice(1, 13);
+      rows.slice(1).forEach(function (r) {
+        if (byLabel[r[0]]) return;
+        var vals = [];
+        for (var i = 0; i < periods.length; i++) {
+          var j = rows[0].indexOf(periods[i]);
+          vals.push(j > 0 ? parseSAValueM(r[j]) : null);
+        }
+        byLabel[r[0]] = vals;
+      });
+    });
+  });
+  if (!periods) return null;
+  function series(label, scale) {
+    var raw = byLabel[label];
+    if (!raw) return null;
+    return raw.map(function (v) { return isNum(v) ? v * scale : null; }).reverse();
+  }
+  var M = 1e6;
+  return {
+    periods: periods.slice().reverse(),
+    revenue: series('Revenue', M),
+    grossProfit: series('Gross Profit', M),
+    operIncome: series('Operating Income', M),
+    netIncome: series('Net Income', M),
+    eps: series('EPS (Diluted)', 1) || series('Earnings Per Share', 1),
+    fcf: series('Free Cash Flow', M)
+  };
+}
+
+function qmEstLabel(fiscalEnd) {
+  var m = String(fiscalEnd || '').match(/^([A-Za-z]{3})[a-z]*\s+(\d{4})$/);
+  return m ? m[1] + ' \u2019' + m[2].slice(2) + ' est' : String(fiscalEnd || '') + ' est';
+}
+
+async function fetchQMetrics(T) {
+  var cache = lsGet(QM_KEY, {});
+  var day = new Date().toDateString();
+  if (cache[T] && cache[T].day === day && cache[T].data) return cache[T].data;
+  var base = 'https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/financials/';
+  var ok = function (t) { return t.indexOf('Fiscal Quarter') !== -1; };
+  var pages = await Promise.all([
+    relayFetch(base + 'income-statement/?p=quarterly', { timeout: 25000, validate: ok }).catch(function () { return null; }),
+    relayFetch(base + '?p=quarterly', { timeout: 25000, validate: ok }).catch(function () { return null; }),
+    relayFetch(base + 'cash-flow-statement/?p=quarterly', { timeout: 25000, validate: ok }).catch(function () { return null; })
+  ]);
+  var data = parseSAQuarterly(pages[0] || pages[1], pages[2]);
+  if (!data || !data.revenue) throw new Error('No quarterly statements found for \u201c' + T + '\u201d.');
+  data.estEps = [];
+  try {
+    var fc = await relayJSON('https://api.nasdaq.com/api/analyst/' + encodeURIComponent(T) + '/earnings-forecast?assetclass=stocks');
+    var q = (fc && fc.data && fc.data.quarterlyForecast && fc.data.quarterlyForecast.rows) || [];
+    data.estEps = q.map(function (r) {
+      return { label: qmEstLabel(r.fiscalEnd), eps: typeof r.consensusEPSForecast === 'number' ? r.consensusEPSForecast : parseNum(r.consensusEPSForecast) };
+    }).filter(function (r) { return isNum(r.eps); });
+  } catch (e) {}
+  data.ticker = T;
+  cache[T] = { day: day, data: data };
+  lsSet(QM_KEY, cache);
+  return data;
+}
+
+function fmtMoneyShort(v) {
+  if (!isNum(v)) return '\u2014';
+  var sign = v < 0 ? '-' : '';
+  return sign + fmtCap(Math.abs(v));
+}
+
+function qmShortQ(label) {
+  return String(label || '').replace(/(\d{4})/, function (y) { return '\u2019' + y.slice(2); });
+}
+
+function qmBarsSVG(pts, fmt) {
+  var w = 640, h = 216, padB = 30, padT = 26, padX = 6;
+  var max = Math.max.apply(null, pts.map(function (p) { return p.value; }).concat([0]));
+  var min = Math.min.apply(null, pts.map(function (p) { return p.value; }).concat([0]));
+  var span = (max - min) || 1;
+  var bw = (w - padX * 2) / pts.length;
+  var zeroY = padT + (max / span) * (h - padT - padB);
+  var out = '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Quarterly metric chart">';
+  out += '<line x1="' + padX + '" y1="' + zeroY + '" x2="' + (w - padX) + '" y2="' + zeroY + '" stroke="#3a372d" stroke-width="1"/>';
+  pts.forEach(function (p, i) {
+    var x = padX + i * bw + bw * 0.14, bwid = bw * 0.72;
+    var y = zeroY - (p.value / span) * (h - padT - padB);
+    var top = Math.min(y, zeroY), bot = Math.max(y, zeroY);
+    var fill = p.kind === 'est' ? 'fill:var(--chart-val);opacity:.45' : 'fill:var(--chart-actual)';
+    out += '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bwid.toFixed(1) + '" height="' + Math.max(1.5, bot - top).toFixed(1) + '" rx="2.5" style="' + fill + '"/>';
+    var ly = p.value >= 0 ? top - 6 : bot + 13;
+    out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="middle" font-size="11.5" font-weight="700" style="fill:var(--chart-val)">' + esc(fmt(p.value)) + '</text>';
+    out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="10.5" font-weight="600" fill="#77705f">' + esc(p.label) + '</text>';
+  });
+  return out + '</svg>';
+}
+
+var QM_METRICS = {
+  revenue: { name: 'Revenue', fmt: fmtMoneyShort, get: function (d, i) { return d.revenue && d.revenue[i]; } },
+  netIncome: { name: 'Net income', fmt: fmtMoneyShort, get: function (d, i) { return d.netIncome && d.netIncome[i]; } },
+  eps: { name: 'EPS (diluted)', fmt: function (v) { return '$' + fmtNum(v, 2); }, get: function (d, i) { return d.eps && d.eps[i]; } },
+  fcf: { name: 'Free cash flow', fmt: fmtMoneyShort, get: function (d, i) { return d.fcf && d.fcf[i]; } },
+  grossMargin: { name: 'Gross margin', fmt: function (v) { return fmtNum(v, 1) + '%'; }, get: function (d, i) { return (isNum(d.grossProfit && d.grossProfit[i]) && isNum(d.revenue && d.revenue[i]) && d.revenue[i] !== 0) ? d.grossProfit[i] / d.revenue[i] * 100 : null; } },
+  operMargin: { name: 'Operating margin', fmt: function (v) { return fmtNum(v, 1) + '%'; }, get: function (d, i) { return (isNum(d.operIncome && d.operIncome[i]) && isNum(d.revenue && d.revenue[i]) && d.revenue[i] !== 0) ? d.operIncome[i] / d.revenue[i] * 100 : null; } },
+  netMargin: { name: 'Net margin', fmt: function (v) { return fmtNum(v, 1) + '%'; }, get: function (d, i) { return (isNum(d.netIncome && d.netIncome[i]) && isNum(d.revenue && d.revenue[i]) && d.revenue[i] !== 0) ? d.netIncome[i] / d.revenue[i] * 100 : null; } }
+};
+
+function renderQm() {
+  if (!qmData) return;
+  document.querySelectorAll('[data-qm]').forEach(function (b) {
+    b.classList.toggle('on', b.getAttribute('data-qm') === qmMetric);
+  });
+  var M = QM_METRICS[qmMetric], d = qmData, pts = [];
+  d.periods.forEach(function (p, i) {
+    var v = M.get(d, i);
+    if (isNum(v)) pts.push({ label: qmShortQ(p), value: v, kind: 'actual' });
+  });
+  if (qmMetric === 'eps' && d.estEps && d.estEps.length) {
+    d.estEps.forEach(function (e) { pts.push({ label: e.label, value: e.eps, kind: 'est' }); });
+  }
+  var box = $('qm-chart');
+  if (!pts.length) {
+    box.innerHTML = '<div class="status err">No ' + esc(M.name) + ' data in the statements for ' + esc(d.ticker) + '.</div>';
+  } else {
+    box.innerHTML = '<div class="chart-wrap">' + qmBarsSVG(pts, M.fmt) + '</div>';
+  }
+  $('qm-note').textContent = qmMetric === 'eps'
+    ? 'Solid bars: reported quarters (SEC filings via StockAnalysis). Faded bars: analyst consensus for the next few quarters (Nasdaq) \u2014 analysts only publish about 5 quarters out, and only for EPS.'
+    : 'Reported quarters only \u2014 SEC filings via StockAnalysis. No published quarterly consensus exists for this metric; consensus exists only for EPS (tab over to see it).';
+}
+
+async function loadQm() {
+  var T = String(($('qm-ticker').value || '')).trim().toUpperCase();
+  if (!T) return;
+  var st = $('qm-status');
+  st.innerHTML = '<span class="spinner"></span>Loading quarterly statements for ' + esc(T) + '\u2026';
+  try {
+    qmData = await fetchQMetrics(T);
+    st.textContent = qmData.ticker + ' \u00b7 last ' + qmData.periods.length + ' reported quarters';
+    $('qm-body').hidden = false;
+    renderQm();
+  } catch (e) {
+    st.innerHTML = '';
+    $('qm-body').hidden = true;
+    st.innerHTML = '<span class="status err">' + esc(e.message || 'Could not load quarterly data.') + '</span>';
+  }
+}
+
 function runCompound() {
   var init = parseFloat($('cc-init').value) || 0;
   var monthly = parseFloat($('cc-monthly').value) || 0;
@@ -3277,6 +3558,11 @@ function initApp() {
   });
   $('cc-run').addEventListener('click', runCompound);
   runCompound();
+  attachAutocomplete($('qm-ticker'), function (sym) { $('qm-ticker').value = sym; loadQm(); });
+  $('qm-load-form').addEventListener('submit', function (e) { e.preventDefault(); loadQm(); $('qm-ticker').blur(); });
+  document.querySelectorAll('[data-qm]').forEach(function (b) {
+    b.addEventListener('click', function () { qmMetric = b.getAttribute('data-qm'); renderQm(); });
+  });
   $('wl-form').addEventListener('submit', function (e) {
     e.preventDefault();
     var t = $('wl-ticker').value, target = parseFloat($('wl-target').value);
