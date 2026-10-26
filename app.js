@@ -1230,10 +1230,16 @@ function renderPjSaved() {
   var all = getProjections();
   var ts = Object.keys(all).sort();
   if (!ts.length) { box.innerHTML = ''; return; }
-  box.innerHTML = '<div class="pj-path-head">Saved projections</div>' + ts.map(function (T) {
-    var base = pjSavedBase(T);
-    return '<div class="pf-buy-row"><button class="pf-buy-txt" data-pj-open="' + esc(T) + '"><span>' + esc(T) + '</span><span>saved ' + esc(String(all[T].savedAt || '').slice(0, 10)) + (isNum(base) ? ' \u00b7 Base ' + fmtMoney(base) : '') + '</span></button><button class="link-btn danger" data-pj-del="' + esc(T) + '">\u2715</button></div>';
-  }).join('');
+  // Collapsible (Justin's call, 2026-10-25): the list only grows, and
+  // restoring is occasional — collapsed by default, state remembered.
+  var open = !!lsGet('sr_pjsaved_open', false);
+  box.innerHTML = '<button type="button" class="pj-saved-head" id="pj-saved-toggle"><span>Saved projections \u00b7 ' + ts.length + '</span><span class="pj-saved-chev">' + (open ? '\u25be' : '\u25b8') + '</span></button>' +
+    (open ? ts.map(function (T) {
+      var base = pjSavedBase(T);
+      return '<div class="pf-buy-row"><button class="pf-buy-txt" data-pj-open="' + esc(T) + '"><span>' + esc(T) + '</span><span>saved ' + esc(String(all[T].savedAt || '').slice(0, 10)) + (isNum(base) ? ' \u00b7 Base ' + fmtMoney(base) : '') + '</span></button><button class="link-btn danger" data-pj-del="' + esc(T) + '">\u2715</button></div>';
+    }).join('') : '');
+  var tg = $('pj-saved-toggle');
+  if (tg) tg.addEventListener('click', function () { lsSet('sr_pjsaved_open', !open); renderPjSaved(); });
   box.querySelectorAll('[data-pj-open]').forEach(function (b) {
     b.addEventListener('click', function () { pjRestore(b.getAttribute('data-pj-open')); });
   });

@@ -471,3 +471,5 @@ table.scen td { padding: 8px 6px; }
 .verdict.risk-elev { background: linear-gradient(90deg, #f5b971, #f8cf8f); }
 .verdict.risk-high { background: linear-gradient(90deg, #2b2b2b, #141414); color: #ff8a75; }
 .score-bar.risk-bar > div { background: linear-gradient(90deg, #e8b34b, #ff6b57); }
+.pj-saved-head { display: flex; justify-content: space-between; align-items: center; width: 100%; background: none; border: 0; padding: 6px 0; font: inherit; font-size: 13.5px; font-weight: 800; color: var(--ink); cursor: pointer; text-align: left; }
+.pj-saved-chev { color: var(--gold); font-size: 13px; }
