@@ -1702,15 +1702,17 @@ async function renderPortfolio(doFetch) {
       if (d === null) return;
       d = String(d).trim();
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || isNaN(new Date(d + 'T12:00:00').getTime())) { window.alert('That date does not look right -- use YYYY-MM-DD, like 2025-03-14.'); return; }
-      var s = window.prompt('How many shares did you buy on ' + d + '?');
-      if (s === null) return;
-      var sh = parseFloat(s);
-      if (!isNum(sh) || sh <= 0) { window.alert('Enter the number of shares bought.'); return; }
       var pf = getPortfolio();
       var pos = pf.filter(function (x) { return x.ticker === T; })[0];
       if (!pos) return;
       var logged = (pos.buys || []).reduce(function (a2, b2) { return a2 + b2.sh; }, 0);
       var grossB = pos.shares + pfSoldShares(pos);
+      var remainB = grossB - logged;
+      if (remainB <= 0) { window.alert('Every share of ' + T + ' is already assigned to a purchase date. Edit a purchase or raise the share count first.'); return; }
+      var s = window.prompt('How many shares did you buy on ' + d + '? (or type ALL for the remaining ' + fmtShares(remainB) + ')');
+      if (s === null) return;
+      var sh = String(s).trim().toLowerCase() === 'all' ? remainB : parseFloat(s);
+      if (!isNum(sh) || sh <= 0) { window.alert('Enter the number of shares bought.'); return; }
       if (logged + sh > grossB + 1e-9) {
         window.alert('That would make ' + fmtShares(logged + sh) + ' shares purchased, but ' + T + ' only accounts for ' + fmtShares(grossB) + ' in total (' + fmtShares(pos.shares) + ' held + ' + fmtShares(pfSoldShares(pos)) + ' sold). Enter fewer shares, or update the holding first with Edit.');
         return;
@@ -1739,14 +1741,15 @@ async function renderPortfolio(doFetch) {
       if (d === null) return;
       d = String(d).trim();
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || isNaN(new Date(d + 'T12:00:00').getTime())) { window.alert('That date does not look right -- use YYYY-MM-DD, like 2025-03-14.'); return; }
-      var s = window.prompt('How many shares of ' + T + ' did you sell on ' + d + '?');
-      if (s === null) return;
-      var sh = parseFloat(s);
-      if (!isNum(sh) || sh <= 0) { window.alert('Enter the number of shares sold.'); return; }
       var pf = getPortfolio();
       var pos = pf.filter(function (x) { return x.ticker === T; })[0];
       if (!pos) return;
       var bought = (pos.buys || []).reduce(function (a2, b2) { return a2 + b2.sh; }, 0);
+      var remainS = bought - pfSoldShares(pos);
+      var s = window.prompt('How many shares of ' + T + ' did you sell on ' + d + '?' + (bought > 0 && remainS > 0 ? ' (or type ALL for the remaining ' + fmtShares(remainS) + ')' : ''));
+      if (s === null) return;
+      var sh = String(s).trim().toLowerCase() === 'all' && bought > 0 ? remainS : parseFloat(s);
+      if (!isNum(sh) || sh <= 0) { window.alert('Enter the number of shares sold.'); return; }
       if (bought > 0 && pfSoldShares(pos) + sh > bought + 1e-9) {
         window.alert('Your logged purchases for ' + T + ' add up to ' + fmtShares(bought) + ' shares, so sales cannot pass that. Add the missing purchases first.');
         return;
@@ -1785,11 +1788,12 @@ async function renderPortfolio(doFetch) {
       if (d === null) return;
       d = String(d).trim();
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || isNaN(new Date(d + 'T12:00:00').getTime())) { window.alert('That date does not look right -- use YYYY-MM-DD, like 2025-03-14.'); return; }
-      var s = window.prompt('How many shares did you buy on ' + d + '?', cur.sh);
-      if (s === null) return;
-      var sh = parseFloat(s);
-      if (!isNum(sh) || sh <= 0) { window.alert('Enter the number of shares bought.'); return; }
       var others = pos.buys.reduce(function (a2, b2, i2) { return a2 + (i2 === idx ? 0 : b2.sh); }, 0);
+      var capB = pos.shares + pfSoldShares(pos) - others;
+      var s = window.prompt('How many shares did you buy on ' + d + '? (or type ALL for ' + fmtShares(capB) + ')', cur.sh);
+      if (s === null) return;
+      var sh = String(s).trim().toLowerCase() === 'all' ? capB : parseFloat(s);
+      if (!isNum(sh) || sh <= 0) { window.alert('Enter the number of shares bought.'); return; }
       if (others + sh > pos.shares + pfSoldShares(pos) + 1e-9) { window.alert('That would put purchases past the total shares this position accounts for. Raise the share count or lower the amount.'); return; }
       pos.buys[idx] = { d: d, sh: sh };
       pos.buys.sort(function (x, y) { return x.d < y.d ? -1 : 1; });
@@ -1809,12 +1813,13 @@ async function renderPortfolio(doFetch) {
       if (d === null) return;
       d = String(d).trim();
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || isNaN(new Date(d + 'T12:00:00').getTime())) { window.alert('That date does not look right -- use YYYY-MM-DD, like 2025-03-14.'); return; }
-      var s = window.prompt('How many shares did you sell on ' + d + '?', cur.sh);
-      if (s === null) return;
-      var sh = parseFloat(s);
-      if (!isNum(sh) || sh <= 0) { window.alert('Enter the number of shares sold.'); return; }
       var bought = (pos.buys || []).reduce(function (a2, b2) { return a2 + b2.sh; }, 0);
       var otherSells = pos.sells.reduce(function (a2, b2, i2) { return a2 + (i2 === idx ? 0 : b2.sh); }, 0);
+      var capS = bought - otherSells;
+      var s = window.prompt('How many shares did you sell on ' + d + '?' + (bought > 0 ? ' (or type ALL for ' + fmtShares(capS) + ')' : ''), cur.sh);
+      if (s === null) return;
+      var sh = String(s).trim().toLowerCase() === 'all' && bought > 0 ? capS : parseFloat(s);
+      if (!isNum(sh) || sh <= 0) { window.alert('Enter the number of shares sold.'); return; }
       if (bought > 0 && otherSells + sh > bought + 1e-9) { window.alert('Sales cannot pass your logged purchases for ' + parts[0] + ' (' + fmtShares(bought) + ' shares).'); return; }
       var pr = window.prompt('Sale price per share for ' + parts[0] + ' ($, blank = that day\u2019s closing price):', isNum(cur.px) ? cur.px : '');
       if (pr === null) return;
