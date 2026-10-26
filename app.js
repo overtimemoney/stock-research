@@ -1413,7 +1413,7 @@ async function renderWatchlist(refresh) {
       '</div>' +
       '<div class="wl-right"><div class="wl-price">' + (isNum(price) ? fmtMoney(price) : '\u2014') + '</div>' +
       '<div style="text-align:right">' + (r.err ? '<span class="factor-note">price unavailable</span>' : distHtml) + '</div>' +
-      '<div class="wl-actions">' + (r.proj ? '<button class="link-btn" data-wl-proj="' + esc(item.ticker) + '">Projection' + (isNum(r.projBase) ? ' \u00b7 Base ' + fmtMoney(r.projBase) : '') + '</button>' : '') + '<button class="link-btn" data-research="' + esc(item.ticker) + '">Research</button>' +
+      '<div class="wl-actions">' + '<button class="link-btn" data-wl-proj="' + esc(item.ticker) + '">Projection' + (r.proj && isNum(r.projBase) ? ' \u00b7 Base ' + fmtMoney(r.projBase) : '') + '</button>' + '<button class="link-btn" data-research="' + esc(item.ticker) + '">Research</button>' +
       '<button class="link-btn" data-wl-edit="' + esc(item.ticker) + '">Edit target</button>' +
       '<button class="link-btn danger" data-wl-del="' + esc(item.ticker) + '">Remove</button></div></div></div>';
   });
@@ -1424,10 +1424,16 @@ async function renderWatchlist(refresh) {
   });
   box.querySelectorAll('[data-wl-proj]').forEach(function (b) {
     b.addEventListener('click', function () {
+      var T = b.getAttribute('data-wl-proj');
       switchTab('tools');
-      pjRestore(b.getAttribute('data-wl-proj'));
-      var el = $('pj-result');
-      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start' });
+      if (getProjections()[T]) {
+        pjRestore(T);
+        var el = $('pj-result');
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start' });
+      } else {
+        $('pj-ticker').value = T;
+        loadProjectionTicker();
+      }
     });
   });
   box.querySelectorAll('[data-wl-del]').forEach(function (b) {
