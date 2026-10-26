@@ -609,13 +609,13 @@ function riskScore(d) {
     factors.push({ name: name, value: value, display: display, max: max, pts: pts, note: note || '' });
   }
   if (isNum(d.beta) && d.beta > 0) {
-    add('Beta (volatility)', d.beta, fmtNum(d.beta, 2), 25,
-      band(d.beta, [[0.5, 2], [0.8, 6], [1, 10], [1.3, 15], [1.6, 20], [2, 23], [Infinity, 25]]),
+    add('Beta (volatility)', d.beta, fmtNum(d.beta, 2), 15,
+      band(d.beta, [[0.5, 1], [0.8, 4], [1, 6], [1.3, 9], [1.6, 12], [2, 14], [Infinity, 15]]),
       'How hard the stock swings vs the market');
   }
   if (isNum(d.debtEq) && d.debtEq >= 0) {
-    add('Debt / Equity', d.debtEq, fmtNum(d.debtEq, 2), 20,
-      band(d.debtEq, [[0.1, 0], [0.4, 4], [0.8, 8], [1.5, 12], [3, 16], [Infinity, 20]]),
+    add('Debt / Equity', d.debtEq, fmtNum(d.debtEq, 2), 25,
+      band(d.debtEq, [[0.1, 0], [0.4, 5], [0.8, 10], [1.5, 15], [3, 20], [Infinity, 25]]),
       'More debt = less room when things go wrong');
   }
   if (isNum(d.profitMargin)) {
@@ -640,8 +640,8 @@ function riskScore(d) {
   }
   var bb = boomBust(d);
   if (bb && bb.testable) {
-    add('Boom-bust pattern', bb.ratio, isNum(bb.ratio) ? fmtNum(bb.ratio, 1) + '\u00d7 in 2 yrs' : '\u2014', 15,
-      bb.fires ? 15 : 0,
+    add('Boom-bust pattern', bb.ratio, isNum(bb.ratio) ? fmtNum(bb.ratio, 1) + '\u00d7 in 2 yrs' : '\u2014', 20,
+      bb.fires ? 20 : 0,
       bb.fires
         ? 'Revenue ' + (bb.projected ? 'is projected to top' : 'topped') + ' at ' + bb.topLabel + ' after doubling in 2 yrs, and EPS falls off a cliff after ' + (bb.cliff ? bb.cliff.peakLabel : 'its peak') + ' \u2014 the classic peak-cycle trap'
         : 'No doubling-into-a-cliff pattern in the revenue path');
