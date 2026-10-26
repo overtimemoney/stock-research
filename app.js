@@ -356,9 +356,12 @@ async function fetchStock(ticker, opts) {
     var ch = await relayJSON('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(T) + '?range=1y&interval=1wk');
     var res = ch && ch.chart && ch.chart.result && ch.chart.result[0];
     if (res) {
-      var closes = ((res.indicators && res.indicators.quote && res.indicators.quote[0].close) || [])
-        .filter(function (c) { return isNum(c); });
+      var rawCloses = (res.indicators && res.indicators.quote && res.indicators.quote[0].close) || [];
+      var rawTs = res.timestamp || [];
+      var closes = [], tsArr = [];
+      rawCloses.forEach(function (c, i) { if (isNum(c)) { closes.push(c); tsArr.push(rawTs[i] || null); } });
       d.history = closes;
+      d.historyTs = tsArr;
       var meta = res.meta || {};
       if (!isNum(d.price) && isNum(meta.regularMarketPrice)) d.price = meta.regularMarketPrice;
       if (!isNum(d.high52) && isNum(meta.fiftyTwoWeekHigh)) d.high52 = meta.fiftyTwoWeekHigh;
@@ -571,8 +574,55 @@ function lineChartSVG(closes, high52, w, h) {
   out += '<polyline points="' + pts + '" fill="none" style="stroke:var(--chart-line)" stroke-width="2.2" stroke-linejoin="round"/>';
   out += '<text x="' + padX + '" y="' + (h - 5) + '" font-size="11" font-weight="700" fill="#77705f">1 year ago</text>' +
     '<text x="' + (w - padX) + '" y="' + (h - 5) + '" text-anchor="end" font-size="11" font-weight="700" fill="#77705f">now · ' + fmtNum(closes[closes.length - 1]) + '</text>';
+  out += '<g class="px-scrub" style="display:none"><line class="px-scrub-line" y1="' + padT + '" y2="' + (h - padB) + '" stroke-width="1" stroke-dasharray="4 4" style="stroke:var(--muted)"/>' +
+    '<circle class="px-scrub-dot" r="4.6" style="fill:var(--chart-line)" stroke="#0d0d0f" stroke-width="1.6"/></g>' +
+    '<rect class="px-scrub-zone" x="0" y="0" width="' + w + '" height="' + (h - padB + 4) + '" fill="transparent" style="touch-action:none"/>';
   out += '</svg>';
   return out;
+}
+/* Drag scrubbing for the scorecard price chart: a dashed crosshair + dot
+ * follow the finger, and a readout under the chart shows that week's
+ * date, price, and change since the start of the window. */
+function bindPriceScrub(d) {
+  var wrap = $('score-result');
+  if (!wrap || !d.history || d.history.length < 2) return;
+  var svg = wrap.querySelector('svg[aria-label="One-year price chart"]');
+  var zone = svg ? svg.querySelector('.px-scrub-zone') : null;
+  var grp = svg ? svg.querySelector('.px-scrub') : null;
+  var read = $('sc-chart-read');
+  if (!svg || !zone || !grp || !read) return;
+  var closes = d.history, n = closes.length;
+  var max = Math.max.apply(null, closes), min = Math.min.apply(null, closes);
+  if (isNum(d.high52)) max = Math.max(max, d.high52);
+  var span = (max - min) || 1, padT = 16, padB = 20, padX = 6, W = 640, H = 170;
+  var X = function (i) { return padX + i * (W - padX * 2) / (n - 1); };
+  var Y = function (v) { return padT + (max - v) / span * (H - padT - padB); };
+  var line = grp.querySelector('.px-scrub-line'), dot = grp.querySelector('.px-scrub-dot');
+  var MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var scrubbing = false;
+  function dateFor(i) {
+    var ts = d.historyTs && d.historyTs[i];
+    if (isNum(ts)) { var dt = new Date(ts * 1000); return MONS[dt.getMonth()] + ' ' + dt.getDate() + ', ' + dt.getFullYear(); }
+    var back = new Date(); back.setDate(back.getDate() - (n - 1 - i) * 7);
+    return MONS[back.getMonth()] + ' ' + back.getDate() + ', ' + back.getFullYear();
+  }
+  function scrubTo(clientX) {
+    var rect = svg.getBoundingClientRect();
+    if (!rect.width) return;
+    var sx = (clientX - rect.left) / rect.width * W;
+    var i = Math.round((sx - padX) / (W - padX * 2) * (n - 1));
+    i = Math.max(0, Math.min(n - 1, i));
+    var x = X(i), y = Y(closes[i]);
+    grp.style.display = '';
+    line.setAttribute('x1', x); line.setAttribute('x2', x);
+    dot.setAttribute('cx', x); dot.setAttribute('cy', y);
+    var chg = (closes[i] / closes[0] - 1) * 100;
+    read.innerHTML = '<b class="pf-read-date">' + dateFor(i) + '</b> \u00b7 <b>' + fmtMoney(closes[i]) + '</b> \u00b7 <b class="' + (chg >= 0 ? 'up' : 'down') + '">' + fmtPct(chg) + '</b> since the start of the chart';
+  }
+  zone.addEventListener('pointerdown', function (e) { scrubbing = true; try { zone.setPointerCapture(e.pointerId); } catch (err) {} scrubTo(e.clientX); e.preventDefault(); });
+  zone.addEventListener('pointermove', function (e) { if (scrubbing) scrubTo(e.clientX); });
+  zone.addEventListener('pointerup', function () { scrubbing = false; });
+  zone.addEventListener('pointercancel', function () { scrubbing = false; });
 }
 
 /* ============================== scorecard UI ============================== */
@@ -831,7 +881,7 @@ function renderScorecard(d) {
   html += '<p class="fineprint">Auto-generated from the figures on this page — it reads the numbers, not the news, so company-specific events (lawsuits, new rivals, regulation) won\'t show up here.</p>';
 
   if (d.history && d.history.length >= 2) {
-    html += '<div class="section-h">Price — <span class="gold-text">1 year</span></div><div class="chart-wrap">' + lineChartSVG(d.history, d.high52) + '</div>';
+    html += '<div class="section-h">Price — <span class="gold-text">1 year</span></div><div class="chart-wrap">' + lineChartSVG(d.history, d.high52) + '</div><div id="sc-chart-read" class="pf-bench-read">Drag across the chart to see the price on any week.</div>';
   }
 
   html += '<div class="sc-actions">' +
@@ -850,6 +900,7 @@ function renderScorecard(d) {
   $('score-empty').style.display = 'none';
 
   bindAiSwotBtn(d);
+  bindPriceScrub(d);
   $('sc-watch').addEventListener('click', function () {
     addToWatchlist(d.ticker, isNum(d.price) ? d.price : null);
     switchTab('watchlist');
