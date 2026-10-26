@@ -982,6 +982,15 @@ function pjSavedBase(T) {
   var feps = pjCaseEps(s.baseEps, s.path.slice(0, (s.years || 3) + off), 0);
   return isNum(feps) ? feps * s.mult : null;
 }
+/* Base-case CAGR of a saved projection: implied end price vs the price at
+ * save time, annualized over the saved horizon -- comparable across
+ * projections even when they use different year counts. */
+function pjSavedCagr(T) {
+  var s = getProjections()[T];
+  var fp = pjSavedBase(T);
+  if (!s || !isNum(fp) || !isNum(s.price) || s.price <= 0 || !isNum(s.years) || s.years < 1 || fp <= 0) return null;
+  return (Math.pow(fp / s.price, 1 / s.years) - 1) * 100;
+}
 function pjSaveCurrent() {
   var T = ($('pj-ticker').value || '').trim().toUpperCase();
   if (!T) { window.alert('Load a stock first -- a saved projection needs a ticker.'); return; }
@@ -1363,7 +1372,7 @@ async function renderWatchlist(refresh) {
     var price = null, err = null;
     try { price = await fetchLightPrice(item.ticker); } catch (e) { err = e.message; }
     var projMap = getProjections();
-    rows.push({ item: item, price: price, err: err, val: wlValuationDisplay(item.ticker), proj: !!projMap[item.ticker], projBase: projMap[item.ticker] ? pjSavedBase(item.ticker) : null });
+    rows.push({ item: item, price: price, err: err, val: wlValuationDisplay(item.ticker), proj: !!projMap[item.ticker], projCagr: projMap[item.ticker] ? pjSavedCagr(item.ticker) : null });
   }
   // On an explicit refresh, fill in missing or stale valuation scores
   // with a Finviz-only pass (a fresh full scorecard score wins as-is).
@@ -1415,7 +1424,7 @@ async function renderWatchlist(refresh) {
       '</div>' +
       '<div class="wl-right"><div class="wl-price">' + (isNum(price) ? fmtMoney(price) : '\u2014') + '</div>' +
       '<div style="text-align:right">' + (r.err ? '<span class="factor-note">price unavailable</span>' : distHtml) + '</div>' +
-      '<div class="wl-actions">' + '<button class="link-btn" data-wl-proj="' + esc(item.ticker) + '">Projection' + (r.proj && isNum(r.projBase) ? ' \u00b7 Base ' + fmtMoney(r.projBase) : '') + '</button>' +
+      '<div class="wl-actions">' + '<button class="link-btn" data-wl-proj="' + esc(item.ticker) + '">Projection' + (r.proj && isNum(r.projCagr) ? ' \u00b7 Base ' + fmtPct(r.projCagr) + '/yr' : '') + '</button>' +
       '<button class="link-btn wl-more-btn" data-wl-more="' + esc(item.ticker) + '" aria-label="More actions">\u00b7\u00b7\u00b7</button>' +
       '<span class="wl-sub"><button class="link-btn" data-research="' + esc(item.ticker) + '">Research</button>' +
       '<button class="link-btn" data-wl-edit="' + esc(item.ticker) + '">Edit target</button>' +
