@@ -1789,7 +1789,11 @@ async function renderPortfolio(doFetch) {
           popEl.classList.add('clickable');
           popEl.onclick = function () {
             var lst = popEl.querySelector('.pf-pop-list');
-            if (lst) lst.hidden = !lst.hidden;
+            var hint = popEl.querySelector('.pf-pop-hint');
+            if (lst) {
+              lst.hidden = !lst.hidden;
+              if (hint) hint.textContent = lst.hidden ? 'Tap here to see the holdings inside \u25be' : 'Tap here to hide the holdings inside \u25b4';
+            }
           };
         }
         popEl.innerHTML = popHtml;

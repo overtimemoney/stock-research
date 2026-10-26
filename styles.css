@@ -433,3 +433,4 @@ table.scen td { padding: 8px 6px; }
 .wl-sub.open { display: inline-flex; gap: 10px; }
 .wl-more-btn { font-weight: 800; letter-spacing: 1px; }
 .wl-more-btn { margin-left: 18px; }
+.pf-pop-list[hidden] { display: none; }
