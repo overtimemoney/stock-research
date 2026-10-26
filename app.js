@@ -3573,15 +3573,30 @@ function switchTab(name) {
  * inner height and re-measure on every lifecycle event that can
  * change it. Keyboard-safe: innerHeight ignores the keyboard. */
 function fitShell() {
-  try { document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px'); } catch (e) {}
+  try {
+    var h = window.innerHeight || 0;
+    // iOS standalone reports a SHORT innerHeight after an in-app
+    // reload (it never re-fires resize), so trust the physical
+    // screen height when running from the home screen in portrait:
+    // the shell is supposed to fill exactly that.
+    var standalone = (window.navigator && window.navigator.standalone) ||
+      (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+    if (standalone && window.screen && window.screen.height && window.innerHeight >= window.innerWidth) {
+      h = Math.max(h, window.screen.height);
+    }
+    if (h > 0) document.documentElement.style.setProperty('--app-h', h + 'px');
+  } catch (e) {}
 }
 window.addEventListener('resize', fitShell);
 window.addEventListener('orientationchange', fitShell);
 window.addEventListener('pageshow', fitShell);
+window.addEventListener('load', fitShell);
+window.addEventListener('focus', fitShell);
 document.addEventListener('visibilitychange', function () { if (!document.hidden) fitShell(); });
 fitShell();
 setTimeout(fitShell, 300);
 setTimeout(fitShell, 1200);
+setTimeout(fitShell, 2500);
 
 function initApp() {
   document.querySelectorAll('.tabbar button').forEach(function (b) {
