@@ -434,3 +434,19 @@ table.scen td { padding: 8px 6px; }
 .wl-more-btn { font-weight: 800; letter-spacing: 1px; }
 .wl-more-btn { margin-left: 18px; }
 .pf-pop-list[hidden] { display: none; }
+.scan-card { margin-bottom: 12px; }
+.scan-h { font-size: 17px; font-weight: 900; letter-spacing: .01em; margin-bottom: 6px; }
+.scan-date { color: var(--muted); font-size: 12px; font-weight: 700; margin-left: 6px; }
+.scan-group { font-size: 12px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); margin: 10px 0 4px; }
+.scan-count { color: var(--muted); letter-spacing: 0; text-transform: none; font-weight: 700; }
+.scan-row { display: flex; align-items: center; gap: 9px; width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line); padding: 8px 2px; color: inherit; text-align: left; cursor: pointer; }
+.scan-row:last-of-type { border-bottom: 0; }
+.scan-rank { color: var(--muted); font-weight: 900; width: 16px; text-align: center; }
+.scan-id { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.scan-id b { font-size: 15px; font-weight: 900; }
+.scan-id span { color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scan-px { font-weight: 800; font-size: 13px; }
+.scan-score { font-size: 11.5px; font-weight: 900; border: 1px solid var(--line); border-radius: 999px; padding: 3px 8px; white-space: nowrap; }
+.scan-foot { margin-top: 10px; font-size: 12px; color: var(--muted); font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.scan-bar { height: 6px; border-radius: 3px; background: var(--chip-bg); overflow: hidden; margin-top: 8px; }
+.scan-bar i { display: block; height: 100%; background: var(--gold); border-radius: 3px; transition: width .3s; }

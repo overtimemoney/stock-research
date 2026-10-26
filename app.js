@@ -1408,6 +1408,217 @@ async function fetchWlValuation(T) {
   return sc.score != null ? { score: sc.score, verdict: sc.verdict } : null;
 }
 
+/* ============================== daily index scan ==============================
+ * Once a day the app scans the whole S&P 500 and Russell 2000 for the
+ * five highest valuation scores, using the same scoreStock() as the
+ * scorecard. His Cloudflare relay does the heavy lifting: its /screen
+ * route extracts just the needed rows from Finviz's screener pages
+ * (~2-4 KB per page instead of ~400 KB of HTML). Pages fetch 4 at a
+ * time; progress persists on-device, so closing the app mid-scan just
+ * resumes where it left off. Results are kept for the day; the raw
+ * merged rows are dropped once the top 5s are computed. */
+var SCAN_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/screen';
+var SCAN_VIEWS = ['121', '161', '171'];
+var SCAN_IDXS = [
+  { key: 'spx', label: 'S&P 500' },
+  { key: 'rut', label: 'Russell 2000' }
+];
+var scanRunning = false, scanActive = 0;
+
+function scanTodayKey() { return pfKeyToISO(pfDkey(new Date())); }
+function scanFreshIdx() { return { total: null, merged: {}, pending: SCAN_VIEWS.map(function (v) { return [v, 1, 0]; }), queued: {}, pages: 0, skipped: 0 }; }
+function scanFreshState() {
+  var s = { date: scanTodayKey(), done: false, results: null, idx: {} };
+  SCAN_IDXS.forEach(function (ix) { s.idx[ix.key] = scanFreshIdx(); });
+  return s;
+}
+function getScan() {
+  try { var s = JSON.parse(localStorage.getItem('sr_scan_v1') || 'null'); return (s && s.idx) ? s : null; }
+  catch (e) { return null; }
+}
+function setScan(s) { try { localStorage.setItem('sr_scan_v1', JSON.stringify(s)); } catch (e) {} }
+
+function scanMerge(idxs, view, rows) {
+  rows.forEach(function (row) {
+    var rec = idxs.merged[row.t];
+    if (!rec) { rec = { name: row.name || row.t }; idxs.merged[row.t] = rec; }
+    var n = row.n || {};
+    if (view === '121') {
+      if (isNum(n.forwardPE)) rec.forwardPE = n.forwardPE;
+      if (isNum(n.PEG)) rec.peg = n.PEG;
+      if (isNum(n.epsYoY1)) rec.epsGrowthNextY = n.epsYoY1;
+      if (isNum(n.price)) rec.price = n.price;
+    } else if (view === '161') {
+      if (isNum(n.grossMargin)) rec.grossMargin = n.grossMargin;
+      if (isNum(n.netMargin)) rec.profitMargin = n.netMargin;
+      if (isNum(n.debtEq)) rec.debtEq = n.debtEq;
+    } else if (view === '171') {
+      if (isNum(n.high52w)) rec.pctBelowHigh = Math.max(0, -n.high52w);
+    }
+  });
+}
+
+function scanFinalizeIdx(idxs) {
+  var out = [];
+  Object.keys(idxs.merged).forEach(function (t) {
+    var rec = idxs.merged[t];
+    // Eligibility: a ranking score must rest on the anchor factor (a
+    // real forward P/E) and at least 60 of the 100 factor points —
+    // otherwise a name with two maxed-out minor factors (fresh
+    // spin-offs, pre-revenue shells) normalizes to a meaningless 100.
+    if (!(isNum(rec.forwardPE) && rec.forwardPE > 0)) return;
+    var s = scoreStock(rec);
+    if (s && isNum(s.score) && s.maxAvailable >= 60) out.push({ t: t, name: rec.name, score: s.score, price: isNum(rec.price) ? rec.price : null });
+  });
+  out.sort(function (a, b) { return b.score - a.score; });
+  return out.slice(0, 5);
+}
+
+function scanAllDone(s) {
+  return SCAN_IDXS.every(function (ix) { return s.idx[ix.key].pending.length === 0; });
+}
+
+async function scanFetchPage(ixKey, v, r) {
+  var resp = await fetchWithTimeout(SCAN_URL + '?v=' + v + '&f=' + ixKey + '&r=' + r, 25000);
+  if (!resp.ok) throw new Error('screen ' + resp.status);
+  var data = await resp.json();
+  if (!data || !Array.isArray(data.rows)) throw new Error('screen payload');
+  return data;
+}
+
+function scanPump() {
+  if (scanRunning) return;
+  var s = getScan();
+  if (!s || s.done || s.date !== scanTodayKey()) return;
+  scanRunning = true;
+  var step = function () {
+    var st = getScan();
+    if (!st || st.done) { scanRunning = false; return; }
+    if (scanActive >= 4) return;
+    var job = null, jobIx = null;
+    for (var i = 0; i < SCAN_IDXS.length && !job; i++) {
+      var cand = st.idx[SCAN_IDXS[i].key];
+      if (cand.pending.length) { job = cand.pending[0]; jobIx = SCAN_IDXS[i].key; }
+    }
+    if (!job) {
+      if (scanActive === 0) {
+        // Queue empty: finalize if anything was scanned, else leave
+        // the state for the retry button (nothing merged at all).
+        var any = SCAN_IDXS.some(function (ix) { return st.idx[ix.key].pages > 0; });
+        if (any) {
+          var results = {};
+          SCAN_IDXS.forEach(function (ix) {
+            results[ix.key] = scanFinalizeIdx(st.idx[ix.key]);
+            st.idx[ix.key].count = st.idx[ix.key].total;
+            st.idx[ix.key].merged = {};
+          });
+          st.results = results;
+          st.done = true;
+          setScan(st);
+        }
+        scanRunning = false;
+        renderScanCard();
+      }
+      return;
+    }
+    var idxs = st.idx[jobIx];
+    idxs.pending.shift();
+    setScan(st);
+    scanActive++;
+    scanFetchPage(jobIx, job[0], job[1]).then(function (data) {
+      var st2 = getScan(); if (!st2) return;
+      var ix2 = st2.idx[jobIx];
+      if (isNum(data.total)) ix2.total = data.total;
+      scanMerge(ix2, job[0], data.rows);
+      ix2.pages++;
+      // First successful page of a view reveals the total: queue the rest.
+      if (job[1] === 1 && isNum(data.total)) {
+        for (var r = 21; r <= data.total; r += 20) {
+          var k = job[0] + ':' + r;
+          if (!ix2.queued[k]) { ix2.queued[k] = 1; ix2.pending.push([job[0], r, 0]); }
+        }
+      }
+      setScan(st2);
+    }).catch(function () {
+      var st2 = getScan(); if (!st2) return;
+      var ix2 = st2.idx[jobIx];
+      if (job[2] < 2) { job[2]++; ix2.pending.push(job); }
+      else ix2.skipped++;
+      setScan(st2);
+    }).then(function () {
+      scanActive--;
+      renderScanCard();
+      step(); step(); step(); step();
+    });
+    step(); step(); step();
+  };
+  step(); step(); step(); step();
+}
+
+function maybeStartScan() {
+  var s = getScan();
+  if (!s || s.date !== scanTodayKey()) { s = scanFreshState(); setScan(s); }
+  renderScanCard();
+  if (!s.done) scanPump();
+}
+
+function scanScoreClass(score) { return score >= 70 ? 'up' : (score >= 45 ? '' : 'down'); }
+
+function renderScanCard() {
+  var box = $('scan-card');
+  if (!box) return;
+  var s = getScan();
+  if (!s || s.date !== scanTodayKey()) {
+    box.innerHTML = '<div class="card scan-card"><div class="scan-h">Top value today</div><div class="status">Preparing today\'s scan\u2026</div></div>';
+    return;
+  }
+  var html = '<div class="card scan-card"><div class="scan-h">Top value today <span class="scan-date">' + esc(s.date) + '</span></div>';
+  if (s.done && s.results) {
+    SCAN_IDXS.forEach(function (ix) {
+      var rows = s.results[ix.key] || [];
+      var count = s.idx[ix.key].count;
+      html += '<div class="scan-group">' + esc(ix.label) + (isNum(count) ? ' <span class="scan-count">' + count + ' stocks scored</span>' : '') + '</div>';
+      if (!rows.length) { html += '<div class="status">No scored stocks came back.</div>'; }
+      rows.forEach(function (row, i) {
+        html += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
+          '<span class="scan-rank">' + (i + 1) + '</span>' +
+          '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + '</span></span>' +
+          '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
+          '<span class="scan-score ' + scanScoreClass(row.score) + '">Valuation ' + row.score + '</span></button>';
+      });
+    });
+    html += '<div class="scan-foot">Highest valuation scores in each index (forward P/E and near-full data required), refreshed once a day. <button type="button" class="btn-mini" id="scan-rescan">Rescan</button></div>';
+  } else {
+    var pages = 0, stocks = 0, pending = 0;
+    SCAN_IDXS.forEach(function (ix) {
+      var z = s.idx[ix.key];
+      pages += z.pages; pending += z.pending.length;
+      stocks += Object.keys(z.merged).length;
+    });
+    if (pages === 0 && pending === 0 && !scanRunning) {
+      html += '<div class="status err">The scan couldn\'t reach the data source.</div><button type="button" class="btn-ghost" id="scan-retry">Retry the scan</button>';
+    } else {
+      var pct = (pages + pending) > 0 ? Math.round(pages / (pages + pending) * 100) : 0;
+      html += '<div class="status"><span class="spinner"></span>Scanning the S&P 500 and Russell 2000\u2026 ' + pages + ' pages in, ' + stocks + ' stocks so far. It resumes if you close the app.</div>' +
+        '<div class="scan-bar"><i style="width:' + pct + '%"></i></div>';
+    }
+  }
+  html += '</div>';
+  box.innerHTML = html;
+  var rs = $('scan-rescan');
+  if (rs) rs.addEventListener('click', function () { setScan(scanFreshState()); renderScanCard(); scanPump(); });
+  var rt = $('scan-retry');
+  if (rt) rt.addEventListener('click', function () { setScan(scanFreshState()); renderScanCard(); scanPump(); });
+  box.querySelectorAll('[data-scan-research]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var T = b.getAttribute('data-scan-research');
+      switchTab('scorecard');
+      $('search-input').value = T;
+      runSearch(T);
+    });
+  });
+}
+
 async function renderWatchlist(refresh) {
   var wl = getWatchlist();
   var box = $('wl-list');
@@ -2722,6 +2933,7 @@ function initApp() {
     $('wl-ticker').value = ''; $('wl-target').value = '';
   });
   $('wl-refresh').addEventListener('click', function () { renderWatchlist(true); });
+  maybeStartScan();
   var wlSortSel = $('wl-sort');
   if (wlSortSel) {
     wlSortSel.value = getWlSort();
