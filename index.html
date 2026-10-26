@@ -164,9 +164,14 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
   <!-- PORTFOLIO -->
   <section id="tab-portfolio" class="tab">
     <h2 class="tab-title">Port<span class="gold-text">folio</span></h2>
-    <div id="pf-summary"></div>
-    <div id="pf-bench"></div>
-    <div class="card pf-add-card">
+    <div class="pf-view-switch" role="tablist" aria-label="Portfolio view">
+      <button type="button" id="pf-view-overview" class="on">Overview</button>
+      <button type="button" id="pf-view-news">News</button>
+    </div>
+    <div id="pf-news" hidden></div>
+    <div id="pf-summary" class="pf-ov"></div>
+    <div id="pf-bench" class="pf-ov"></div>
+    <div class="card pf-add-card pf-ov">
       <button id="pf-add-toggle" class="pf-add-head" type="button" aria-expanded="false"><span>Add a holding</span><span class="pf-chev">▾</span></button>
       <div id="pf-add-body" hidden>
       <form id="pf-form" autocomplete="off">
@@ -182,13 +187,13 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
       </form>
       </div>
     </div>
-    <div class="row-between wl-tools">
+    <div class="row-between wl-tools pf-ov">
       <span id="pf-status" class="status"></span>
       <span class="wl-tools-r"><button id="pf-refresh" class="btn-mini" type="button"><svg class="ico" style="width:14px;height:14px;vertical-align:-2px" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh prices</button></span>
     </div>
-    <div id="pf-list"></div>
-    <div id="pf-closed"></div>
-    <p class="fineprint">Your portfolio lives only on this device — back it up from the <svg class="ico ico-f" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M19.30 12.00 L19.17 13.39 L20.94 14.56 L20.13 16.51 L18.05 16.08 L17.75 16.49 L17.42 16.88 L17.16 17.16 L16.08 18.05 L16.51 20.13 L14.56 20.94 L13.39 19.17 L12.89 19.25 L12.38 19.29 L12.00 19.30 L10.61 19.17 L9.44 20.94 L7.49 20.13 L7.92 18.05 L7.51 17.75 L7.12 17.42 L6.84 17.16 L5.95 16.08 L3.87 16.51 L3.06 14.56 L4.83 13.39 L4.75 12.89 L4.71 12.38 L4.70 12.00 L4.83 10.61 L3.06 9.44 L3.87 7.49 L5.95 7.92 L6.25 7.51 L6.58 7.12 L6.84 6.84 L7.92 5.95 L7.49 3.87 L9.44 3.06 L10.61 4.83 L11.11 4.75 L11.62 4.71 L12.00 4.70 L13.39 4.83 L14.56 3.06 L16.51 3.87 L16.08 5.95 L16.49 6.25 L16.88 6.58 L17.16 6.84 L18.05 7.92 L20.13 7.49 L20.94 9.44 L19.17 10.61 L19.25 11.11 L19.29 11.62 Z M12 8.9 a3.1 3.1 0 1 0 0 6.2 a3.1 3.1 0 1 0 0 -6.2 Z"/></svg> settings menu (top right). Prices and dividend figures are estimates from the latest data the app could fetch; your brokerage statement is the official record.</p>
+    <div id="pf-list" class="pf-ov"></div>
+    <div id="pf-closed" class="pf-ov"></div>
+    <p class="fineprint pf-ov">Your portfolio lives only on this device — back it up from the <svg class="ico ico-f" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M19.30 12.00 L19.17 13.39 L20.94 14.56 L20.13 16.51 L18.05 16.08 L17.75 16.49 L17.42 16.88 L17.16 17.16 L16.08 18.05 L16.51 20.13 L14.56 20.94 L13.39 19.17 L12.89 19.25 L12.38 19.29 L12.00 19.30 L10.61 19.17 L9.44 20.94 L7.49 20.13 L7.92 18.05 L7.51 17.75 L7.12 17.42 L6.84 17.16 L5.95 16.08 L3.87 16.51 L3.06 14.56 L4.83 13.39 L4.75 12.89 L4.71 12.38 L4.70 12.00 L4.83 10.61 L3.06 9.44 L3.87 7.49 L5.95 7.92 L6.25 7.51 L6.58 7.12 L6.84 6.84 L7.92 5.95 L7.49 3.87 L9.44 3.06 L10.61 4.83 L11.11 4.75 L11.62 4.71 L12.00 4.70 L13.39 4.83 L14.56 3.06 L16.51 3.87 L16.08 5.95 L16.49 6.25 L16.88 6.58 L17.16 6.84 L18.05 7.92 L20.13 7.49 L20.94 9.44 L19.17 10.61 L19.25 11.11 L19.29 11.62 Z M12 8.9 a3.1 3.1 0 1 0 0 6.2 a3.1 3.1 0 1 0 0 -6.2 Z"/></svg> settings menu (top right). Prices and dividend figures are estimates from the latest data the app could fetch; your brokerage statement is the official record.</p>
   </section>
 
   <!-- JOURNAL -->

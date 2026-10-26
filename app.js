@@ -531,23 +531,20 @@ function barChartSVG(pts, w, h) {
   var span = (max - min) || 1;
   var bw = (w - padX * 2) / pts.length;
   var zeroY = padT + (max / span) * (h - padT - padB);
-  // The TTM (actual) bar and the value labels were solid #141414 -- fine on
-  // the light theme, invisible on the dark one. Pick per current theme:
-  // cream for the actual bar in dark mode (reads as "real" next to the gold
-  // forecast bars), near-black in light mode; labels take the theme's ink.
-  var darkTheme = !(typeof document !== 'undefined' && document.documentElement && document.documentElement.getAttribute('data-theme') === 'light');
-  var actualFill = darkTheme ? '#E9E2D0' : '#141414';
-  var valFill = darkTheme ? '#F2EDE3' : '#141414';
+  // The TTM (actual) bar and the value labels use CSS variables
+  // (--chart-actual / --chart-val) rather than baked-in hex: variables
+  // follow the live theme, so switching dark/light after the chart is
+  // drawn can never strand pale-on-white (or dark-on-black) paint. 
   var out = '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="EPS trajectory chart">';
   out += '<line x1="' + padX + '" y1="' + zeroY + '" x2="' + (w - padX) + '" y2="' + zeroY + '" stroke="#d8c98f" stroke-width="1"/>';
   pts.forEach(function (p, i) {
     var bh = Math.abs(p.eps) / span * (h - padT - padB);
     var x = padX + i * bw + bw * 0.16, bwid = bw * 0.68;
     var y = p.eps >= 0 ? zeroY - bh : zeroY;
-    var fill = p.kind === 'actual' ? actualFill : 'url(#goldGrad)';
-    out += '<rect x="' + x + '" y="' + y + '" width="' + bwid + '" height="' + Math.max(bh, 1.5) + '" rx="4" fill="' + fill + '"/>';
+    var fillAttr = p.kind === 'actual' ? 'style="fill:var(--chart-actual)"' : 'fill="url(#goldGrad)"';
+    out += '<rect x="' + x + '" y="' + y + '" width="' + bwid + '" height="' + Math.max(bh, 1.5) + '" rx="4" ' + fillAttr + '/>';
     var vy = p.eps >= 0 ? y - 5 : y + bh + 13;
-    out += '<text x="' + (x + bwid / 2) + '" y="' + vy + '" text-anchor="middle" font-size="12.5" font-weight="800" fill="' + valFill + '">' + fmtNum(p.eps, Math.abs(p.eps) >= 100 ? 0 : 2) + '</text>';
+    out += '<text x="' + (x + bwid / 2) + '" y="' + vy + '" text-anchor="middle" font-size="12.5" font-weight="800" style="fill:var(--chart-val)">' + fmtNum(p.eps, Math.abs(p.eps) >= 100 ? 0 : 2) + '</text>';
     out += '<text x="' + (x + bwid / 2) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="11.5" font-weight="700" fill="#77705f">' + esc(p.label) + (p.kind === 'est' ? ' est' : '') + '</text>';
   });
   out += '<defs><linearGradient id="goldGrad" x1="0" y1="0" x2="1" y2="0">' +
@@ -1849,6 +1846,141 @@ function pfLogoImg(ticker) {
 }
 function pfKv(k, v) { return '<div class="pf-kv"><span>' + k + '</span><b>' + v + '</b></div>'; }
 
+/* ============================== portfolio news ==============================
+ * A News view inside the Portfolio tab: the latest headlines for the
+ * stocks he actually holds, from Yahoo Finance's per-ticker RSS feeds
+ * (through the relay), newest first, each tappable through to the
+ * article. Cached on-device for 3 hours; a changed holdings list
+ * counts as stale. Parsing is regex-based, same as the relay's own
+ * headline reader. */
+var PF_NEWS_TTL = 3 * 3600 * 1000;
+var pfNewsLoading = false;
+
+function pfNewsDecode(s) {
+  return String(s || '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, function (m, n) { return String.fromCharCode(parseInt(n, 10)); })
+    .trim();
+}
+
+function parseYahooRss(xml, T) {
+  var out = [];
+  var itemRe = /<item>([\s\S]*?)<\/item>/g, m;
+  while ((m = itemRe.exec(String(xml || ''))) !== null) {
+    var body = m[1];
+    var title = body.match(/<title>([\s\S]*?)<\/title>/);
+    var link = body.match(/<link>([\s\S]*?)<\/link>/);
+    var date = body.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
+    var source = body.match(/<source[^>]*>([\s\S]*?)<\/source>/);
+    if (!title || !link) continue;
+    var ts = date ? Date.parse(pfNewsDecode(date[1])) : NaN;
+    out.push({
+      t: T,
+      title: pfNewsDecode(title[1]),
+      link: pfNewsDecode(link[1]),
+      source: source ? pfNewsDecode(source[1]) : '',
+      ts: isNum(ts) ? ts : 0
+    });
+  }
+  return out;
+}
+
+function pfNewsAgo(ts) {
+  if (!ts) return '';
+  var mins = Math.max(1, Math.round((Date.now() - ts) / 60000));
+  if (mins < 60) return mins + 'm ago';
+  var hrs = Math.round(mins / 60);
+  if (hrs < 24) return hrs + 'h ago';
+  var days = Math.round(hrs / 24);
+  return days + (days === 1 ? ' day ago' : ' days ago');
+}
+
+function getPfNews() {
+  try { return JSON.parse(localStorage.getItem('sr_pfnews_v1') || 'null'); } catch (e) { return null; }
+}
+function setPfNews(c) { try { localStorage.setItem('sr_pfnews_v1', JSON.stringify(c)); } catch (e) {} }
+function pfNewsTickers() {
+  return getPortfolio().filter(function (p) { return p.shares > 0; }).map(function (p) { return p.ticker; });
+}
+function pfNewsStale() {
+  var c = getPfNews();
+  if (!c) return true;
+  if (c.tickersKey !== pfNewsTickers().join(',')) return true;
+  return (Date.now() - (c.fetchedAt || 0)) > PF_NEWS_TTL;
+}
+
+function renderPfNews() {
+  var box = $('pf-news');
+  if (!box) return;
+  var tickers = pfNewsTickers();
+  var head = '<div class="row-between"><span class="scan-h">News for your holdings</span>' +
+    '<button type="button" class="btn-mini" id="pf-news-refresh">Refresh</button></div>';
+  if (!tickers.length) {
+    box.innerHTML = head + '<div class="empty-note"><p>Add a holding and its latest headlines will show up here.</p></div>';
+  } else {
+    var c = getPfNews();
+    if (pfNewsLoading) {
+      box.innerHTML = head + '<div class="status"><span class="spinner"></span>Fetching headlines for ' + tickers.length + ' holdings\u2026</div>';
+    } else if (!c || !c.items) {
+      box.innerHTML = head + '<div class="status">Tap Refresh to fetch today\'s headlines.</div>';
+    } else if (!c.items.length) {
+      box.innerHTML = head + '<div class="status">No headlines came back \u2014 try Refresh.</div>';
+    } else {
+      var updated = c.fetchedAt ? 'Updated ' + pfNewsAgo(c.fetchedAt) : '';
+      var newsCols = pfPaletteColors(Math.max(1, tickers.length));
+      var rowsHtml = c.items.map(function (it) {
+        var meta = [it.source, pfNewsAgo(it.ts)].filter(Boolean).join(' \u00b7 ');
+        var col = newsCols[Math.max(0, tickers.indexOf(it.t)) % newsCols.length];
+        return '<a class="news-row" href="' + esc(it.link) + '" target="_blank" rel="noopener">' +
+          '<span class="pf-avatar news-ava" style="background:' + col + ';color:' + pfInk(col) + '">' + esc(it.t.charAt(0)) + pfLogoImg(it.t) + '</span>' +
+          '<span class="news-main"><b>' + esc(it.title) + '</b><span>' + esc(it.t) + (meta ? ' \u00b7 ' + esc(meta) : '') + '</span></span></a>';
+      }).join('');
+      box.innerHTML = head + (updated ? '<div class="status">' + updated + ' \u00b7 Yahoo Finance</div>' : '') + '<div class="card news-card">' + rowsHtml + '</div>';
+    }
+  }
+  var rb = $('pf-news-refresh');
+  if (rb) rb.addEventListener('click', function () { refreshPfNews(true); });
+}
+
+async function refreshPfNews(force) {
+  if (pfNewsLoading) return;
+  if (!force && !pfNewsStale()) { renderPfNews(); return; }
+  var tickers = pfNewsTickers();
+  if (!tickers.length) { renderPfNews(); return; }
+  pfNewsLoading = true;
+  renderPfNews();
+  var per = await Promise.all(tickers.map(async function (T) {
+    try {
+      var xml = await relayFetch('https://feeds.finance.yahoo.com/rss/2.0/headline?s=' + encodeURIComponent(T) + '&region=US&lang=en-US');
+      return parseYahooRss(xml, T).slice(0, 4);
+    } catch (e) { return []; }
+  }));
+  var seen = {}, items = [];
+  per.forEach(function (arr) {
+    arr.forEach(function (it) {
+      if (it.link && !seen[it.link]) { seen[it.link] = 1; items.push(it); }
+    });
+  });
+  items.sort(function (a, b) { return b.ts - a.ts; });
+  setPfNews({ fetchedAt: Date.now(), tickersKey: tickers.join(','), items: items.slice(0, 60) });
+  pfNewsLoading = false;
+  renderPfNews();
+}
+
+function pfView() { return localStorage.getItem('sr_pfview_v1') === 'news' ? 'news' : 'overview'; }
+function pfSetView(v) {
+  try { localStorage.setItem('sr_pfview_v1', v); } catch (e) {}
+  var sec = $('tab-portfolio');
+  if (sec) sec.classList.toggle('news-mode', v === 'news');
+  var bo = $('pf-view-overview'), bn = $('pf-view-news'), news = $('pf-news');
+  if (bo) bo.classList.toggle('on', v !== 'news');
+  if (bn) bn.classList.toggle('on', v === 'news');
+  if (news) news.hidden = v !== 'news';
+  if (v === 'news') { renderPfNews(); refreshPfNews(false); }
+}
+
 async function renderPortfolio(doFetch) {
   var listBox = $('pf-list'), sumBox = $('pf-summary'), status = $('pf-status');
   if (!listBox || !sumBox) return;
@@ -2890,6 +3022,9 @@ function initApp() {
     $('pf-add-toggle').setAttribute('aria-expanded', String(open));
   }
   $('pf-add-toggle').addEventListener('click', function () { pfSetForm(pfAddBody.hidden); });
+  $('pf-view-overview').addEventListener('click', function () { pfSetView('overview'); });
+  $('pf-view-news').addEventListener('click', function () { pfSetView('news'); });
+  pfSetView(pfView());
   if (!getPortfolio().length) pfSetForm(true);
   $('pf-form').addEventListener('submit', function (e) {
     e.preventDefault();
