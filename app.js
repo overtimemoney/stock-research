@@ -1617,7 +1617,9 @@ function runProjection() {
  * consensus; the rest are reported quarters only. */
 var QM_KEY = 'sr_qmetrics_v1';
 var qmMetric = 'revenue';
-var qmData = null;
+var qmFreq = 'q';
+var qmStore = { ticker: null, q: null, y: null };
+function qmData() { return qmStore[qmFreq]; }
 
 function parseSAValueM(s) {
   if (s == null) return null;
@@ -1627,13 +1629,18 @@ function parseSAValueM(s) {
   return isFinite(v) ? v : null;
 }
 
-function parseSAQuarterly(htmlIs, htmlCf) {
+function parseSAQuarterly(htmlIs, htmlCf, yearly) {
   var periods = null, byLabel = {};
+  var head = yearly ? 'Fiscal Year' : 'Fiscal Quarter';
   [htmlIs, htmlCf].forEach(function (html) {
     if (!html) return;
     saTables(html).forEach(function (rows) {
-      if (!rows.length || rows[0][0] !== 'Fiscal Quarter') return;
-      if (!periods) periods = rows[0].slice(1, 13);
+      if (!rows.length || rows[0][0] !== head) return;
+      if (!periods) {
+        periods = rows[0].slice(1);
+        if (yearly) periods = periods.filter(function (p) { return p !== 'TTM'; }).slice(0, 8);
+        else periods = periods.slice(0, 12);
+      }
       rows.slice(1).forEach(function (r) {
         if (byLabel[r[0]]) return;
         var vals = [];
@@ -1679,29 +1686,34 @@ function qmNextQLabels(lastLabel, n) {
   return out;
 }
 
-async function fetchQMetrics(T) {
+async function fetchQMetrics(T, freq) {
+  var yearly = freq === 'y';
   var cache = lsGet(QM_KEY, {});
   var day = new Date().toDateString();
-  if (cache[T] && cache[T].day === day && cache[T].data) return cache[T].data;
+  if (cache[T] && cache[T].day === day && cache[T][freq]) return cache[T][freq];
   var base = 'https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/financials/';
-  var ok = function (t) { return t.indexOf('Fiscal Quarter') !== -1; };
+  var suffix = yearly ? '' : '?p=quarterly';
+  var needle = yearly ? 'Fiscal Year' : 'Fiscal Quarter';
+  var ok = function (t) { return t.indexOf(needle) !== -1; };
   var pages = await Promise.all([
-    relayFetch(base + 'income-statement/?p=quarterly', { timeout: 25000, validate: ok }).catch(function () { return null; }),
-    relayFetch(base + '?p=quarterly', { timeout: 25000, validate: ok }).catch(function () { return null; }),
-    relayFetch(base + 'cash-flow-statement/?p=quarterly', { timeout: 25000, validate: ok }).catch(function () { return null; })
+    relayFetch(base + 'income-statement/' + suffix, { timeout: 25000, validate: ok }).catch(function () { return null; }),
+    relayFetch(base + suffix, { timeout: 25000, validate: ok }).catch(function () { return null; }),
+    relayFetch(base + 'cash-flow-statement/' + suffix, { timeout: 25000, validate: ok }).catch(function () { return null; })
   ]);
-  var data = parseSAQuarterly(pages[0] || pages[1], pages[2]);
-  if (!data || !data.revenue) throw new Error('No quarterly statements found for \u201c' + T + '\u201d.');
+  var data = parseSAQuarterly(pages[0] || pages[1], pages[2], yearly);
+  if (!data || !data.revenue) throw new Error('No ' + (yearly ? 'annual' : 'quarterly') + ' statements found for \u201c' + T + '\u201d.');
   data.estEps = [];
   try {
     var fc = await relayJSON('https://api.nasdaq.com/api/analyst/' + encodeURIComponent(T) + '/earnings-forecast?assetclass=stocks');
-    var q = (fc && fc.data && fc.data.quarterlyForecast && fc.data.quarterlyForecast.rows) || [];
+    var tbl = yearly ? (fc && fc.data && fc.data.yearlyForecast) : (fc && fc.data && fc.data.quarterlyForecast);
+    var q = (tbl && tbl.rows) || [];
     data.estEps = q.map(function (r) {
       return { label: qmEstLabel(r.fiscalEnd), eps: typeof r.consensusEPSForecast === 'number' ? r.consensusEPSForecast : parseNum(r.consensusEPSForecast) };
     }).filter(function (r) { return isNum(r.eps); });
   } catch (e) {}
   data.ticker = T;
-  cache[T] = { day: day, data: data };
+  if (!cache[T] || cache[T].day !== day) cache[T] = { day: day };
+  cache[T][freq] = data;
   lsSet(QM_KEY, cache);
   return data;
 }
@@ -1749,17 +1761,22 @@ var QM_METRICS = {
 };
 
 function renderQm() {
-  if (!qmData) return;
+  var d = qmData();
+  if (!d) return;
   document.querySelectorAll('[data-qm]').forEach(function (b) {
     b.classList.toggle('on', b.getAttribute('data-qm') === qmMetric);
   });
-  var M = QM_METRICS[qmMetric], d = qmData, pts = [];
+  document.querySelectorAll('[data-qmfreq]').forEach(function (b) {
+    b.classList.toggle('active', b.getAttribute('data-qmfreq') === qmFreq);
+  });
+  var M = QM_METRICS[qmMetric], pts = [];
   d.periods.forEach(function (p, i) {
     var v = M.get(d, i);
     if (isNum(v)) pts.push({ label: qmShortQ(p), value: v, kind: 'actual' });
   });
   if (qmMetric === 'eps' && d.estEps && d.estEps.length) {
-    var seq = qmNextQLabels(d.periods[d.periods.length - 1], d.estEps.length);
+    var lastP = d.periods[d.periods.length - 1];
+    var seq = qmFreq === 'y' ? qmNextYLabels(lastP, d.estEps.length) : qmNextQLabels(lastP, d.estEps.length);
     d.estEps.forEach(function (e, i) { pts.push({ label: (seq && seq[i]) || e.label, value: e.eps, kind: 'est' }); });
   }
   var box = $('qm-chart');
@@ -1768,25 +1785,40 @@ function renderQm() {
   } else {
     box.innerHTML = '<div class="chart-wrap">' + qmBarsSVG(pts, M.fmt) + '</div>';
   }
+  var per = qmFreq === 'y' ? 'years' : 'quarters';
   $('qm-note').textContent = qmMetric === 'eps'
-    ? 'Solid bars: reported quarters (SEC filings via StockAnalysis). Faded bars: analyst consensus for the next few quarters (Nasdaq) \u2014 analysts only publish about 5 quarters out, and only for EPS.'
-    : 'Reported quarters only \u2014 SEC filings via StockAnalysis. No published quarterly consensus exists for this metric; consensus exists only for EPS (tab over to see it).';
+    ? 'Solid bars: reported ' + per + ' (SEC filings via StockAnalysis). Faded bars: analyst consensus for the next few ' + per + ' (Nasdaq) \u2014 published only for EPS.'
+    : 'Reported ' + per + ' only \u2014 SEC filings via StockAnalysis. No published consensus exists for this metric; consensus exists only for EPS (tab over to see it).';
+}
+
+/* Yearly estimate labels continue the reported fiscal years:
+ * last reported 'FY 2025' -> estimates 'FY \u201926', 'FY \u201927', ... */
+function qmNextYLabels(lastLabel, n) {
+  var m = String(lastLabel || '').match(/(\d{4})/);
+  if (!m) return null;
+  var y = parseInt(m[1], 10), fy = String(lastLabel).indexOf('FY') !== -1, out = [];
+  for (var i = 0; i < n; i++) { y++; out.push((fy ? 'FY ' : '') + '\u2019' + String(y).slice(2)); }
+  return out;
 }
 
 async function loadQm() {
   var T = String(($('qm-ticker').value || '')).trim().toUpperCase();
   if (!T) return;
+  if (qmStore.ticker !== T) qmStore = { ticker: T, q: null, y: null };
   var st = $('qm-status');
-  st.innerHTML = '<span class="spinner"></span>Loading quarterly statements for ' + esc(T) + '\u2026';
+  var yearly = qmFreq === 'y';
   try {
-    qmData = await fetchQMetrics(T);
-    st.textContent = qmData.ticker + ' \u00b7 last ' + qmData.periods.length + ' reported quarters';
+    if (!qmStore[qmFreq]) {
+      st.innerHTML = '<span class="spinner"></span>Loading ' + (yearly ? 'annual' : 'quarterly') + ' statements for ' + esc(T) + '\u2026';
+      qmStore[qmFreq] = await fetchQMetrics(T, qmFreq);
+    }
+    var d = qmData();
+    st.textContent = d.ticker + ' \u00b7 last ' + d.periods.length + ' reported ' + (yearly ? 'years' : 'quarters');
     $('qm-body').hidden = false;
     renderQm();
   } catch (e) {
-    st.innerHTML = '';
     $('qm-body').hidden = true;
-    st.innerHTML = '<span class="status err">' + esc(e.message || 'Could not load quarterly data.') + '</span>';
+    st.innerHTML = '<span class="status err">' + esc(e.message || 'Could not load data.') + '</span>';
   }
 }
 
@@ -3535,6 +3567,22 @@ function switchTab(name) {
   var mn = document.querySelector('main');
   if (mn) mn.scrollTop = 0;
 }
+/* iOS standalone quirk: 100dvh intermittently resolves SHORT at
+ * launch/resume, leaving the tab bar floating above a dead black
+ * strip (Justin, 2026-10-26). Pin the shell height to the measured
+ * inner height and re-measure on every lifecycle event that can
+ * change it. Keyboard-safe: innerHeight ignores the keyboard. */
+function fitShell() {
+  try { document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px'); } catch (e) {}
+}
+window.addEventListener('resize', fitShell);
+window.addEventListener('orientationchange', fitShell);
+window.addEventListener('pageshow', fitShell);
+document.addEventListener('visibilitychange', function () { if (!document.hidden) fitShell(); });
+fitShell();
+setTimeout(fitShell, 300);
+setTimeout(fitShell, 1200);
+
 function initApp() {
   document.querySelectorAll('.tabbar button').forEach(function (b) {
     b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); });
@@ -3601,6 +3649,14 @@ function initApp() {
   $('qm-load-form').addEventListener('submit', function (e) { e.preventDefault(); loadQm(); $('qm-ticker').blur(); });
   document.querySelectorAll('[data-qm]').forEach(function (b) {
     b.addEventListener('click', function () { qmMetric = b.getAttribute('data-qm'); renderQm(); });
+  });
+  try { qmFreq = lsGet('sr_qmfreq', 'q') === 'y' ? 'y' : 'q'; } catch (e) {}
+  document.querySelectorAll('[data-qmfreq]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      qmFreq = b.getAttribute('data-qmfreq');
+      lsSet('sr_qmfreq', qmFreq);
+      if (qmStore.ticker) loadQm();
+    });
   });
   $('wl-form').addEventListener('submit', function (e) {
     e.preventDefault();

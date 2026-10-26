@@ -126,6 +126,10 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
       </form>
       <div id="qm-status" class="status" role="status" style="margin:0 2px 8px"></div>
       <div id="qm-body" hidden>
+        <div class="seg" role="group" aria-label="Metrics period" style="margin-bottom:12px">
+          <button type="button" data-qmfreq="q" class="active">Quarterly</button>
+          <button type="button" data-qmfreq="y">Yearly</button>
+        </div>
         <div class="qm-chips" id="qm-chips">
           <button type="button" data-qm="revenue" class="on">Revenue</button>
           <button type="button" data-qm="netIncome">Net income</button>

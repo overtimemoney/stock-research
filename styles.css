@@ -81,7 +81,7 @@ body {
    * tab bar as the last row. The page itself never scrolls (html/body are
    * locked); only <main> scrolls, between the static header and tab bar. */
   display: flex; flex-direction: column;
-  height: 100vh; height: 100dvh;
+  height: 100vh; height: 100dvh; height: var(--app-h, 100dvh);
 }
 h2, h3 { font-weight: 800; letter-spacing: -0.01em; }
 .gold-text {
