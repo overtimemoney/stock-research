@@ -1729,23 +1729,29 @@ function qmShortQ(label) {
 }
 
 function qmBarsSVG(pts, fmt) {
-  var w = 640, h = 216, padB = 30, padT = 26, padX = 6;
+  var w = 640, h = 224, padB = 34, padT = 32, padX = 6;
   var max = Math.max.apply(null, pts.map(function (p) { return p.value; }).concat([0]));
   var min = Math.min.apply(null, pts.map(function (p) { return p.value; }).concat([0]));
   var span = (max - min) || 1;
   var bw = (w - padX * 2) / pts.length;
   var zeroY = padT + (max / span) * (h - padT - padB);
+  // Value labels scale with density: big and readable on sparse
+  // charts, tighter when 17 bars share the width (Justin's ask,
+  // 2026-10-26). Bars nearly touch for the same reason.
+  var vfs = pts.length <= 8 ? 16.5 : pts.length <= 13 ? 14.5 : 12.5;
   var out = '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Quarterly metric chart">';
   out += '<line x1="' + padX + '" y1="' + zeroY + '" x2="' + (w - padX) + '" y2="' + zeroY + '" stroke="#3a372d" stroke-width="1"/>';
   pts.forEach(function (p, i) {
-    var x = padX + i * bw + bw * 0.14, bwid = bw * 0.72;
+    var x = padX + i * bw + bw * 0.03, bwid = bw * 0.94;
     var y = zeroY - (p.value / span) * (h - padT - padB);
     var top = Math.min(y, zeroY), bot = Math.max(y, zeroY);
     var fill = p.kind === 'est' ? 'fill:var(--chart-val);opacity:.45' : 'fill:var(--chart-actual)';
-    out += '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bwid.toFixed(1) + '" height="' + Math.max(1.5, bot - top).toFixed(1) + '" rx="2.5" style="' + fill + '"/>';
-    var ly = p.value >= 0 ? top - 6 : bot + 13;
-    out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="middle" font-size="11.5" font-weight="700" style="fill:var(--chart-val)">' + esc(fmt(p.value)) + '</text>';
-    out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="10.5" font-weight="600" fill="#77705f">' + esc(p.label) + '</text>';
+    out += '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bwid.toFixed(1) + '" height="' + Math.max(1.5, bot - top).toFixed(1) + '" rx="1.5" style="' + fill + '"/>';
+    var ly = p.value >= 0 ? top - 8 : bot + vfs + 3;
+    out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="middle" font-size="' + vfs + '" font-weight="800" style="fill:var(--chart-val)">' + esc(fmt(p.value)) + '</text>';
+    if (p.axis) {
+      out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#8a8271">' + esc(p.axis) + '</text>';
+    }
   });
   return out + '</svg>';
 }
@@ -1774,10 +1780,26 @@ function renderQm() {
     var v = M.get(d, i);
     if (isNum(v)) pts.push({ label: qmShortQ(p), value: v, kind: 'actual' });
   });
+  // Sparse axis (Justin's ask): in quarterly view, mark only the first
+  // bar of each year with the year; yearly view labels every bar.
+  var lastYr = null;
+  pts.forEach(function (p) {
+    var ym = p.label.match(/(\d{4}|\u2019\d{2})/);
+    var yr = ym ? ym[1] : p.label;
+    if (qmFreq === 'y') { p.axis = p.label; lastYr = yr; }
+    else if (yr !== lastYr) { p.axis = '\u2019' + String(yr).slice(-2); lastYr = yr; }
+  });
   if (qmMetric === 'eps' && d.estEps && d.estEps.length) {
     var lastP = d.periods[d.periods.length - 1];
     var seq = qmFreq === 'y' ? qmNextYLabels(lastP, d.estEps.length) : qmNextQLabels(lastP, d.estEps.length);
-    d.estEps.forEach(function (e, i) { pts.push({ label: (seq && seq[i]) || e.label, value: e.eps, kind: 'est' }); });
+    d.estEps.forEach(function (e, i) {
+      var pt = { label: (seq && seq[i]) || e.label, value: e.eps, kind: 'est' };
+      var ym = pt.label.match(/(\d{4}|\u2019\d{2})/);
+      var yr = ym ? ym[1] : pt.label;
+      if (qmFreq === 'y') pt.axis = pt.label;
+      else if (yr !== lastYr) { pt.axis = '\u2019' + String(yr).slice(-2); lastYr = yr; }
+      pts.push(pt);
+    });
   }
   var box = $('qm-chart');
   if (!pts.length) {
