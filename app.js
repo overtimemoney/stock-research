@@ -528,16 +528,23 @@ function barChartSVG(pts, w, h) {
   var span = (max - min) || 1;
   var bw = (w - padX * 2) / pts.length;
   var zeroY = padT + (max / span) * (h - padT - padB);
+  // The TTM (actual) bar and the value labels were solid #141414 -- fine on
+  // the light theme, invisible on the dark one. Pick per current theme:
+  // cream for the actual bar in dark mode (reads as "real" next to the gold
+  // forecast bars), near-black in light mode; labels take the theme's ink.
+  var darkTheme = !(typeof document !== 'undefined' && document.documentElement && document.documentElement.getAttribute('data-theme') === 'light');
+  var actualFill = darkTheme ? '#E9E2D0' : '#141414';
+  var valFill = darkTheme ? '#F2EDE3' : '#141414';
   var out = '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="EPS trajectory chart">';
   out += '<line x1="' + padX + '" y1="' + zeroY + '" x2="' + (w - padX) + '" y2="' + zeroY + '" stroke="#d8c98f" stroke-width="1"/>';
   pts.forEach(function (p, i) {
     var bh = Math.abs(p.eps) / span * (h - padT - padB);
     var x = padX + i * bw + bw * 0.16, bwid = bw * 0.68;
     var y = p.eps >= 0 ? zeroY - bh : zeroY;
-    var fill = p.kind === 'actual' ? '#141414' : 'url(#goldGrad)';
+    var fill = p.kind === 'actual' ? actualFill : 'url(#goldGrad)';
     out += '<rect x="' + x + '" y="' + y + '" width="' + bwid + '" height="' + Math.max(bh, 1.5) + '" rx="4" fill="' + fill + '"/>';
     var vy = p.eps >= 0 ? y - 5 : y + bh + 13;
-    out += '<text x="' + (x + bwid / 2) + '" y="' + vy + '" text-anchor="middle" font-size="12.5" font-weight="800" fill="#141414">' + fmtNum(p.eps, Math.abs(p.eps) >= 100 ? 0 : 2) + '</text>';
+    out += '<text x="' + (x + bwid / 2) + '" y="' + vy + '" text-anchor="middle" font-size="12.5" font-weight="800" fill="' + valFill + '">' + fmtNum(p.eps, Math.abs(p.eps) >= 100 ? 0 : 2) + '</text>';
     out += '<text x="' + (x + bwid / 2) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="11.5" font-weight="700" fill="#77705f">' + esc(p.label) + (p.kind === 'est' ? ' est' : '') + '</text>';
   });
   out += '<defs><linearGradient id="goldGrad" x1="0" y1="0" x2="1" y2="0">' +
