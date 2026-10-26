@@ -663,6 +663,21 @@ function valueScreen(d) {
   ];
 }
 
+/* Risk screen: the mirror of the value screen — binary safety checks
+ * where a pass means the check is CLEAR. Same chip treatment; unknown
+ * data shows '?' and never guesses. (Justin's ask, 2026-10-26.) */
+function riskScreen(d) {
+  var bb = boomBust(d);
+  return [
+    { label: 'Debt / Equity at or under 1', test: isNum(d.debtEq) ? (d.debtEq <= 1) : null, value: isNum(d.debtEq) ? fmtNum(d.debtEq, 2) : '\u2014' },
+    { label: 'Profitable (margin above 0)', test: isNum(d.profitMargin) ? (d.profitMargin > 0) : null, value: isNum(d.profitMargin) ? fmtNum(d.profitMargin, 1) + '%' : '\u2014' },
+    { label: 'Current ratio at or above 1', test: isNum(d.currentRatio) ? (d.currentRatio >= 1) : null, value: isNum(d.currentRatio) ? fmtNum(d.currentRatio, 2) : '\u2014' },
+    { label: 'Beta at or under 1.5', test: isNum(d.beta) ? (d.beta <= 1.5) : null, value: isNum(d.beta) ? fmtNum(d.beta, 2) : '\u2014' },
+    { label: 'EPS growing next year', test: isNum(d.epsGrowthNextY) ? (d.epsGrowthNextY >= 0) : null, value: isNum(d.epsGrowthNextY) ? fmtPct(d.epsGrowthNextY) : '\u2014' },
+    { label: 'No boom-bust pattern', test: (bb && bb.testable) ? !bb.fires : null, value: (bb && bb.testable) ? (bb.fires ? 'Pattern present' : 'None detected') : '\u2014' }
+  ];
+}
+
 /* EPS trajectory: TTM actual + consensus forecasts; cliff = a later year
  * falls 10%+ below the running peak, or next year drops vs TTM. */
 function epsTrajectory(d) {
@@ -1076,6 +1091,18 @@ function renderScorecard(d) {
   screen.forEach(function (s) {
     var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
     var mark = s.test === null ? '?' : s.test ? '✓ PASS' : '✗';
+    html += '<div class="chip ' + cls + '"><span>' + esc(s.label) + '<br><span class="factor-note">' + esc(s.value) + '</span></span><span class="mark">' + mark + '</span></div>';
+  });
+  html += '</div>';
+
+  var rScreen = riskScreen(d);
+  var rKnown = rScreen.filter(function (s) { return s.test !== null; }).length;
+  var rPass = rScreen.filter(function (s) { return s.test === true; }).length;
+  html += '<div class="section-h">Risk screen — <span class="gold-text">' + rPass + ' of ' + rKnown + ' clear</span></div>';
+  html += '<div class="screen-chips">';
+  rScreen.forEach(function (s) {
+    var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
+    var mark = s.test === null ? '?' : s.test ? '\u2713 CLEAR' : '\u2717 FLAG';
     html += '<div class="chip ' + cls + '"><span>' + esc(s.label) + '<br><span class="factor-note">' + esc(s.value) + '</span></span><span class="mark">' + mark + '</span></div>';
   });
   html += '</div>';
