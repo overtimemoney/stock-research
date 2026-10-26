@@ -963,6 +963,76 @@ async function runCompare() {
  * its growth recomputes, edit a growth % and that year's EPS recomputes. */
 var pjPath = [];            // [{label:'FY2026', eps:1.42, extrapolated:bool}]
 var pjPathFromForecast = false;
+var PJ_KEY = 'sr_projections_v1';
+function getProjections() { return lsGet(PJ_KEY, {}); }
+function setProjections(p) { lsSet(PJ_KEY, p); }
+/* The implied Base-case price of a saved projection, recomputed from its
+ * stored EPS path (base case = the path as-is at the saved exit P/E). */
+function pjSavedBase(T) {
+  var s = getProjections()[T];
+  if (!s || !isNum(s.baseEps) || !isNum(s.mult) || !Array.isArray(s.path)) return null;
+  var off = (s.path.length && s.path[0].ttm) ? 1 : 0;
+  var feps = pjCaseEps(s.baseEps, s.path.slice(0, (s.years || 3) + off), 0);
+  return isNum(feps) ? feps * s.mult : null;
+}
+function pjSaveCurrent() {
+  var T = ($('pj-ticker').value || '').trim().toUpperCase();
+  if (!T) { window.alert('Load a stock first -- a saved projection needs a ticker.'); return; }
+  if (!isNum(parseFloat($('pj-price').value)) || !isNum(pjBaseEps()) || !isNum(parseFloat($('pj-mult').value))) {
+    window.alert('Fill in price, EPS base and exit P/E before saving.'); return;
+  }
+  var all = getProjections();
+  all[T] = {
+    savedAt: new Date().toISOString(),
+    price: parseFloat($('pj-price').value), baseEps: pjBaseEps(),
+    flatGrowth: pjFlatGrowth(), years: pjYearsWanted(),
+    mult: parseFloat($('pj-mult').value),
+    path: JSON.parse(JSON.stringify(pjPath)), fromForecast: pjPathFromForecast
+  };
+  setProjections(all);
+  renderPjSaved();
+  runProjection();
+}
+function pjRestore(T) {
+  var s = getProjections()[T];
+  if (!s) return;
+  $('pj-ticker').value = T;
+  if (isNum(s.price)) $('pj-price').value = s.price;
+  if (isNum(s.baseEps)) $('pj-eps').value = s.baseEps;
+  if (isNum(s.flatGrowth)) $('pj-growth').value = s.flatGrowth;
+  if (isNum(s.years)) $('pj-years').value = s.years;
+  if (isNum(s.mult)) $('pj-mult').value = s.mult;
+  pjPath = JSON.parse(JSON.stringify(s.path || []));
+  pjPathFromForecast = !!s.fromForecast;
+  renderPjPath();
+  runProjection();
+  var st = $('pj-status');
+  st.className = 'status';
+  st.textContent = 'Showing your saved projection for ' + T + ' (saved ' + String(s.savedAt || '').slice(0, 10) + '). Price and EPS are as saved -- load the ticker again any time for live numbers.';
+}
+function renderPjSaved() {
+  var box = $('pj-saved');
+  if (!box) return;
+  var all = getProjections();
+  var ts = Object.keys(all).sort();
+  if (!ts.length) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="pj-path-head">Saved projections</div>' + ts.map(function (T) {
+    var base = pjSavedBase(T);
+    return '<div class="pf-buy-row"><button class="pf-buy-txt" data-pj-open="' + esc(T) + '"><span>' + esc(T) + '</span><span>saved ' + esc(String(all[T].savedAt || '').slice(0, 10)) + (isNum(base) ? ' \u00b7 Base ' + fmtMoney(base) : '') + '</span></button><button class="link-btn danger" data-pj-del="' + esc(T) + '">\u2715</button></div>';
+  }).join('');
+  box.querySelectorAll('[data-pj-open]').forEach(function (b) {
+    b.addEventListener('click', function () { pjRestore(b.getAttribute('data-pj-open')); });
+  });
+  box.querySelectorAll('[data-pj-del]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var a2 = getProjections();
+      delete a2[b.getAttribute('data-pj-del')];
+      setProjections(a2);
+      renderPjSaved();
+      runProjection();
+    });
+  });
+}
 
 function pjBaseEps() { var v = parseFloat($('pj-eps').value); return isNum(v) ? v : null; }
 function pjYearsWanted() {
@@ -1169,8 +1239,16 @@ function runProjection() {
     html += '<tr><td><strong>' + s.name + '</strong> <span class="factor-note">(' + s.note + ')</span></td><td>' + fmtMoney(feps) + '</td><td>' + fmtNum(s.m, 1) + '×</td>' +
       '<td class="num"><strong>' + fmtMoney(fp) + '</strong></td><td class="num ' + (ret >= 0 ? 'up' : 'down') + '">' + fmtPct(ret) + '</td><td class="num">' + fmtPct(cagr) + '</td></tr>';
   });
+  var curT = ($('pj-ticker').value || '').trim().toUpperCase();
+  var savedPj = curT ? getProjections()[curT] : null;
   html += '</table>';
+  html += '<div class="pj-save-row"><button class="btn-gold" id="pj-save" type="button">' + (savedPj ? 'Update saved projection' : 'Save projection') + '</button>' +
+    (savedPj
+      ? '<span class="factor-note">Saved for ' + esc(curT) + ' on ' + esc(String(savedPj.savedAt || '').slice(0, 10)) + '</span><button class="link-btn danger" id="pj-del" type="button">Delete saved</button>'
+      : '<span class="factor-note">' + (curT ? 'Saves these exact assumptions on this device. Open it later from the Watchlist or the saved list below.' : 'Load a stock above first -- saving needs a ticker.') + '</span>') + '</div>';
   out.innerHTML = html;
+  var svB = $('pj-save'); if (svB) svB.addEventListener('click', pjSaveCurrent);
+  var dlB = $('pj-del'); if (dlB) dlB.addEventListener('click', function () { var all = getProjections(); delete all[curT]; setProjections(all); renderPjSaved(); runProjection(); });
 }
 function runCompound() {
   var init = parseFloat($('cc-init').value) || 0;
@@ -1275,7 +1353,8 @@ async function renderWatchlist(refresh) {
     var item = wl[i];
     var price = null, err = null;
     try { price = await fetchLightPrice(item.ticker); } catch (e) { err = e.message; }
-    rows.push({ item: item, price: price, err: err, val: wlValuationDisplay(item.ticker) });
+    var projMap = getProjections();
+    rows.push({ item: item, price: price, err: err, val: wlValuationDisplay(item.ticker), proj: !!projMap[item.ticker], projBase: projMap[item.ticker] ? pjSavedBase(item.ticker) : null });
   }
   // On an explicit refresh, fill in missing or stale valuation scores
   // with a Finviz-only pass (a fresh full scorecard score wins as-is).
@@ -1327,7 +1406,7 @@ async function renderWatchlist(refresh) {
       '</div>' +
       '<div class="wl-right"><div class="wl-price">' + (isNum(price) ? fmtMoney(price) : '\u2014') + '</div>' +
       '<div style="text-align:right">' + (r.err ? '<span class="factor-note">price unavailable</span>' : distHtml) + '</div>' +
-      '<div class="wl-actions"><button class="link-btn" data-research="' + esc(item.ticker) + '">Research</button>' +
+      '<div class="wl-actions">' + (r.proj ? '<button class="link-btn" data-wl-proj="' + esc(item.ticker) + '">Projection' + (isNum(r.projBase) ? ' \u00b7 Base ' + fmtMoney(r.projBase) : '') + '</button>' : '') + '<button class="link-btn" data-research="' + esc(item.ticker) + '">Research</button>' +
       '<button class="link-btn" data-wl-edit="' + esc(item.ticker) + '">Edit target</button>' +
       '<button class="link-btn danger" data-wl-del="' + esc(item.ticker) + '">Remove</button></div></div></div>';
   });
@@ -1335,6 +1414,14 @@ async function renderWatchlist(refresh) {
   box.innerHTML = html;
   box.querySelectorAll('[data-research]').forEach(function (b) {
     b.addEventListener('click', function () { switchTab('scorecard'); $('search-input').value = b.getAttribute('data-research'); runSearch(b.getAttribute('data-research')); });
+  });
+  box.querySelectorAll('[data-wl-proj]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      switchTab('tools');
+      pjRestore(b.getAttribute('data-wl-proj'));
+      var el = $('pj-result');
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start' });
+    });
   });
   box.querySelectorAll('[data-wl-del]').forEach(function (b) {
     b.addEventListener('click', function () {
@@ -2098,7 +2185,12 @@ function paintBench(box, hist, positions) {
     '<polyline points="' + line(spyLine) + '" fill="none" stroke="#61A5C2" stroke-width="2" stroke-linejoin="round"/>' +
     '<polyline points="' + line(pfLine) + '" fill="none" stroke="#F8C73D" stroke-width="2.5" stroke-linejoin="round"/>' +
     '<circle cx="' + X(win.length - 1) + '" cy="' + Y(pfIdx[pfIdx.length - 1]) + '" r="3.2" fill="#F8C73D"/>' +
-    '<circle cx="' + X(win.length - 1) + '" cy="' + Y(spyIdx[spyIdx.length - 1]) + '" r="3" fill="#61A5C2"/>' + ticksSvg + '</svg>' +
+    '<circle cx="' + X(win.length - 1) + '" cy="' + Y(spyIdx[spyIdx.length - 1]) + '" r="3" fill="#61A5C2"/>' + ticksSvg +
+    '<g id="pf-scrub" style="display:none"><line id="pf-scrub-line" y1="4" y2="166" stroke-width="1" stroke-dasharray="3 3" style="stroke:var(--muted)"/>' +
+    '<circle id="pf-scrub-pf" r="4.2" fill="#F8C73D" stroke="#0d0d0f" stroke-width="1.5"/>' +
+    '<circle id="pf-scrub-spy" r="3.8" fill="#61A5C2" stroke="#0d0d0f" stroke-width="1.5"/></g>' +
+    '<rect id="pf-scrub-zone" x="0" y="0" width="340" height="172" fill="transparent" style="touch-action:none"/></svg>' +
+    '<div id="pf-bench-read" class="pf-bench-read">Drag across the chart to see any day.</div>' +
     '<div class="pf-bench-stats"><span>You <b class="' + (pfRet >= 0 ? 'up' : 'down') + '">' + fmtPct(pfRet) + '</b></span>' +
     '<span>S&amp;P 500 <b class="' + (spyRet >= 0 ? 'up' : 'down') + '">' + fmtPct(spyRet) + '</b></span>' +
     '<span>' + (gap >= 0 ? 'Ahead by' : 'Behind by') + ' <b class="' + (gap >= 0 ? 'up' : 'down') + '">' + fmtNum(Math.abs(gap), 1) + ' pts</b></span></div>' +
@@ -2110,6 +2202,38 @@ function paintBench(box, hist, positions) {
       renderBench(false);
     });
   });
+  var svgEl = box.querySelector('.pf-bench-chart');
+  var zone = box.querySelector('#pf-scrub-zone');
+  var grp = box.querySelector('#pf-scrub');
+  var read = box.querySelector('#pf-bench-read');
+  if (svgEl && zone && grp && read) {
+    var sLn = box.querySelector('#pf-scrub-line');
+    var cPf = box.querySelector('#pf-scrub-pf');
+    var cSpy = box.querySelector('#pf-scrub-spy');
+    var scrubbing = false;
+    function scrubTo(clientX) {
+      var rect = svgEl.getBoundingClientRect();
+      if (!rect.width) return;
+      var sx = (clientX - rect.left) / rect.width * 340;
+      var i = Math.round((sx - 6) / 328 * (pfIdx.length - 1));
+      i = Math.max(k0, Math.min(win.length - 1, i));
+      while (i > k0 && !isNum(pfLine[i])) i--;
+      if (!isNum(pfLine[i]) || !isNum(spyLine[i])) return;
+      var x = X(i);
+      grp.style.display = '';
+      sLn.setAttribute('x1', x); sLn.setAttribute('x2', x);
+      cPf.setAttribute('cx', x); cPf.setAttribute('cy', Y(pfLine[i]));
+      cSpy.setAttribute('cx', x); cSpy.setAttribute('cy', Y(spyLine[i]));
+      var key = win[i][0];
+      var yr = Math.floor(key / 10000), mo = Math.floor(key / 100) % 100, dy = key % 100;
+      var pv = pfLine[i] - 100, sv2 = spyLine[i] - 100;
+      read.innerHTML = '<b class="pf-read-date">' + MONS[mo - 1] + ' ' + dy + ', ' + yr + '</b> \u00b7 You <b class="' + (pv >= 0 ? 'up' : 'down') + '">' + fmtPct(pv) + '</b> \u00b7 S&amp;P <b class="' + (sv2 >= 0 ? 'up' : 'down') + '">' + fmtPct(sv2) + '</b> \u00b7 ' + (pv - sv2 >= 0 ? 'Ahead' : 'Behind') + ' <b class="' + (pv - sv2 >= 0 ? 'up' : 'down') + '">' + fmtNum(Math.abs(pv - sv2), 1) + ' pts</b>';
+    }
+    zone.addEventListener('pointerdown', function (e) { scrubbing = true; try { zone.setPointerCapture(e.pointerId); } catch (err) {} scrubTo(e.clientX); e.preventDefault(); });
+    zone.addEventListener('pointermove', function (e) { if (scrubbing) scrubTo(e.clientX); });
+    zone.addEventListener('pointerup', function () { scrubbing = false; });
+    zone.addEventListener('pointercancel', function () { scrubbing = false; });
+  }
 }
 
 async function renderBench(force) {
@@ -2269,7 +2393,7 @@ function renderGlossary(filter) {
 /* ============================== data backup ============================== */
 function collectBackup() {
   return { app: 'stock-research', version: 1, exportedAt: new Date().toISOString(),
-           watchlist: getWatchlist(), portfolio: getPortfolio(), journal: getJournal(), aiSwots: lsGet(AI_SWOT_KEY, {}) };
+           watchlist: getWatchlist(), portfolio: getPortfolio(), journal: getJournal(), aiSwots: lsGet(AI_SWOT_KEY, {}), projections: getProjections() };
 }
 function doExport() {
   var json = JSON.stringify(collectBackup(), null, 2);
@@ -2298,19 +2422,22 @@ function importBackupText(text) {
   var j = obj && obj.journal && typeof obj.journal === 'object' && !Array.isArray(obj.journal) ? obj.journal : null;
   var ai = obj && obj.aiSwots && typeof obj.aiSwots === 'object' && !Array.isArray(obj.aiSwots) ? obj.aiSwots : null;
   var pf = obj && Array.isArray(obj.portfolio) ? obj.portfolio : null;
-  if (!wl && !j && !ai && !pf) {
+  var pj = obj && obj.projections && typeof obj.projections === 'object' && !Array.isArray(obj.projections) ? obj.projections : null;
+  if (!wl && !j && !ai && !pf && !pj) {
     status.className = 'status err';
     status.textContent = 'That file has no watchlist, portfolio, journal or AI SWOTs in it — not a Stock Research backup.';
     return;
   }
   if (!window.confirm('Replace your current watchlist, portfolio, journal and saved AI SWOTs with this backup?')) return;
   if (wl) setWatchlist(wl);
+  if (pj) setProjections(pj);
   if (pf) setPortfolio(pf);
   if (j) setJournal(j);
   if (ai) lsSet(AI_SWOT_KEY, ai);
   renderWatchlist(false);
   renderPortfolio(false);
   renderJournal();
+  renderPjSaved();
   if (lastStock) renderScorecard(lastStock);
   status.className = 'status';
   status.textContent = 'Backup restored: ' + (wl ? wl.length : 0) + ' watchlist item(s), ' + (pf ? pf.length : 0) + ' portfolio holding(s), ' + (j ? Object.keys(j).length : 0) + ' journal entr(ies)' + (ai ? ', ' + Object.keys(ai).length + ' AI SWOT(s)' : '') + '.';
@@ -2590,6 +2717,7 @@ function initApp() {
   $('gloss-search').addEventListener('input', function (e) { renderGlossary(e.target.value); });
   renderGlossary('');
   renderJournal();
+  renderPjSaved();
   renderWatchlist(true);
 }
 if (typeof document !== 'undefined' && document.getElementById) {
