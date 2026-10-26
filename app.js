@@ -689,8 +689,8 @@ function renderScChart(d) {
     return;
   }
   var startText = range === '1y' ? '1 year ago' : (range === '5y' ? '5 years ago' : '10 years ago');
-  box.innerHTML = '<div class="chart-wrap">' + lineChartSVG(series, range === '1y' ? d.high52 : null, 640, 170, startText) + '</div>' +
-    '<div id="sc-chart-read" class="pf-bench-read">Drag across the chart to see the price at any point.</div>';
+  box.innerHTML = '<div id="sc-chart-read" class="pf-bench-read">Drag across the chart to see the price at any point.</div>' +
+    '<div class="chart-wrap">' + lineChartSVG(series, range === '1y' ? d.high52 : null, 640, 170, startText) + '</div>';
   bindPriceScrub(d, range);
 }
 
@@ -2815,6 +2815,7 @@ function paintBench(box, hist, positions) {
     '<div class="pf-bench-head"><span class="pf-bench-title">Portfolio vs S&amp;P 500</span>' +
     '<span class="pf-bench-legend"><span><span class="pf-bench-dot" style="background:#F8C73D"></span>You</span><span><span class="pf-bench-dot" style="background:#61A5C2"></span>S&amp;P 500</span></span></div>' +
     '<div class="seg pf-bench-seg" role="group" aria-label="Benchmark period">' + chips + '</div>' +
+    '<div id="pf-bench-read" class="pf-bench-read">Drag across the chart to see any day.</div>' +
     '<svg class="pf-bench-chart" viewBox="0 0 340 186" role="img" aria-label="Portfolio versus S&P 500 chart">' +
     '<polyline points="' + line(spyLine) + '" fill="none" stroke="#61A5C2" stroke-width="2" stroke-linejoin="round"/>' +
     '<polyline points="' + line(pfLine) + '" fill="none" stroke="#F8C73D" stroke-width="2.5" stroke-linejoin="round"/>' +
@@ -2824,7 +2825,6 @@ function paintBench(box, hist, positions) {
     '<circle id="pf-scrub-pf" r="4.2" fill="#F8C73D" stroke="#0d0d0f" stroke-width="1.5"/>' +
     '<circle id="pf-scrub-spy" r="3.8" fill="#61A5C2" stroke="#0d0d0f" stroke-width="1.5"/></g>' +
     '<rect id="pf-scrub-zone" x="0" y="0" width="340" height="172" fill="transparent" style="touch-action:none"/></svg>' +
-    '<div id="pf-bench-read" class="pf-bench-read">Drag across the chart to see any day.</div>' +
     '<div class="pf-bench-stats"><span>You <b class="' + (pfRet >= 0 ? 'up' : 'down') + '">' + fmtPct(pfRet) + '</b></span>' +
     '<span>S&amp;P 500 <b class="' + (spyRet >= 0 ? 'up' : 'down') + '">' + fmtPct(spyRet) + '</b></span>' +
     '<span>' + (gap >= 0 ? 'Ahead by' : 'Behind by') + ' <b class="' + (gap >= 0 ? 'up' : 'down') + '">' + fmtNum(Math.abs(gap), 1) + ' pts</b></span></div>' +
