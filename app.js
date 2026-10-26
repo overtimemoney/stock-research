@@ -1324,7 +1324,9 @@ function getWlSort() {
 function wlValuationDisplay(T) {
   var cache = lsGet(CACHE_KEY, {});
   var hit = cache[T];
-  if (hit && hit.data && (Date.now() - hit.ts) < 24 * 3600 * 1000) {
+  if (hit && hit.data) {
+    // Any cached scorecard record beats a blank line: show its score even
+    // when stale (fresh=false still triggers the background refetch).
     var sc = scoreStock(hit.data);
     if (sc.score != null) return { score: sc.score, verdict: sc.verdict, fresh: (Date.now() - hit.ts) < CACHE_TTL };
   }
@@ -1409,13 +1411,15 @@ async function renderWatchlist(refresh) {
     }
     html += '<div class="wl-row"><div class="wl-left"><span class="wl-t">' + esc(item.ticker) + '</span>' +
       '<div class="wl-meta">Target buy: ' + (isNum(item.target) ? fmtMoney(item.target) : '\u2014') + '</div>' +
-      (r.val ? '<div class="wl-meta wl-val">Valuation <b style="color:hsl(' + Math.round(r.val.score * 1.2) + ', 78%, var(--val-l))">' + r.val.score + '</b> \u00b7 ' + esc(r.val.verdict) + '</div>' : '') +
+      (r.val ? '<div class="wl-meta wl-val">Valuation <b style="color:hsl(' + Math.round(r.val.score * 1.2) + ', 78%, var(--val-l))">' + r.val.score + '</b></div>' : '') +
       '</div>' +
       '<div class="wl-right"><div class="wl-price">' + (isNum(price) ? fmtMoney(price) : '\u2014') + '</div>' +
       '<div style="text-align:right">' + (r.err ? '<span class="factor-note">price unavailable</span>' : distHtml) + '</div>' +
-      '<div class="wl-actions">' + '<button class="link-btn" data-wl-proj="' + esc(item.ticker) + '">Projection' + (r.proj && isNum(r.projBase) ? ' \u00b7 Base ' + fmtMoney(r.projBase) : '') + '</button>' + '<button class="link-btn" data-research="' + esc(item.ticker) + '">Research</button>' +
+      '<div class="wl-actions">' + '<button class="link-btn" data-wl-proj="' + esc(item.ticker) + '">Projection' + (r.proj && isNum(r.projBase) ? ' \u00b7 Base ' + fmtMoney(r.projBase) : '') + '</button>' +
+      '<button class="link-btn wl-more-btn" data-wl-more="' + esc(item.ticker) + '" aria-label="More actions">\u00b7\u00b7\u00b7</button>' +
+      '<span class="wl-sub"><button class="link-btn" data-research="' + esc(item.ticker) + '">Research</button>' +
       '<button class="link-btn" data-wl-edit="' + esc(item.ticker) + '">Edit target</button>' +
-      '<button class="link-btn danger" data-wl-del="' + esc(item.ticker) + '">Remove</button></div></div></div>';
+      '<button class="link-btn danger" data-wl-del="' + esc(item.ticker) + '">Remove</button></span></div></div></div>';
   });
   $('wl-status').textContent = '';
   box.innerHTML = html;
@@ -1434,6 +1438,12 @@ async function renderWatchlist(refresh) {
         $('pj-ticker').value = T;
         loadProjectionTicker();
       }
+    });
+  });
+  box.querySelectorAll('[data-wl-more]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var sub = b.parentElement ? b.parentElement.querySelector('.wl-sub') : null;
+      if (sub) sub.classList.toggle('open');
     });
   });
   box.querySelectorAll('[data-wl-del]').forEach(function (b) {
