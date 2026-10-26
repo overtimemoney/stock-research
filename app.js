@@ -1665,7 +1665,18 @@ function parseSAQuarterly(htmlIs, htmlCf) {
 
 function qmEstLabel(fiscalEnd) {
   var m = String(fiscalEnd || '').match(/^([A-Za-z]{3})[a-z]*\s+(\d{4})$/);
-  return m ? m[1] + ' \u2019' + m[2].slice(2) + ' est' : String(fiscalEnd || '') + ' est';
+  return m ? m[1] + ' \u2019' + m[2].slice(2) : String(fiscalEnd || '');
+}
+
+/* Estimate bars continue the reported quarter sequence (last reported
+ * Q3 2026 -> estimates Q4 2026, Q1 2027, ...), so every axis label is
+ * the same short 'Qn \u2019YY' shape and 17 bars never collide. */
+function qmNextQLabels(lastLabel, n) {
+  var m = String(lastLabel || '').match(/Q([1-4])\s*(\d{4})/);
+  if (!m) return null;
+  var q = parseInt(m[1], 10), y = parseInt(m[2], 10), out = [];
+  for (var i = 0; i < n; i++) { q++; if (q > 4) { q = 1; y++; } out.push('Q' + q + ' \u2019' + String(y).slice(2)); }
+  return out;
 }
 
 async function fetchQMetrics(T) {
@@ -1748,7 +1759,8 @@ function renderQm() {
     if (isNum(v)) pts.push({ label: qmShortQ(p), value: v, kind: 'actual' });
   });
   if (qmMetric === 'eps' && d.estEps && d.estEps.length) {
-    d.estEps.forEach(function (e) { pts.push({ label: e.label, value: e.eps, kind: 'est' }); });
+    var seq = qmNextQLabels(d.periods[d.periods.length - 1], d.estEps.length);
+    d.estEps.forEach(function (e, i) { pts.push({ label: (seq && seq[i]) || e.label, value: e.eps, kind: 'est' }); });
   }
   var box = $('qm-chart');
   if (!pts.length) {
