@@ -221,6 +221,7 @@ function fillFromFinviz(d, fvHtml) {
   d.peg = parseNum(p['PEG']);
   d.epsTTM = parseNum(p['EPS (ttm)']);
   d.epsNextY = parseNum(p['EPS next Y']);
+  d.epsThisY = parseNum(p['EPS this Y']);
   var g5 = p['EPS next 5Y'] || '';
   d.epsGrowth5Y = parseNum(g5);
   d.epsGrowthTTM = parseNum(p['EPS Y/Y TTM']);
@@ -397,12 +398,18 @@ async function fetchStock(ticker, opts) {
   if (!isNum(d.dayChangePct) && isNum(d.price) && isNum(d.prevClose) && d.prevClose > 0) {
     d.dayChangePct = (d.price / d.prevClose - 1) * 100;
   }
-  // EPS growth into next fiscal year
+  // EPS growth: next fiscal year vs this fiscal year (consensus,
+  // fiscal-year over fiscal-year). Deliberately NOT vs trailing TTM:
+  // a trailing window straddling weak reported quarters distorts the
+  // base and inflates the figure (Justin's call, 2026-10-25).
   var nextFY = (d.epsForecasts && d.epsForecasts[0]) || null;
-  if (isNum(d.epsNextY) && isNum(d.epsTTM) && d.epsTTM > 0) {
-    d.epsGrowthNextY = (d.epsNextY / d.epsTTM - 1) * 100;
-  } else if (nextFY && isNum(d.epsTTM) && d.epsTTM > 0) {
-    d.epsGrowthNextY = (nextFY.eps / d.epsTTM - 1) * 100;
+  var f1 = (d.epsForecasts && d.epsForecasts[1]) || null;
+  if (nextFY && f1 && isNum(nextFY.eps) && isNum(f1.eps) && nextFY.eps > 0) {
+    d.epsGrowthNextY = (f1.eps / nextFY.eps - 1) * 100;
+  } else if (isNum(d.epsNextY) && isNum(d.epsThisY) && d.epsThisY > 0) {
+    d.epsGrowthNextY = (d.epsNextY / d.epsThisY - 1) * 100;
+  } else {
+    d.epsGrowthNextY = null;
   }
   // Forward P/E fallback: price / next-FY consensus EPS (labelled calc.)
   if (!isNum(d.forwardPE) && isNum(d.price)) {
@@ -456,7 +463,7 @@ function scoreStock(d) {
     add('EPS growth, next yr', d.epsGrowthNextY, fmtPct(d.epsGrowthNextY), 15,
       d.epsGrowthNextY >= 50 ? 15 : d.epsGrowthNextY >= 25 ? 13 : d.epsGrowthNextY >= 15 ? 10 :
       d.epsGrowthNextY >= 8 ? 7 : d.epsGrowthNextY >= 0 ? 3 : 0,
-      'Consensus EPS, next fiscal year vs trailing');
+      'Consensus EPS, next fiscal year vs this fiscal year');
   }
   if (isNum(d.profitMargin)) {
     add('Profit margin', d.profitMargin, fmtNum(d.profitMargin, 1) + '%', 10,
