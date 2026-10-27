@@ -671,6 +671,42 @@ function epsCliffInfo(d) {
   return null;
 }
 
+/* The EPS points alone (TTM actual + up to 4 consensus years, with a
+ * next-year fallback), split out of epsTrajectory so other checks can
+ * use the points without re-running the warning logic. */
+function epsPoints(d) {
+  var pts = [];
+  if (isNum(d.epsTTM)) pts.push({ label: 'TTM', eps: d.epsTTM, kind: 'actual' });
+  (d.epsForecasts || []).slice(0, 4).forEach(function (f) {
+    var yr = String(f.fiscalEnd || '').replace(/^[A-Za-z]+\s+/, '');
+    pts.push({ label: 'FY' + yr, eps: f.eps, kind: 'est', n: f.n });
+  });
+  if (pts.length < 2 && isNum(d.epsNextY)) {
+    pts.push({ label: 'Next yr est', eps: d.epsNextY, kind: 'est' });
+  }
+  return pts;
+}
+
+/* Possible cliff (Justin's rule, 2026-10-27): with ONLY 2 projected
+ * years, an explosive first year followed by a hard growth deceleration
+ * is the classic pre-cliff shape — the peak likely sits just past the
+ * forecast window, so it counts as a cliff even though no fall is
+ * visible inside the window. Fires only when ALL hold: exactly 2
+ * projected years beyond TTM; TTM EPS > 0; FY1 growth vs TTM >= +75%;
+ * FY2 growth rate <= half the FY1 growth rate. */
+function epsPossibleCliff(d) {
+  var pts = epsPoints(d);
+  if (pts.length !== 3) return null;
+  if (pts[0].kind !== 'actual' || pts[1].kind !== 'est' || pts[2].kind !== 'est') return null;
+  var ttm = pts[0].eps, f1 = pts[1].eps, f2 = pts[2].eps;
+  if (!isNum(ttm) || !isNum(f1) || !isNum(f2) || ttm <= 0 || f1 <= 0) return null;
+  var g1 = (f1 / ttm - 1) * 100;
+  var g2 = (f2 / f1 - 1) * 100;
+  if (g1 < 75) return null;
+  if (g2 > g1 * 0.5) return null;
+  return { fy1Label: pts[1].label, fy2Label: pts[2].label, g1: g1, g2: g2 };
+}
+
 /* Justin's boom-bust rule (2026-10-26): when the EPS cliff check fires
  * AND revenue doubled (actual or projected) within the 2 years leading
  * up to the revenue top, the name carries peak-cycle risk — the classic
@@ -683,13 +719,15 @@ function boomBust(d) {
   if (top < 2) return { testable: true, fires: false, ratio: null, topLabel: rp[top].label };
   var ratio = rp[top].rev / rp[top - 2].rev;
   var cliff = epsCliffInfo(d);
+  var possibleCliff = cliff ? null : epsPossibleCliff(d);
   return {
     testable: true,
-    fires: !!(cliff && ratio >= 2),
+    fires: !!((cliff || possibleCliff) && ratio >= 2),
     ratio: ratio,
     topLabel: rp[top].label,
     projected: rp[top].est,
-    cliff: cliff
+    cliff: cliff,
+    possibleCliff: possibleCliff
   };
 }
 
@@ -737,7 +775,9 @@ function riskScore(d) {
     add('Boom-bust pattern', bb.ratio, isNum(bb.ratio) ? fmtNum(bb.ratio, 1) + '\u00d7 in 2 yrs' : '\u2014', 20,
       bb.fires ? 20 : 0,
       bb.fires
-        ? 'Revenue ' + (bb.projected ? 'is projected to top' : 'topped') + ' at ' + bb.topLabel + ' after doubling in 2 yrs, and EPS falls off a cliff after ' + (bb.cliff ? bb.cliff.peakLabel : 'its peak') + ' \u2014 the classic peak-cycle trap'
+        ? 'Revenue ' + (bb.projected ? 'is projected to top' : 'topped') + ' at ' + bb.topLabel + ' after doubling in 2 yrs, and EPS ' + (bb.cliff
+            ? 'falls off a cliff after ' + bb.cliff.peakLabel
+            : 'has a possible cliff after ' + bb.possibleCliff.fy2Label + ' (growth explodes, then decelerates hard, so the peak may sit just past the estimates)') + ' \u2014 the classic peak-cycle trap'
         : 'No doubling-into-a-cliff pattern in the revenue path');
   }
   var got = factors.reduce(function (s, f) { return s + f.pts; }, 0);
@@ -775,15 +815,7 @@ function riskScreen(d) {
 /* EPS trajectory: TTM actual + consensus forecasts; cliff = a later year
  * falls 10%+ below the running peak, or next year drops vs TTM. */
 function epsTrajectory(d) {
-  var pts = [];
-  if (isNum(d.epsTTM)) pts.push({ label: 'TTM', eps: d.epsTTM, kind: 'actual' });
-  (d.epsForecasts || []).slice(0, 4).forEach(function (f) {
-    var yr = String(f.fiscalEnd || '').replace(/^[A-Za-z]+\s+/, '');
-    pts.push({ label: 'FY' + yr, eps: f.eps, kind: 'est', n: f.n });
-  });
-  if (pts.length < 2 && isNum(d.epsNextY)) {
-    pts.push({ label: 'Next yr est', eps: d.epsNextY, kind: 'est' });
-  }
+  var pts = epsPoints(d);
   var warning = null;
   if (pts.length >= 2) {
     var peak = -Infinity, peakLabel = '';
@@ -794,6 +826,13 @@ function epsTrajectory(d) {
           ') then falls to ' + fmtNum(pts[i].eps) + ' by ' + pts[i].label + ' (' +
           fmtPct((pts[i].eps / peak - 1) * 100) + '). Cheap multiples on peak earnings are how value traps happen — check whether the peak is cyclical.';
         break;
+      }
+    }
+    if (!warning) {
+      var pc = epsPossibleCliff(d);
+      if (pc) {
+        warning = 'Possible cliff — only 2 years of estimates. EPS explodes ' + fmtPct(pc.g1, 0) + ' next year (' + pc.fy1Label +
+          '), then growth slows to ' + fmtPct(pc.g2, 0) + ' (' + pc.fy2Label + '). The peak may sit just past the forecast window, so this counts as a cliff.';
       }
     }
     if (!warning && pts[1].eps < pts[0].eps) {
@@ -1027,6 +1066,7 @@ function buildSwot(d) {
     else if (peak > 0 && isNum(pts[j].eps) && pts[j].eps < peak * 0.90) { cliff = pts[j]; break; }
   }
   if (cliff) T.push('Earnings cliff in consensus — EPS peaks at ' + fmtNum(peak) + ' (' + peakLabel + '), then falls to ' + fmtNum(cliff.eps) + ' by ' + cliff.label + '.');
+  else if (epsPossibleCliff(d)) { var pcT = epsPossibleCliff(d); T.push('Possible earnings cliff — only 2 years of estimates: EPS explodes ' + fmtPct(pcT.g1, 0) + ' in ' + pcT.fy1Label + ', then growth slows to ' + fmtPct(pcT.g2, 0) + ' in ' + pcT.fy2Label + '. The peak may sit just past the forecast window, so this counts as a cliff.'); }
   else if (pts.length >= 2 && isNum(pts[1].eps) && isNum(pts[0].eps) && pts[1].eps < pts[0].eps) T.push('Consensus expects EPS to fall next year (' + fmtNum(pts[0].eps) + ' → ' + fmtNum(pts[1].eps) + ').');
   if (isNum(d.revGrowthQtr) && isNum(d.salesGrowthTTM) && d.revGrowthQtr < d.salesGrowthTTM - 3) T.push('Revenue growth is decelerating — latest quarter ' + fmtPct(d.revGrowthQtr) + ' vs ' + fmtPct(d.salesGrowthTTM) + ' trailing.');
   if (isNum(d.epsGrowthTTM) && d.epsGrowthTTM >= 60 && isNum(d.forwardPE) && d.forwardPE <= 12) T.push('Earnings look cyclically hot — EPS up ' + fmtPct(d.epsGrowthTTM) + ' in a year rarely lasts, and peak earnings make the P/E look deceptively cheap.');
