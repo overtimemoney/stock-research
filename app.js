@@ -563,6 +563,49 @@ function parseSAForecast(html) {
   return out;
 }
 
+/* Estimate columns of the StockAnalysis forecast table (annual):
+ * every metric the Quarterly Metrics tool charts gets the current
+ * fiscal year's consensus where the free page exposes it (later
+ * years are paywalled). Margins come straight off the page or are
+ * derived from the same columns' $ rows. */
+function parseSAForecastMetrics(html) {
+  var est = {};
+  if (!html) return est;
+  saTables(html).forEach(function (rows) {
+    if (!rows.length || rows[0][0] !== 'Fiscal Year') return;
+    var byLabel = {};
+    rows.forEach(function (r) { if (r[0] && byLabel[r[0]] === undefined) byLabel[r[0]] = r; });
+    var endRow = byLabel['Period Ending'], hdr = rows[0];
+    if (!endRow) return;
+    var now = Date.now(), cols = [];
+    for (var i = 1; i < hdr.length; i++) {
+      var end = Date.parse(endRow[i]);
+      if (isNum(end) && end > now) cols.push(i);
+    }
+    if (!cols.length) return;
+    function valAt(rowLabel, i) {
+      var r = byLabel[rowLabel];
+      return r ? parseBMV(r[i]) : null;
+    }
+    cols.forEach(function (i) {
+      var rev = valAt('Revenue', i);
+      function push(key, v) { if (isNum(v)) (est[key] = est[key] || []).push({ plabel: hdr[i], value: v }); }
+      push('revenue', rev);
+      push('netIncome', valAt('Net Income', i));
+      push('fcf', valAt('Free Cash Flow', i));
+      var gmRow = byLabel['Gross Margin'];
+      var gm = gmRow ? parseNum(gmRow[i]) : null;
+      if (!isNum(gm)) { var gp = valAt('Gross Profit', i); gm = (isNum(gp) && isNum(rev) && rev !== 0) ? gp / rev * 100 : null; }
+      push('grossMargin', gm);
+      var oi = valAt('Operating Income', i);
+      push('operMargin', (isNum(oi) && isNum(rev) && rev !== 0) ? oi / rev * 100 : null);
+      var ni = valAt('Net Income', i);
+      push('netMargin', (isNum(ni) && isNum(rev) && rev !== 0) ? ni / rev * 100 : null);
+    });
+  });
+  return est;
+}
+
 /* The EPS peak-cliff, same detection as the trajectory chart: a later
  * consensus year falls 10%+ below the running peak. */
 function epsCliffInfo(d) {
@@ -1695,12 +1738,15 @@ async function fetchQMetrics(T, freq) {
   var suffix = yearly ? '' : '?p=quarterly';
   var needle = yearly ? 'Fiscal Year' : 'Fiscal Quarter';
   var ok = function (t) { return t.indexOf(needle) !== -1; };
+  var fcUrl = 'https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/forecast/';
   var pages = await Promise.all([
     relayFetch(base + 'income-statement/' + suffix, { timeout: 25000, validate: ok }).catch(function () { return null; }),
     relayFetch(base + suffix, { timeout: 25000, validate: ok }).catch(function () { return null; }),
-    relayFetch(base + 'cash-flow-statement/' + suffix, { timeout: 25000, validate: ok }).catch(function () { return null; })
+    relayFetch(base + 'cash-flow-statement/' + suffix, { timeout: 25000, validate: ok }).catch(function () { return null; }),
+    yearly ? relayFetch(fcUrl, { timeout: 25000, validate: function (t) { return t.indexOf('Period Ending') !== -1; } }).catch(function () { return null; }) : Promise.resolve(null)
   ]);
   var data = parseSAQuarterly(pages[0] || pages[1], pages[2], yearly);
+  data.est = yearly ? parseSAForecastMetrics(pages[3]) : null;
   if (!data || !data.revenue) throw new Error('No ' + (yearly ? 'annual' : 'quarterly') + ' statements found for \u201c' + T + '\u201d.');
   data.estEps = [];
   try {
@@ -1789,11 +1835,14 @@ function renderQm() {
     if (qmFreq === 'y') { p.axis = p.label; lastYr = yr; }
     else if (yr !== lastYr) { p.axis = '\u2019' + String(yr).slice(-2); lastYr = yr; }
   });
-  if (qmMetric === 'eps' && d.estEps && d.estEps.length) {
+  var estList = [];
+  if (qmMetric === 'eps' && d.estEps && d.estEps.length) estList = d.estEps.map(function (e) { return { label: e.label, value: e.eps }; });
+  else if (d.est && d.est[qmMetric] && d.est[qmMetric].length) estList = d.est[qmMetric];
+  if (estList.length) {
     var lastP = d.periods[d.periods.length - 1];
-    var seq = qmFreq === 'y' ? qmNextYLabels(lastP, d.estEps.length) : qmNextQLabels(lastP, d.estEps.length);
-    d.estEps.forEach(function (e, i) {
-      var pt = { label: (seq && seq[i]) || e.label, value: e.eps, kind: 'est' };
+    var seq = qmFreq === 'y' ? qmNextYLabels(lastP, estList.length) : qmNextQLabels(lastP, estList.length);
+    estList.forEach(function (e, i) {
+      var pt = { label: e.plabel ? qmShortQ(e.plabel) : ((seq && seq[i]) || e.label), value: e.value, kind: 'est' };
       var ym = pt.label.match(/(\d{4}|\u2019\d{2})/);
       var yr = ym ? ym[1] : pt.label;
       if (qmFreq === 'y') pt.axis = pt.label;
@@ -1808,9 +1857,12 @@ function renderQm() {
     box.innerHTML = '<div class="chart-wrap">' + qmBarsSVG(pts, M.fmt) + '</div>';
   }
   var per = qmFreq === 'y' ? 'years' : 'quarters';
-  $('qm-note').textContent = qmMetric === 'eps'
-    ? 'Solid bars: reported ' + per + ' (SEC filings via StockAnalysis). Faded bars: analyst consensus for the next few ' + per + ' (Nasdaq) \u2014 published only for EPS.'
-    : 'Reported ' + per + ' only \u2014 SEC filings via StockAnalysis. No published consensus exists for this metric; consensus exists only for EPS (tab over to see it).';
+  var hasEst = pts.some(function (p) { return p.kind === 'est'; });
+  $('qm-note').textContent = !hasEst
+    ? 'Reported ' + per + ' only \u2014 SEC filings via StockAnalysis. No free consensus is published for this metric in this view.'
+    : qmMetric === 'eps'
+      ? 'Solid bars: reported ' + per + ' (SEC filings via StockAnalysis). Faded bars: analyst consensus for the next few ' + per + ' (Nasdaq).'
+      : 'Solid bars: reported years (SEC filings via StockAnalysis). Faded bars: analyst consensus for the current fiscal year (StockAnalysis) \u2014 deeper years are paywalled there, so only EPS runs further out (via Nasdaq). Quarterly consensus is published only for EPS.';
 }
 
 /* Yearly estimate labels continue the reported fiscal years:
