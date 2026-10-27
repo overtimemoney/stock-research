@@ -3699,6 +3699,8 @@ function attachAutocomplete(input, onPick) {
     var h = list.offsetHeight;
     var top = openUp ? r.top - 4 - h : r.bottom + 4;
     var lo = vT + 6, hi = vT + vh - h - 6;
+    var tbEl = document.querySelector('.topbar');
+    if (tbEl) lo = Math.max(lo, tbEl.getBoundingClientRect().bottom + 4);
     if (hi < lo) hi = lo;
     list.style.top = Math.min(Math.max(top, lo), hi) + 'px';
     if (wasHidden) { list.style.display = 'none'; list.style.visibility = ''; }
@@ -3734,6 +3736,24 @@ function attachAutocomplete(input, onPick) {
       if (my !== seq) return;
       show(items);
     }, 220);
+  });
+  input.addEventListener('focus', function () {
+    // Inputs low on the screen (Quarterly Metrics sits below the
+    // Projection Builder) used to get a dropdown flipped up over the
+    // header; the other inputs all sit high and open downward. Bring
+    // a low input up to the same zone on focus so its list opens
+    // downward, attached, like everywhere else.
+    setTimeout(function () {
+      var r = input.getBoundingClientRect();
+      var vv = window.visualViewport;
+      var vh = vv ? vv.height : window.innerHeight;
+      var vT = vv ? vv.offsetTop : 0;
+      if (r.top <= vT + vh * 0.45) return;
+      var main = document.querySelector('main');
+      var tb = document.querySelector('.topbar');
+      var headB = tb ? tb.getBoundingClientRect().bottom : vT + 56;
+      if (main) main.scrollTop += r.top - headB - 14;
+    }, 350);
   });
   input.addEventListener('blur', function () { setTimeout(hide, 180); });
   input.addEventListener('keydown', function (e) { if (e.key === 'Escape') hide(); });
