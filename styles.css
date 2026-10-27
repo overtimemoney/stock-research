@@ -374,8 +374,8 @@ table.scen td { padding: 8px 6px; }
 /* ---------- portfolio rows (collapsible) ---------- */
 .pf-row { flex-direction: column; align-items: stretch; }
 .pf-head { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: none; color: inherit; font: inherit; text-align: left; padding: 0; cursor: pointer; }
-.pf-head .wl-left { flex: 1 1 auto; min-width: 0; }
-.pf-head .wl-right { margin-left: auto; }
+.pf-head .wl-left { flex: 1 1 0%; min-width: 0; overflow: hidden; }
+.pf-head .wl-right { margin-left: auto; flex: 0 0 auto; max-width: none; }
 .pf-head .wl-price, .pf-head .wl-meta { display: block; }
 .pf-chev { color: var(--muted); font-size: 13px; flex: 0 0 auto; transition: transform .15s ease; }
 .pf-row.open .pf-chev { transform: rotate(180deg); }
