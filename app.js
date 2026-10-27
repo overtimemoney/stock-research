@@ -1791,7 +1791,12 @@ function qmBarsSVG(pts, fmt) {
     var x = padX + i * bw + bw * 0.03, bwid = bw * 0.94;
     var y = zeroY - (p.value / span) * (h - padT - padB);
     var top = Math.min(y, zeroY), bot = Math.max(y, zeroY);
-    var fill = p.kind === 'est' ? 'fill:var(--chart-val);opacity:.45' : 'fill:var(--chart-actual)';
+    // Positive = green, negative = red, both with a soft glow
+    // (Justin's ask, 2026-10-26); estimates keep their faded look.
+    var col = p.value >= 0 ? 'var(--good)' : 'var(--bad)';
+    var fill = p.kind === 'est'
+      ? 'fill:' + col + ';opacity:.45;filter:drop-shadow(0 0 4px ' + col + ')'
+      : 'fill:' + col + ';filter:drop-shadow(0 0 6px ' + col + ')';
     out += '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bwid.toFixed(1) + '" height="' + Math.max(1.5, bot - top).toFixed(1) + '" rx="1.5" style="' + fill + '"/>';
     var ly = p.value >= 0 ? top - 8 : bot + vfs + 3;
     out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="middle" font-size="' + vfs + '" font-weight="800" style="fill:var(--chart-val)">' + esc(fmt(p.value)) + '</text>';
