@@ -2995,7 +2995,11 @@ async function renderPortfolio(doFetch) {
       if (!pos) return;
       var bought = (pos.buys || []).reduce(function (a2, b2) { return a2 + b2.sh; }, 0);
       var remainS = bought - pfSoldShares(pos);
-      var sh = await pfShareSheet('How many shares of ' + T + ' did you sell on ' + d + '?', (bought > 0 && remainS > 0) ? remainS : null, null);
+      // All = the remaining sellable shares: from logged purchases
+      // when they exist, otherwise the whole current holding (the
+      // button was missing entirely for unlogged positions).
+      var capSell = bought > 0 ? (remainS > 0 ? remainS : null) : (pos.shares > 0 ? pos.shares : null);
+      var sh = await pfShareSheet('How many shares of ' + T + ' did you sell on ' + d + '?', capSell, null);
       if (sh === null) return;
       if (!isNum(sh) || sh <= 0) { window.alert('Enter the number of shares sold.'); return; }
       if (bought > 0 && pfSoldShares(pos) + sh > bought + 1e-9) {
@@ -3063,7 +3067,8 @@ async function renderPortfolio(doFetch) {
       var bought = (pos.buys || []).reduce(function (a2, b2) { return a2 + b2.sh; }, 0);
       var otherSells = pos.sells.reduce(function (a2, b2, i2) { return a2 + (i2 === idx ? 0 : b2.sh); }, 0);
       var capS = bought - otherSells;
-      var sh = await pfShareSheet('How many shares did you sell on ' + d + '?', bought > 0 ? capS : null, cur.sh);
+      var capSellE = bought > 0 ? capS : (pos.shares + cur.sh > 0 ? pos.shares + cur.sh : null);
+      var sh = await pfShareSheet('How many shares did you sell on ' + d + '?', capSellE, cur.sh);
       if (sh === null) return;
       if (!isNum(sh) || sh <= 0) { window.alert('Enter the number of shares sold.'); return; }
       if (bought > 0 && otherSells + sh > bought + 1e-9) { window.alert('Sales cannot pass your logged purchases for ' + parts[0] + ' (' + fmtShares(bought) + ' shares).'); return; }
