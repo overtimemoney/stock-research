@@ -741,8 +741,8 @@ function riskScore(d) {
     factors.push({ name: name, value: value, display: display, max: max, pts: pts, note: note || '' });
   }
   if (isNum(d.beta) && d.beta > 0) {
-    add('Beta (volatility)', d.beta, fmtNum(d.beta, 2), 15,
-      band(d.beta, [[0.5, 1], [0.8, 4], [1, 6], [1.3, 9], [1.6, 12], [2, 14], [Infinity, 15]]),
+    add('Beta (volatility)', d.beta, fmtNum(d.beta, 2), 10,
+      band(d.beta, [[0.5, 1], [0.8, 3], [1, 4], [1.3, 6], [1.6, 8], [2, 9], [Infinity, 10]]),
       'How hard the stock swings vs the market');
   }
   if (isNum(d.debtEq) && d.debtEq >= 0) {
@@ -772,8 +772,8 @@ function riskScore(d) {
   }
   var bb = boomBust(d);
   if (bb && bb.testable) {
-    add('Boom-bust pattern', bb.ratio, isNum(bb.ratio) ? fmtNum(bb.ratio, 1) + '\u00d7 in 2 yrs' : '\u2014', 20,
-      bb.fires ? 20 : 0,
+    add('Boom-bust pattern', bb.ratio, isNum(bb.ratio) ? fmtNum(bb.ratio, 1) + '\u00d7 in 2 yrs' : '\u2014', 25,
+      bb.fires ? 25 : 0,
       bb.fires
         ? 'Revenue ' + (bb.projected ? 'is projected to top' : 'topped') + ' at ' + bb.topLabel + ' after doubling in 2 yrs, and EPS ' + (bb.cliff
             ? 'falls off a cliff after ' + bb.cliff.peakLabel
@@ -2205,13 +2205,13 @@ function scanFinalizeIdx(idxs) {
     var s = scoreStock(rec);
     if (!(s && isNum(s.score) && s.maxAvailable >= 60)) return;
     // The combined score's risk side needs the same grounding: the
-    // screener-fed risk factors total 95 points (beta 15 + debt/eq 25
+    // screener-fed risk factors total 90 points (beta 10 + debt/eq 25
     // + profit margin 15 + size 15 + EPS trend 15 + current ratio 10;
     // the boom-bust factor needs a revenue path the screener doesn't
     // carry, so it never counts here). Require at least 60% of those
-    // 95 — 57 points — mirroring the valuation side's 60-of-100 rule.
+    // 90 — 54 points — mirroring the valuation side's 60-of-100 rule.
     var rk = riskScore(rec);
-    if (!(rk && isNum(rk.score) && rk.maxAvailable >= 57)) return;
+    if (!(rk && isNum(rk.score) && rk.maxAvailable >= 54)) return;
     // One score for the daily list (Justin's ask, 2026-10-27):
     // 60% how cheap it is + 40% how safe it is.
     var combined = Math.round(0.6 * s.score + 0.4 * (100 - rk.score));
