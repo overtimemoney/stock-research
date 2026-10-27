@@ -2155,6 +2155,42 @@ function maybeStartScan() {
 
 function scanScoreClass(score) { return score >= 70 ? 'up' : (score >= 45 ? '' : 'down'); }
 
+/* Tappable share-amount sheet for purchases/sales (Justin's ask,
+ * 2026-10-26): typing ALL into a phone prompt was too easy to miss,
+ * so the amount step is now an in-app sheet with a real All button.
+ * Resolves with a number (All -> cap), NaN for an empty/invalid
+ * entry (callers show their usual alert), or null on cancel. */
+function pfShareSheet(title, cap, initial) {
+  return new Promise(function (resolve) {
+    var bg = document.createElement('div');
+    bg.className = 'pf-sheet-bg';
+    var allBtn = (isNum(cap) && cap > 0)
+      ? '<button type="button" class="btn-ghost" id="pf-sh-all">All \u00b7 ' + fmtShares(cap) + '</button>' : '';
+    bg.innerHTML = '<div class="pf-sheet"><h4>' + esc(title) + '</h4>' +
+      '<div class="pf-sheet-row"><input id="pf-sh-in" type="text" inputmode="decimal" autocomplete="off" placeholder="Shares" value="' + (isNum(initial) ? esc(String(initial)) : '') + '">' + allBtn + '</div>' +
+      '<div class="pf-sheet-row" style="margin-top:10px"><button type="button" class="btn-ghost" id="pf-sh-cancel" style="flex:1">Cancel</button><button type="button" class="pf-sh-save" id="pf-sh-ok" style="flex:1">Save</button></div></div>';
+    document.body.appendChild(bg);
+    var done = false;
+    function close(v) {
+      if (done) return; done = true;
+      if (bg.parentNode) bg.parentNode.removeChild(bg);
+      resolve(v);
+    }
+    bg.querySelector('#pf-sh-cancel').addEventListener('click', function () { close(null); });
+    bg.addEventListener('click', function (e) { if (e.target === bg) close(null); });
+    var all = bg.querySelector('#pf-sh-all');
+    if (all) all.addEventListener('click', function () { close(cap); });
+    bg.querySelector('#pf-sh-ok').addEventListener('click', function () {
+      close(parseFloat(bg.querySelector('#pf-sh-in').value));
+    });
+    var inp = bg.querySelector('#pf-sh-in');
+    inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); bg.querySelector('#pf-sh-ok').click(); }
+    });
+    setTimeout(function () { try { inp.focus(); inp.select(); } catch (e) {} }, 60);
+  });
+}
+
 function renderScanCard() {
   var box = $('scan-card');
   if (!box) return;
@@ -2853,7 +2889,7 @@ async function renderPortfolio(doFetch) {
     });
   });
   document.querySelectorAll('[data-pf-buyadd]').forEach(function (b) {
-    b.addEventListener('click', function () {
+    b.addEventListener('click', async function () {
       var T = b.getAttribute('data-pf-buyadd');
       var d = window.prompt('Purchase date for ' + T + ' (YYYY-MM-DD):', pfKeyToISO(pfDkey(new Date())));
       if (d === null) return;
@@ -2866,9 +2902,8 @@ async function renderPortfolio(doFetch) {
       var grossB = pos.shares + pfSoldShares(pos);
       var remainB = grossB - logged;
       if (remainB <= 0) { window.alert('Every share of ' + T + ' is already assigned to a purchase date. Edit a purchase or raise the share count first.'); return; }
-      var s = window.prompt('How many shares did you buy on ' + d + '? (or type ALL for the remaining ' + fmtShares(remainB) + ')');
-      if (s === null) return;
-      var sh = String(s).trim().toLowerCase() === 'all' ? remainB : parseFloat(s);
+      var sh = await pfShareSheet('How many shares did you buy on ' + d + '?', remainB, null);
+      if (sh === null) return;
       if (!isNum(sh) || sh <= 0) { window.alert('Enter the number of shares bought.'); return; }
       if (logged + sh > grossB + 1e-9) {
         window.alert('That would make ' + fmtShares(logged + sh) + ' shares purchased, but ' + T + ' only accounts for ' + fmtShares(grossB) + ' in total (' + fmtShares(pos.shares) + ' held + ' + fmtShares(pfSoldShares(pos)) + ' sold). Enter fewer shares, or update the holding first with Edit.');
@@ -2892,7 +2927,7 @@ async function renderPortfolio(doFetch) {
     });
   });
   document.querySelectorAll('[data-pf-selladd]').forEach(function (b) {
-    b.addEventListener('click', function () {
+    b.addEventListener('click', async function () {
       var T = b.getAttribute('data-pf-selladd');
       var d = window.prompt('Sale date for ' + T + ' (YYYY-MM-DD):', pfKeyToISO(pfDkey(new Date())));
       if (d === null) return;
@@ -2903,9 +2938,8 @@ async function renderPortfolio(doFetch) {
       if (!pos) return;
       var bought = (pos.buys || []).reduce(function (a2, b2) { return a2 + b2.sh; }, 0);
       var remainS = bought - pfSoldShares(pos);
-      var s = window.prompt('How many shares of ' + T + ' did you sell on ' + d + '?' + (bought > 0 && remainS > 0 ? ' (or type ALL for the remaining ' + fmtShares(remainS) + ')' : ''));
-      if (s === null) return;
-      var sh = String(s).trim().toLowerCase() === 'all' && bought > 0 ? remainS : parseFloat(s);
+      var sh = await pfShareSheet('How many shares of ' + T + ' did you sell on ' + d + '?', (bought > 0 && remainS > 0) ? remainS : null, null);
+      if (sh === null) return;
       if (!isNum(sh) || sh <= 0) { window.alert('Enter the number of shares sold.'); return; }
       if (bought > 0 && pfSoldShares(pos) + sh > bought + 1e-9) {
         window.alert('Your logged purchases for ' + T + ' add up to ' + fmtShares(bought) + ' shares, so sales cannot pass that. Add the missing purchases first.');
@@ -2934,7 +2968,7 @@ async function renderPortfolio(doFetch) {
     });
   });
   document.querySelectorAll('[data-pf-buyedit]').forEach(function (b) {
-    b.addEventListener('click', function () {
+    b.addEventListener('click', async function () {
       var parts = b.getAttribute('data-pf-buyedit').split('|');
       var pf = getPortfolio();
       var pos = pf.filter(function (x) { return x.ticker === parts[0]; })[0];
@@ -2947,9 +2981,8 @@ async function renderPortfolio(doFetch) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || isNaN(new Date(d + 'T12:00:00').getTime())) { window.alert('That date does not look right -- use YYYY-MM-DD, like 2025-03-14.'); return; }
       var others = pos.buys.reduce(function (a2, b2, i2) { return a2 + (i2 === idx ? 0 : b2.sh); }, 0);
       var capB = pos.shares + pfSoldShares(pos) - others;
-      var s = window.prompt('How many shares did you buy on ' + d + '? (or type ALL for ' + fmtShares(capB) + ')', cur.sh);
-      if (s === null) return;
-      var sh = String(s).trim().toLowerCase() === 'all' ? capB : parseFloat(s);
+      var sh = await pfShareSheet('How many shares did you buy on ' + d + '?', capB, cur.sh);
+      if (sh === null) return;
       if (!isNum(sh) || sh <= 0) { window.alert('Enter the number of shares bought.'); return; }
       if (others + sh > pos.shares + pfSoldShares(pos) + 1e-9) { window.alert('That would put purchases past the total shares this position accounts for. Raise the share count or lower the amount.'); return; }
       pos.buys[idx] = { d: d, sh: sh };
@@ -2959,7 +2992,7 @@ async function renderPortfolio(doFetch) {
     });
   });
   document.querySelectorAll('[data-pf-selledit]').forEach(function (b) {
-    b.addEventListener('click', function () {
+    b.addEventListener('click', async function () {
       var parts = b.getAttribute('data-pf-selledit').split('|');
       var pf = getPortfolio();
       var pos = pf.filter(function (x) { return x.ticker === parts[0]; })[0];
@@ -2973,9 +3006,8 @@ async function renderPortfolio(doFetch) {
       var bought = (pos.buys || []).reduce(function (a2, b2) { return a2 + b2.sh; }, 0);
       var otherSells = pos.sells.reduce(function (a2, b2, i2) { return a2 + (i2 === idx ? 0 : b2.sh); }, 0);
       var capS = bought - otherSells;
-      var s = window.prompt('How many shares did you sell on ' + d + '?' + (bought > 0 ? ' (or type ALL for ' + fmtShares(capS) + ')' : ''), cur.sh);
-      if (s === null) return;
-      var sh = String(s).trim().toLowerCase() === 'all' && bought > 0 ? capS : parseFloat(s);
+      var sh = await pfShareSheet('How many shares did you sell on ' + d + '?', bought > 0 ? capS : null, cur.sh);
+      if (sh === null) return;
       if (!isNum(sh) || sh <= 0) { window.alert('Enter the number of shares sold.'); return; }
       if (bought > 0 && otherSells + sh > bought + 1e-9) { window.alert('Sales cannot pass your logged purchases for ' + parts[0] + ' (' + fmtShares(bought) + ' shares).'); return; }
       var pr = window.prompt('Sale price per share for ' + parts[0] + ' ($, blank = that day\u2019s closing price):', isNum(cur.px) ? cur.px : '');

@@ -480,3 +480,11 @@ table.scen td { padding: 8px 6px; }
 table.factors:not(.scen) { table-layout: fixed; }
 table.factors:not(.scen) th:nth-child(2), table.factors:not(.scen) td:nth-child(2) { width: 100px; }
 table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; white-space: nowrap; }
+
+/* Share-amount sheet (purchases/sales) */
+.pf-sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 90; display: flex; align-items: flex-end; justify-content: center; }
+.pf-sheet { background: var(--card); border: 1.5px solid var(--line); border-bottom: none; border-radius: 18px 18px 0 0; padding: 18px 16px calc(16px + env(safe-area-inset-bottom)); width: 100%; max-width: 480px; }
+.pf-sheet h4 { margin: 0 0 12px; font-size: 16px; font-weight: 800; }
+.pf-sheet-row { display: flex; gap: 8px; align-items: stretch; }
+.pf-sheet input { flex: 1; min-width: 0; background: var(--field); border: 1.5px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 17px; font-weight: 700; padding: 11px 12px; }
+.pf-sh-save { background: var(--gold-grad); color: #141414; border: none; border-radius: 12px; font-size: 15px; font-weight: 800; padding: 11px 12px; cursor: pointer; }
