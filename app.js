@@ -1960,11 +1960,31 @@ var SCAN_KEY = 'sr_scan_v2';
 var scanRunning = false, scanActive = 0, scanCoolUntil = 0, scanTimer = null;
 
 function scanTodayKey() { return pfKeyToISO(pfDkey(new Date())); }
-function scanFreshIdx() { return { total: null, merged: {}, pending: SCAN_VIEWS.map(function (v) { return [v, 1, 0]; }), queued: {}, pages: 0, dropped: [] }; }
+function scanFreshIdx(started) {
+  // Option B (Justin's pick, 2026-10-26): the Russell 2000 is 297 of
+  // the 375 daily pages, so only the S&P 500 auto-starts; the Russell
+  // waits for the card's Scan button (started=false, empty queue).
+  var ix = { total: null, merged: {}, pending: [], queued: {}, pages: 0, dropped: [], started: started !== false };
+  if (ix.started) ix.pending = SCAN_VIEWS.map(function (v) { return [v, 1, 0]; });
+  return ix;
+}
 function scanFreshState() {
   var s = { date: scanTodayKey(), done: false, partial: false, results: null, idx: {} };
-  SCAN_IDXS.forEach(function (ix) { s.idx[ix.key] = scanFreshIdx(); });
+  SCAN_IDXS.forEach(function (ix) { s.idx[ix.key] = scanFreshIdx(ix.key === 'spx'); });
   return s;
+}
+function scanStartIndex(ixKey) {
+  var s = getScan();
+  if (!s || s.date !== scanTodayKey()) { s = scanFreshState(); }
+  var ix = s.idx[ixKey];
+  if (!ix || ix.started) { setScan(s); return; }
+  ix.started = true;
+  ix.pending = SCAN_VIEWS.map(function (v) { return [v, 1, 0]; });
+  s.done = false;
+  s.partial = false;
+  setScan(s);
+  renderScanCard();
+  scanPump();
 }
 function getScan() {
   try { var s = JSON.parse(localStorage.getItem(SCAN_KEY) || 'null'); return (s && s.idx) ? s : null; }
@@ -2040,12 +2060,15 @@ function scanStep() {
   var job = null, jobIx = null;
   for (var i = 0; i < SCAN_IDXS.length && !job; i++) {
     var cand = st.idx[SCAN_IDXS[i].key];
+    if (cand.started === false) continue;
     if (cand.pending.length) { job = cand.pending[0]; jobIx = SCAN_IDXS[i].key; }
   }
   if (!job) {
     if (scanActive === 0) {
-      // Queue drained: complete only if nothing was dropped.
-      var droppedTotal = SCAN_IDXS.reduce(function (a, ix) { return a + st.idx[ix.key].dropped.length; }, 0);
+      // Queue drained: complete only if nothing was dropped (among
+      // the indexes that were started -- an unstarted Russell must
+      // not hold the S&P's completion hostage).
+      var droppedTotal = SCAN_IDXS.reduce(function (a, ix) { return a + (st.idx[ix.key].started === false ? 0 : st.idx[ix.key].dropped.length); }, 0);
       var results = {};
       SCAN_IDXS.forEach(function (ix) {
         var z = st.idx[ix.key];
@@ -2113,6 +2136,7 @@ function scanResume() {
   if (!s) return;
   SCAN_IDXS.forEach(function (ix) {
     var z = s.idx[ix.key];
+    if (z.started === false) return;
     z.dropped.forEach(function (dr) { z.pending.push([dr[0], dr[1], 0]); });
     z.dropped = [];
   });
@@ -2145,6 +2169,12 @@ function renderScanCard() {
     SCAN_IDXS.forEach(function (ix) {
       var rows = (s.results && s.results[ix.key]) || [];
       var z = s.idx[ix.key];
+      if (z.started === false) {
+        out += '<div class="scan-group">' + esc(ix.label) + '</div>' +
+          '<div class="fineprint" style="margin:0 0 8px">297 of the 375 scan pages — on demand, so the daily S&amp;P scan stays fast.</div>' +
+          '<button type="button" class="btn-ghost" id="scan-start-rut">Scan Russell 2000</button>';
+        return;
+      }
       var countTxt = isNum(z.scored) ? z.scored + ' stocks scored' : '';
       out += '<div class="scan-group">' + esc(ix.label) + (countTxt ? ' <span class="scan-count">' + countTxt + '</span>' : '') + '</div>';
       if (!rows.length) { out += '<div class="status">No scored stocks came back.</div>'; }
@@ -2165,6 +2195,7 @@ function renderScanCard() {
     var scoredSum = 0, totalSum = 0, droppedSum = 0;
     SCAN_IDXS.forEach(function (ix) {
       var z = s.idx[ix.key];
+      if (z.started === false) return;
       scoredSum += z.scored || 0;
       totalSum += z.total || 0;
       droppedSum += z.dropped.length;
@@ -2185,7 +2216,8 @@ function renderScanCard() {
     } else {
       var pct = (pages + pending) > 0 ? Math.round(pages / (pages + pending) * 100) : 0;
       var cooling = scanCoolUntil > Date.now();
-      html += '<div class="status"><span class="spinner"></span>' + (cooling ? 'Finviz is throttling \u2014 cooling down for a few seconds, then continuing\u2026 ' : 'Scanning the S&P 500 and Russell 2000\u2026 ') + pages + ' pages in, ' + stocks + ' stocks so far. It runs gently (a few minutes) to stay under Finviz\'s rate limit, and resumes if you close the app.</div>' +
+      var rutOn = s.idx.rut && s.idx.rut.started !== false;
+      html += '<div class="status"><span class="spinner"></span>' + (cooling ? 'Finviz is throttling \u2014 cooling down for a few seconds, then continuing\u2026 ' : (rutOn ? 'Scanning the S&P 500 and Russell 2000\u2026 ' : 'Scanning the S&P 500\u2026 ')) + pages + ' pages in, ' + stocks + ' stocks so far. It runs gently (a few minutes) to stay under Finviz\'s rate limit, and resumes if you close the app.</div>' +
         '<div class="scan-bar"><i style="width:' + pct + '%"></i></div>';
     }
   }
@@ -2197,6 +2229,8 @@ function renderScanCard() {
   if (rt) rt.addEventListener('click', function () { setScan(scanFreshState()); renderScanCard(); scanPump(); });
   var rm = $('scan-resume');
   if (rm) rm.addEventListener('click', function () { scanResume(); });
+  var sr2 = $('scan-start-rut');
+  if (sr2) sr2.addEventListener('click', function () { scanStartIndex('rut'); });
   box.querySelectorAll('[data-scan-research]').forEach(function (b) {
     b.addEventListener('click', function () {
       var T = b.getAttribute('data-scan-research');
@@ -2741,7 +2775,22 @@ async function renderPortfolio(doFetch) {
       x = Math.min(90.5, Math.max(9.5, x)); y = Math.min(93.5, Math.max(6.5, y));
       pills += '<span class="pf-pill" style="left:' + x.toFixed(1) + '%;top:' + y.toFixed(1) + '%"><span class="pf-pill-dot" style="background:' + m.s.col + ';color:' + pfInk(m.s.col) + '">' + esc(m.s.initial) + (m.s.label !== 'Other' ? pfLogoImg(m.s.label) : '') + '</span>' + fmtNum(m.frac * 100, 0) + '%</span>';
     });
-    var center = '<text x="100" y="103" text-anchor="middle" class="pf-c-v">' + fmtMoney(totVal, 0) + '</text><text x="100" y="126" text-anchor="middle" class="pf-c-l">TOTAL VALUE</text>';
+    // Donut center = today's move (Justin's pick, 2026-10-26): the
+    // total value already headlines the card, so the center carries
+    // the day's dollar move (big) and its weighted % (label).
+    var dayDol = null;
+    rows.forEach(function (r) {
+      if (isNum(r.val) && isNum(r.qt.dayChg)) dayDol = (dayDol || 0) + r.val * r.qt.dayChg / (100 + r.qt.dayChg);
+    });
+    var center;
+    if (isNum(dayDol) && isNum(dayPct)) {
+      var dSign = dayDol > 0 ? '+' : (dayDol < 0 ? '\u2212' : '');
+      var dFill = dayDol > 0 ? 'var(--good)' : (dayDol < 0 ? 'var(--bad)' : 'var(--chart-val)');
+      center = '<text x="100" y="103" text-anchor="middle" class="pf-c-v" style="fill:' + dFill + '">' + dSign + fmtMoney(Math.abs(dayDol), 0) + '</text>' +
+        '<text x="100" y="126" text-anchor="middle" class="pf-c-l">TODAY \u00b7 ' + fmtPct(dayPct) + '</text>';
+    } else {
+      center = '<text x="100" y="103" text-anchor="middle" class="pf-c-v">' + fmtMoney(totVal, 0) + '</text><text x="100" y="126" text-anchor="middle" class="pf-c-l">TOTAL VALUE</text>';
+    }
     chartHtml = '<div class="pf-donut"><svg viewBox="0 0 200 200" role="img" aria-label="Portfolio allocation chart"><g transform="rotate(-90 100 100)">' + circles + '</g>' + center + '</svg>' + pills + '</div><div class="pf-pop" hidden></div>';
   }
   var yld = (anyPx && totVal > 0) ? totInc / totVal * 100 : null;
