@@ -1793,7 +1793,7 @@ function qmBarsSVG(pts, fmt) {
     var top = Math.min(y, zeroY), bot = Math.max(y, zeroY);
     // Positive = green, negative = red, both with a soft glow
     // (Justin's ask, 2026-10-26); estimates keep their faded look.
-    var col = p.value >= 0 ? 'var(--good)' : 'var(--bad)';
+    var col = p.value >= 0 ? 'var(--neon-up)' : 'var(--neon-dn)';
     var fill = p.kind === 'est'
       ? 'fill:' + col + ';opacity:.45;filter:drop-shadow(0 0 4px ' + col + ')'
       : 'fill:' + col + ';filter:drop-shadow(0 0 6px ' + col + ')';
@@ -2896,7 +2896,7 @@ async function renderPortfolio(doFetch) {
     var center;
     if (isNum(dayDol) && isNum(dayPct)) {
       var dSign = dayDol > 0 ? '+' : (dayDol < 0 ? '\u2212' : '');
-      var dFill = dayDol > 0 ? 'var(--good)' : (dayDol < 0 ? 'var(--bad)' : 'var(--chart-val)');
+      var dFill = dayDol > 0 ? 'var(--neon-up)' : (dayDol < 0 ? 'var(--neon-dn)' : 'var(--chart-val)');
       center = '<text x="100" y="103" text-anchor="middle" class="pf-c-v" style="fill:' + dFill + '">' + fmtPct(dayPct) + '</text>' +
         '<text x="100" y="126" text-anchor="middle" class="pf-c-l">TODAY \u00b7 ' + dSign + fmtMoney(Math.abs(dayDol), 0) + '</text>';
     } else {

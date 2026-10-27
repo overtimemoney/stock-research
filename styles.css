@@ -19,6 +19,8 @@
   --card: #ffffff;
   --good: #1e9e52;
   --bad: #d33a2c;
+  --neon-up: #00c853;
+  --neon-dn: #ff1744;
   --warn: #b46a11;
   --radius: 16px;
   --tabbar-h: 62px;
@@ -54,6 +56,8 @@
   --accent-text: #f0b93e;
   --good: #2fbf6b;
   --bad: #ff6b57;
+  --neon-up: #2bff88;
+  --neon-dn: #ff3b5c;
   --warn: #e8b34b;
   --chip-bg: #1e1c16;
   --chip-pass-bg: #12271a; --chip-pass-line: #1f4630;
