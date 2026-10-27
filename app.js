@@ -2072,10 +2072,11 @@ async function fetchWlValuation(T) {
 
 /* ============================== daily index scan ==============================
  * Once a day the app scans the whole S&P 500 and Russell 2000 for the
- * five highest valuation scores, using the same scoreStock() as the
- * scorecard. His Cloudflare relay does the heavy lifting: its /screen
- * route extracts just the needed rows from Finviz's screener pages
- * (~2-4 KB per page instead of ~400 KB of HTML).
+ * five best combined scores, using the same scoreStock() and
+ * riskScore() as the scorecard: combined = 60% valuation + 40% safety
+ * (100 - risk). His Cloudflare relay does the heavy lifting: its
+ * /screen route extracts just the needed rows from Finviz's screener
+ * pages (~2-4 KB per page instead of ~400 KB of HTML).
  *
  * PACING IS DELIBERATE (v2): Finviz rate-limits by IP — the relay's
  * egress included — and a 375-page burst earned 403s, which the first
@@ -2091,7 +2092,7 @@ var SCAN_IDXS = [
   { key: 'spx', label: 'S&P 500' },
   { key: 'rut', label: 'Russell 2000' }
 ];
-var SCAN_KEY = 'sr_scan_v2';
+var SCAN_KEY = 'sr_scan_v3';
 var scanRunning = false, scanActive = 0, scanCoolUntil = 0, scanTimer = null;
 
 function scanTodayKey() { return pfKeyToISO(pfDkey(new Date())); }
@@ -2137,12 +2138,17 @@ function scanMerge(idxs, view, rows) {
       if (isNum(n.PEG)) rec.peg = n.PEG;
       if (isNum(n.epsYoY1)) rec.epsGrowthNextY = n.epsYoY1;
       if (isNum(n.price)) rec.price = n.price;
+      // Finviz reports market cap in $millions; the risk score's size
+      // bands (and fmtCap) work in raw dollars.
+      if (isNum(n.marketCap)) rec.marketCap = n.marketCap * 1e6;
     } else if (view === '161') {
       if (isNum(n.grossMargin)) rec.grossMargin = n.grossMargin;
       if (isNum(n.netMargin)) rec.profitMargin = n.netMargin;
       if (isNum(n.debtEq)) rec.debtEq = n.debtEq;
+      if (isNum(n.curRatio)) rec.currentRatio = n.curRatio;
     } else if (view === '171') {
       if (isNum(n.high52w)) rec.pctBelowHigh = Math.max(0, -n.high52w);
+      if (isNum(n.beta)) rec.beta = n.beta;
     }
   });
 }
@@ -2157,7 +2163,19 @@ function scanFinalizeIdx(idxs) {
     // spin-offs, pre-revenue shells) normalizes to a meaningless 100.
     if (!(isNum(rec.forwardPE) && rec.forwardPE > 0)) return;
     var s = scoreStock(rec);
-    if (s && isNum(s.score) && s.maxAvailable >= 60) out.push({ t: t, name: rec.name, score: s.score, price: isNum(rec.price) ? rec.price : null });
+    if (!(s && isNum(s.score) && s.maxAvailable >= 60)) return;
+    // The combined score's risk side needs the same grounding: the
+    // screener-fed risk factors total 95 points (beta 15 + debt/eq 25
+    // + profit margin 15 + size 15 + EPS trend 15 + current ratio 10;
+    // the boom-bust factor needs a revenue path the screener doesn't
+    // carry, so it never counts here). Require at least 60% of those
+    // 95 — 57 points — mirroring the valuation side's 60-of-100 rule.
+    var rk = riskScore(rec);
+    if (!(rk && isNum(rk.score) && rk.maxAvailable >= 57)) return;
+    // One score for the daily list (Justin's ask, 2026-10-27):
+    // 60% how cheap it is + 40% how safe it is.
+    var combined = Math.round(0.6 * s.score + 0.4 * (100 - rk.score));
+    out.push({ t: t, name: rec.name, score: combined, price: isNum(rec.price) ? rec.price : null });
   });
   out.sort(function (a, b) { return b.score - a.score; });
   return out.slice(0, 5);
@@ -2331,10 +2349,10 @@ function renderScanCard() {
   if (!box) return;
   var s = getScan();
   if (!s || s.date !== scanTodayKey()) {
-    box.innerHTML = '<div class="card scan-card"><div class="scan-h">Top value today</div><div class="status">Preparing today\'s scan\u2026</div></div>';
+    box.innerHTML = '<div class="card scan-card"><div class="scan-h">Top value + low risk today</div><div class="status">Preparing today\'s scan\u2026</div></div>';
     return;
   }
-  var html = '<div class="card scan-card"><div class="scan-h">Top value today <span class="scan-date">' + esc(s.date) + '</span></div>';
+  var html = '<div class="card scan-card"><div class="scan-h">Top value + low risk today <span class="scan-date">' + esc(s.date) + '</span></div>';
   var listsHtml = function () {
     var out = '';
     SCAN_IDXS.forEach(function (ix) {
@@ -2354,14 +2372,14 @@ function renderScanCard() {
           '<span class="scan-rank">' + (i + 1) + '</span>' +
           '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
-          '<span class="scan-score ' + scanScoreClass(row.score) + '">Valuation ' + row.score + '</span></button>';
+          '<span class="scan-score ' + scanScoreClass(row.score) + '">Score ' + row.score + '</span></button>';
       });
     });
     return out;
   };
   if (s.done && s.results) {
     html += listsHtml();
-    html += '<div class="scan-foot">Highest valuation scores in each index (forward P/E and near-full data required), refreshed once a day. <button type="button" class="btn-mini" id="scan-rescan">Rescan</button></div>';
+    html += '<div class="scan-foot">One combined score: 60% valuation + 40% safety (100 \u2212 risk: beta, debt, margins, size, EPS trend, current ratio), refreshed once a day. <button type="button" class="btn-mini" id="scan-rescan">Rescan</button></div>';
   } else if (s.partial && s.results) {
     var scoredSum = 0, totalSum = 0, droppedSum = 0;
     SCAN_IDXS.forEach(function (ix) {
