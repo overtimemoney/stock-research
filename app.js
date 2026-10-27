@@ -2896,8 +2896,8 @@ async function renderPortfolio(doFetch) {
     if (isNum(dayDol) && isNum(dayPct)) {
       var dSign = dayDol > 0 ? '+' : (dayDol < 0 ? '\u2212' : '');
       var dFill = dayDol > 0 ? 'var(--good)' : (dayDol < 0 ? 'var(--bad)' : 'var(--chart-val)');
-      center = '<text x="100" y="103" text-anchor="middle" class="pf-c-v" style="fill:' + dFill + '">' + dSign + fmtMoney(Math.abs(dayDol), 0) + '</text>' +
-        '<text x="100" y="126" text-anchor="middle" class="pf-c-l">TODAY \u00b7 ' + fmtPct(dayPct) + '</text>';
+      center = '<text x="100" y="103" text-anchor="middle" class="pf-c-v" style="fill:' + dFill + '">' + fmtPct(dayPct) + '</text>' +
+        '<text x="100" y="126" text-anchor="middle" class="pf-c-l">TODAY \u00b7 ' + dSign + fmtMoney(Math.abs(dayDol), 0) + '</text>';
     } else {
       center = '<text x="100" y="103" text-anchor="middle" class="pf-c-v">' + fmtMoney(totVal, 0) + '</text><text x="100" y="126" text-anchor="middle" class="pf-c-l">TOTAL VALUE</text>';
     }
