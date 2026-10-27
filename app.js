@@ -606,6 +606,57 @@ function parseSAForecastMetrics(html) {
   return est;
 }
 
+/* The StockAnalysis ratios page carries a 'PE Ratio' row across the
+ * last five fiscal years (plus a Current column). Its average is the
+ * Projection Builder's exit-P/E anchor (Justin's ask, 2026-10-26):
+ * what the market has actually paid for this stock's earnings over a
+ * full cycle, instead of today's possibly-stretched multiple. */
+function parseSAPeHistory(html) {
+  var vals = [];
+  if (!html) return null;
+  saTables(html).forEach(function (rows) {
+    if (!rows.length || rows[0][0] !== 'Fiscal Year' || vals.length) return;
+    var peRow = null;
+    rows.forEach(function (r) { if (r[0] === 'PE Ratio') peRow = r; });
+    if (!peRow) return;
+    for (var i = 1; i < rows[0].length && vals.length < 5; i++) {
+      if (rows[0][i] === 'Current') continue;
+      var v = parseNum(peRow[i]);
+      if (isNum(v) && v > 0 && v < 1000) vals.push(v);
+    }
+  });
+  if (vals.length < 3) return null;
+  var avg = vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;
+  return { avg: avg, years: vals.length };
+}
+
+var PE5Y_KEY = 'sr_pe5y_v1';
+async function fetchPe5yAvg(T) {
+  var cache = lsGet(PE5Y_KEY, {});
+  var day = new Date().toDateString();
+  if (cache[T] && cache[T].day === day) return cache[T].data;
+  var html = await relayFetch('https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/financials/ratios/', {
+    timeout: 25000,
+    validate: function (t) { return t.indexOf('PE Ratio') !== -1; }
+  });
+  var data = parseSAPeHistory(html);
+  cache[T] = { day: day, data: data };
+  lsSet(PE5Y_KEY, cache);
+  return data;
+}
+
+/* Attach the 5Y average to a stock record (best-effort: any failure
+ * leaves the record untouched and the builder falls back to the
+ * current P/E). */
+async function pjEnsurePe5y(d) {
+  if (!d || !d.ticker || isNum(d.pe5yAvg)) return d;
+  try {
+    var pe = await fetchPe5yAvg(d.ticker);
+    if (pe) { d.pe5yAvg = pe.avg; d.pe5yYears = pe.years; }
+  } catch (e) {}
+  return d;
+}
+
 /* The EPS peak-cliff, same detection as the trajectory chart: a later
  * consensus year falls 10%+ below the running peak. */
 function epsCliffInfo(d) {
@@ -1242,6 +1293,17 @@ function renderScorecard(d) {
     $('pj-ticker').value = d.ticker;
     fillProjection(d);
     runProjection();
+    if (!isNum(d.pe5yAvg)) {
+      pjEnsurePe5y(d).then(function () {
+        if (isNum(d.pe5yAvg) && String($('pj-mult').value) === String(pjMultAuto) && ($('pj-ticker').value || '').trim().toUpperCase() === d.ticker) {
+          $('pj-mult').value = Math.round(d.pe5yAvg * 10) / 10;
+          pjMultAuto = $('pj-mult').value;
+          pjPeNote = 'exit P/E = ' + (d.pe5yYears >= 5 ? '5-yr' : d.pe5yYears + '-yr') + ' avg P/E ' + fmtNum(d.pe5yAvg, 1) + '\u00d7';
+          $('pj-status').textContent = 'Loaded ' + d.ticker + ' from the scorecard \u2014 ' + pjPeNote + '.';
+          runProjection();
+        }
+      });
+    }
   });
   $('sc-refresh').addEventListener('click', function () { runSearch(d.ticker, true); });
 }
@@ -1558,6 +1620,7 @@ function onPjPathEdit(e) {
     }
   }
 }
+var pjPeNote = '', pjMultAuto = null;
 function fillProjection(d) {
   if (isNum(d.price)) $('pj-price').value = d.price;
   var base = isNum(d.epsTTM) ? d.epsTTM : (isNum(d.epsNextY) ? d.epsNextY :
@@ -1565,9 +1628,20 @@ function fillProjection(d) {
   if (isNum(base)) $('pj-eps').value = base;
   if (isNum(d.epsGrowth5Y)) $('pj-growth').value = Math.max(-20, Math.min(60, Math.round(d.epsGrowth5Y)));
   else if (isNum(d.epsGrowthNextY)) $('pj-growth').value = Math.round(Math.max(-20, Math.min(60, d.epsGrowthNextY)));
-  // Exit P/E starts at the stock's current trailing (TTM) P/E — the
-  // no-multiple-expansion assumption — and stays editable.
-  if (isNum(d.pe) && d.pe > 0) $('pj-mult').value = Math.round(d.pe * 10) / 10;
+  // Exit P/E starts at the stock's 5-year average P/E (StockAnalysis
+  // ratios history) — what the market has paid across a full cycle.
+  // Falls back to the current trailing P/E when no usable history
+  // exists; either way the box stays editable.
+  pjPeNote = '';
+  if (isNum(d.pe5yAvg) && d.pe5yAvg > 0) {
+    $('pj-mult').value = Math.round(d.pe5yAvg * 10) / 10;
+    pjMultAuto = $('pj-mult').value;
+    pjPeNote = 'exit P/E = ' + (d.pe5yYears >= 5 ? '5-yr' : d.pe5yYears + '-yr') + ' avg P/E ' + fmtNum(d.pe5yAvg, 1) + '\u00d7';
+  } else if (isNum(d.pe) && d.pe > 0) {
+    $('pj-mult').value = Math.round(d.pe * 10) / 10;
+    pjMultAuto = $('pj-mult').value;
+    pjPeNote = 'exit P/E = current P/E ' + fmtNum(d.pe, 1) + '\u00d7 (no 5-yr history)';
+  }
   // Year-by-year path: the first row is the current TTM position (EPS and
   // its actual TTM growth), then the analysts' forecast years, up to 5.
   var ttmRow = isNum(d.epsTTM) ? {
@@ -1594,9 +1668,13 @@ async function loadProjectionTicker() {
   status.className = 'status';
   status.innerHTML = '<span class="spinner"></span>Loading live data for ' + esc(T) + '…';
   try {
+    var peP = fetchPe5yAvg(T).catch(function () { return null; });
     var d = await fetchStock(T);
+    var pe5 = await peP;
+    if (pe5) { d.pe5yAvg = pe5.avg; d.pe5yYears = pe5.years; }
     fillProjection(d);
     var bits = [];
+    if (pjPeNote) bits.push(pjPeNote);
     if (isNum(d.price)) bits.push('price ' + fmtMoney(d.price));
     if (isNum(d.epsTTM)) bits.push('EPS (TTM) ' + fmtMoney(d.epsTTM));
     var fcBits = (d.epsForecasts || []).filter(function (r) { return r && isNum(r.eps); }).slice(0, 5);
@@ -3986,5 +4064,5 @@ if (typeof document !== 'undefined' && document.getElementById) {
 }
 /* Node export for offline pipeline tests (ignored in the browser). */
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr, buildSwot: buildSwot, tickerSuggestions: tickerSuggestions, pjFadeGrowth: pjFadeGrowth, pfPaletteColors: pfPaletteColors };
+  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr, buildSwot: buildSwot, tickerSuggestions: tickerSuggestions, pjFadeGrowth: pjFadeGrowth, pfPaletteColors: pfPaletteColors, parseSAPeHistory: parseSAPeHistory, fetchPe5yAvg: fetchPe5yAvg };
 }
