@@ -2520,6 +2520,20 @@ function pfEstKeyFor(p, hh) {
   return (hh && isNum(p.cost)) ? pfEstBuyKey(hh.pts, p.cost) : null;
 }
 function pfSoldShares(p) { return (p.sells || []).reduce(function (a, s) { return a + s.sh; }, 0); }
+
+/* Fully sold = the sales log covers everything the position ever
+ * accounted for: the logged purchases when they exist, otherwise the
+ * share count itself. (Before this, a position counted as closed
+ * only if the user ALSO zeroed the share count by hand -- so selling
+ * all 22 shares of NOW left it sitting in the open list, still
+ * adding its value to the totals.) */
+function pfIsClosed(pos) {
+  var sold = pfSoldShares(pos);
+  if (!(sold > 0)) return false;
+  var bought = (pos.buys || []).reduce(function (a, b) { return a + (b.sh || 0); }, 0);
+  var total = bought > 0 ? bought : (pos.shares || 0);
+  return sold >= total - 1e-9;
+}
 function pfPriceAt(pts, key) {
   if (!pts || !pts.length) return null;
   var last = null;
@@ -2620,7 +2634,7 @@ function getPfNews() {
 }
 function setPfNews(c) { try { localStorage.setItem('sr_pfnews_v1', JSON.stringify(c)); } catch (e) {} }
 function pfNewsTickers() {
-  return getPortfolio().filter(function (p) { return p.shares > 0; }).map(function (p) { return p.ticker; });
+  return getPortfolio().filter(function (p) { return p.shares > 0 && !pfIsClosed(p); }).map(function (p) { return p.ticker; });
 }
 function pfNewsStale() {
   var c = getPfNews();
@@ -2726,6 +2740,7 @@ async function renderPortfolio(doFetch) {
   // First pass: derive everything per holding and total it up.
   var totVal = 0, totInc = 0, totCost = 0, anyCost = false, dayNum = 0, dayDen = 0;
   var rows = positions.map(function (p) {
+    var closed = pfIsClosed(p);
     var qt = q[p.ticker] || {};
     var px = isNum(qt.price) ? qt.price : null;
     var val = isNum(px) ? px * p.shares : null;
@@ -2733,16 +2748,18 @@ async function renderPortfolio(doFetch) {
     var costTot = isNum(p.cost) ? p.cost * p.shares : null;
     var gain = (isNum(val) && isNum(costTot)) ? val - costTot : null;
     var gainPct = (isNum(gain) && costTot > 0) ? gain / costTot * 100 : null;
-    if (isNum(val)) totVal += val;
-    if (isNum(inc)) totInc += inc;
-    if (isNum(costTot)) { totCost += costTot; anyCost = true; }
-    if (isNum(val) && isNum(qt.dayChg)) { dayNum += val * qt.dayChg; dayDen += val; }
-    return { p: p, qt: qt, px: px, val: val, inc: inc, gain: gain, gainPct: gainPct };
+    if (!closed) {
+      if (isNum(val)) totVal += val;
+      if (isNum(inc)) totInc += inc;
+      if (isNum(costTot)) { totCost += costTot; anyCost = true; }
+      if (isNum(val) && isNum(qt.dayChg)) { dayNum += val * qt.dayChg; dayDen += val; }
+    }
+    return { p: p, qt: qt, px: px, val: val, inc: inc, gain: gain, gainPct: gainPct, closed: closed };
   });
   var anyPx = totVal > 0;
   var dayPct = dayDen > 0 ? dayNum / dayDen : null;
   // Colors follow value rank so the chart, its labels and the rows agree.
-  var ranked = rows.filter(function (r) { return isNum(r.val) && r.val > 0; }).slice().sort(function (a, b) { return b.val - a.val; });
+  var ranked = rows.filter(function (r) { return !r.closed && isNum(r.val) && r.val > 0; }).slice().sort(function (a, b) { return b.val - a.val; });
   var sliceColors = pfPaletteColors(ranked.length);
   var colorOf = {};
   ranked.forEach(function (r, i) { colorOf[r.p.ticker] = sliceColors[i]; });
@@ -2751,7 +2768,7 @@ async function renderPortfolio(doFetch) {
   var html = '', htmlClosed = '';
   ordered.forEach(function (r) {
     var p = r.p, qt = r.qt;
-    var isClosed = !(p.shares > 0) && !!(p.sells && p.sells.length);
+    var isClosed = r.closed;
     var rzH = isClosed ? pfRealized(p, pfHistAll()[p.ticker]) : null;
     var frac = (isNum(r.val) && totVal > 0) ? r.val / totVal * 100 : null;
     var open = !!pfOpen[p.ticker];
@@ -2873,7 +2890,7 @@ async function renderPortfolio(doFetch) {
     // the day's dollar move (big) and its weighted % (label).
     var dayDol = null;
     rows.forEach(function (r) {
-      if (isNum(r.val) && isNum(r.qt.dayChg)) dayDol = (dayDol || 0) + r.val * r.qt.dayChg / (100 + r.qt.dayChg);
+      if (!r.closed && isNum(r.val) && isNum(r.qt.dayChg)) dayDol = (dayDol || 0) + r.val * r.qt.dayChg / (100 + r.qt.dayChg);
     });
     var center;
     if (isNum(dayDol) && isNum(dayPct)) {
