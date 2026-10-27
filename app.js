@@ -2799,7 +2799,8 @@ async function renderPortfolio(doFetch) {
               logged2 += b.sh;
               var bk = pfDkey(new Date(b.d + 'T12:00:00'));
               var pxTxt = '';
-              if (hh) { for (var z = 0; z < hh.pts.length; z++) { if (hh.pts[z][0] <= bk) pxTxt = ' @ ' + fmtMoney(hh.pts[z][1]); else break; } }
+              if (isNum(b.px)) pxTxt = ' @ ' + fmtMoney(b.px);
+              else if (hh) { for (var z = 0; z < hh.pts.length; z++) { if (hh.pts[z][0] <= bk) pxTxt = ' @ ' + fmtMoney(hh.pts[z][1]); else break; } }
               return '<div class="pf-buy-row"><button class="pf-buy-txt" data-pf-buyedit="' + esc(p.ticker) + '|' + bi + '"><span>' + esc(b.d) + '</span><span>' + fmtShares(b.sh) + ' shares' + pxTxt + '</span></button><button class="link-btn danger pf-buy-del" data-pf-buydel="' + esc(p.ticker) + '|' + bi + '">\u2715</button></div>';
             }).join('');
             var grossD = p.shares + pfSoldShares(p);
@@ -2906,7 +2907,7 @@ async function renderPortfolio(doFetch) {
   var yld = (anyPx && totVal > 0) ? totInc / totVal * 100 : null;
   var totGain = totVal - totCost;
   sumBox.innerHTML = '<div class="card"><div class="pf-sum-v">' + (anyPx ? fmtMoney(totVal, 0) : '\u2014') + '</div>' +
-    '<div class="wl-meta">Total value \u00b7 ' + positions.length + ' holding' + (positions.length === 1 ? '' : 's') + '</div>' +
+    '<div class="wl-meta">Total value \u00b7 ' + rows.filter(function (r) { return !r.closed; }).length + ' holding' + (rows.filter(function (r) { return !r.closed; }).length === 1 ? '' : 's') + '</div>' +
     '<div class="pf-sum-row"><span>Est. dividends <b>' + fmtMoney(totInc, 0) + '/yr</b>' + (isNum(yld) ? ' \u00b7 ' + fmtNum(yld, 2) + '% yield' : '') + '</span>' +
     (anyCost && totCost > 0 ? '<span>Total gain/loss <b class="' + (totGain >= 0 ? 'up' : 'down') + '">' + (totGain >= 0 ? '+' : '') + fmtMoney(totGain, 0) + ' (' + fmtPct(totGain / totCost * 100) + ')</b></span>' : '') +
     '</div>' + chartHtml + '</div>';
@@ -2983,8 +2984,13 @@ async function renderPortfolio(doFetch) {
         window.alert('That would make ' + fmtShares(logged + sh) + ' shares purchased, but ' + T + ' only accounts for ' + fmtShares(grossB) + ' in total (' + fmtShares(pos.shares) + ' held + ' + fmtShares(pfSoldShares(pos)) + ' sold). Enter fewer shares, or update the holding first with Edit.');
         return;
       }
+      var prB = window.prompt('Purchase price per share for ' + T + ' ($, blank = that day\u2019s closing price):', '');
+      if (prB === null) return;
+      var pxB = parseFloat(prB);
       if (!pos.buys) pos.buys = [];
-      pos.buys.push({ d: d, sh: sh });
+      var entryB = { d: d, sh: sh };
+      if (isNum(pxB) && pxB > 0) entryB.px = pxB;
+      pos.buys.push(entryB);
       pos.buys.sort(function (x, y) { return x.d < y.d ? -1 : 1; });
       setPortfolio(pf);
       renderPortfolio(false);
@@ -3063,7 +3069,12 @@ async function renderPortfolio(doFetch) {
       if (sh === null) return;
       if (!isNum(sh) || sh <= 0) { window.alert('Enter the number of shares bought.'); return; }
       if (others + sh > pos.shares + pfSoldShares(pos) + 1e-9) { window.alert('That would put purchases past the total shares this position accounts for. Raise the share count or lower the amount.'); return; }
-      pos.buys[idx] = { d: d, sh: sh };
+      var prE = window.prompt('Purchase price per share for ' + parts[0] + ' ($, blank = that day\u2019s closing price):', isNum(cur.px) ? cur.px : '');
+      if (prE === null) return;
+      var pxE = parseFloat(prE);
+      var entryE = { d: d, sh: sh };
+      if (isNum(pxE) && pxE > 0) entryE.px = pxE;
+      pos.buys[idx] = entryE;
       pos.buys.sort(function (x, y) { return x.d < y.d ? -1 : 1; });
       setPortfolio(pf);
       renderPortfolio(false);
@@ -3228,7 +3239,7 @@ function paintBench(box, hist, positions) {
         var bd = pfDkey(new Date(b.d + 'T12:00:00'));
         if (firstD === null) firstD = bd;
         var bp = priceAt(hh.pts, bd);
-        lots.push({ d: bd, t: p.ticker, sh: take, amt: isNum(bp) ? take * bp : (isNum(p.cost) ? take * p.cost : 0), pre: bd < w0 });
+        lots.push({ d: bd, t: p.ticker, sh: take, amt: isNum(b.px) ? take * b.px : (isNum(bp) ? take * bp : (isNum(p.cost) ? take * p.cost : 0)), pre: bd < w0 });
         room -= take;
       });
       manualUsed++;
