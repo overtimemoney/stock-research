@@ -707,6 +707,34 @@ function epsPossibleCliff(d) {
   return { fy1Label: pts[1].label, fy2Label: pts[2].label, g1: g1, g2: g2 };
 }
 
+/* No-profit warning (Justin's rule, 2026-10-27): a company losing money
+ * today (TTM EPS <= 0) that analysts don't project to turn profitable
+ * for at least 4 more years gets a warning on the scorecard. Reads the
+ * FULL consensus path (d.epsForecasts, up to 5 years), not the 4-year
+ * slice the trajectory chart draws; fiscal labels come from the data.
+ * EPS of exactly 0 counts as not profitable. Fires when the first
+ * profitable projected year is the 5th or later, or when no projected
+ * year is profitable in a path covering 4+ years. A shorter all-loss
+ * path can't support the "4 or more years" claim, so it stays silent;
+ * an already-profitable company never fires (a later dip is the cliff
+ * check's job). Display only — no score reads this. */
+function epsProfitWarning(d) {
+  if (!isNum(d.epsTTM) || d.epsTTM > 0) return null;
+  var fc = (d.epsForecasts || []).filter(function (f) { return f && isNum(f.eps); });
+  var label = function (f) { return 'FY' + String(f.fiscalEnd || '').replace(/^[A-Za-z]+\s+/, ''); };
+  var firstProfit = -1;
+  for (var i = 0; i < fc.length; i++) { if (fc[i].eps > 0) { firstProfit = i; break; } }
+  if (firstProfit >= 4) {
+    return 'Not projected to be profitable for at least 4 more years — consensus EPS stays negative through ' +
+      label(fc[firstProfit - 1]) + '; first profit projected ' + label(fc[firstProfit]) + '.';
+  }
+  if (firstProfit === -1 && fc.length >= 4) {
+    return 'Not projected to be profitable in any year analysts cover — consensus EPS stays negative through ' +
+      label(fc[fc.length - 1]) + ', the last year forecast.';
+  }
+  return null;
+}
+
 /* Justin's boom-bust rule (2026-10-26): when the EPS cliff check fires
  * AND revenue doubled (actual or projected) within the 2 years leading
  * up to the revenue top, the name carries peak-cycle risk — the classic
@@ -1267,6 +1295,9 @@ function renderScorecard(d) {
   html += kvItem('Dividend yield', isNum(d.divYield) ? fmtNum(d.divYield, 2) + '%' : '—');
   html += kvItem('Analyst 1-yr target', isNum(d.target1Y) ? fmtMoney(d.target1Y) : '—');
   html += '</div>';
+
+  var profitWarn = epsProfitWarning(d);
+  if (profitWarn) html += '<div class="alert warn">⚠ ' + esc(profitWarn) + '</div>';
 
   html += '<div class="section-h">EPS trajectory — <span class="gold-text">cliff check</span></div>';
   if (traj.points.length >= 2) {
