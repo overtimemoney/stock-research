@@ -714,10 +714,11 @@ function epsPossibleCliff(d) {
  * slice the trajectory chart draws; fiscal labels come from the data.
  * EPS of exactly 0 counts as not profitable. Fires when the first
  * profitable projected year is the 5th or later, or when no projected
- * year is profitable in a path covering 4+ years. A shorter all-loss
- * path can't support the "4 or more years" claim, so it stays silent;
- * an already-profitable company never fires (a later dip is the cliff
- * check's job). Display only — no score reads this. */
+ * year is profitable in any available forecast path containing at
+ * least one projected year — including paths covering under 4 years.
+ * No forecast data stays silent, and an already-profitable company
+ * never fires (a later dip is the cliff check's job). Display only —
+ * no score reads this. */
 function epsProfitWarning(d) {
   if (!isNum(d.epsTTM) || d.epsTTM > 0) return null;
   var fc = (d.epsForecasts || []).filter(function (f) { return f && isNum(f.eps); });
@@ -728,7 +729,7 @@ function epsProfitWarning(d) {
     return 'Not projected to be profitable for at least 4 more years — consensus EPS stays negative through ' +
       label(fc[firstProfit - 1]) + '; first profit projected ' + label(fc[firstProfit]) + '.';
   }
-  if (firstProfit === -1 && fc.length >= 4) {
+  if (firstProfit === -1 && fc.length >= 1) {
     return 'Not projected to be profitable in any year analysts cover — consensus EPS stays negative through ' +
       label(fc[fc.length - 1]) + ', the last year forecast.';
   }
