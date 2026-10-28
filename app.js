@@ -2122,11 +2122,14 @@ function wlValuationDisplay(T) {
     // Any cached scorecard record beats a blank line: show its score even
     // when stale (fresh=false still triggers the background refetch).
     var sc = scoreStock(hit.data);
-    if (sc.score != null) return { score: sc.score, verdict: sc.verdict, fresh: (Date.now() - hit.ts) < CACHE_TTL };
+    if (sc.score != null) {
+      var rk = riskScore(hit.data);
+      return { score: sc.score, verdict: sc.verdict, risk: rk.score, fresh: (Date.now() - hit.ts) < CACHE_TTL };
+    }
   }
   var map = lsGet(WLVAL_KEY, {});
   var e = map[T];
-  if (e && isNum(e.score)) return { score: e.score, verdict: e.verdict, fresh: (Date.now() - (e.at || 0)) < 24 * 3600 * 1000 };
+  if (e && isNum(e.score)) return { score: e.score, verdict: e.verdict, risk: isNum(e.risk) ? e.risk : null, fresh: (Date.now() - (e.at || 0)) < 24 * 3600 * 1000 };
   return null;
 }
 /* Finviz-only valuation pass for the watchlist (one fetch per ticker). */
@@ -2137,9 +2140,12 @@ async function fetchWlValuation(T) {
       validate: function (t) { return t.indexOf('snapshot-td-label') !== -1; }
     });
     fillFromFinviz(d, fvHtml);
+    if (isNum(d.epsNextY) && isNum(d.epsThisY) && d.epsThisY > 0) d.epsGrowthNextY = (d.epsNextY / d.epsThisY - 1) * 100;
   } catch (e) {}
   var sc = scoreStock(d);
-  return sc.score != null ? { score: sc.score, verdict: sc.verdict } : null;
+  if (sc.score == null) return null;
+  var rk = riskScore(d);
+  return { score: sc.score, verdict: sc.verdict, risk: rk.score };
 }
 
 /* ============================== daily index scan ==============================
@@ -2668,11 +2674,11 @@ async function renderWatchlist(refresh) {
     var vmap = lsGet(WLVAL_KEY, {});
     var dirty = false;
     await Promise.all(rows.map(async function (r) {
-      if (r.val && r.val.fresh) return;
+      if (r.val && r.val.fresh && isNum(r.val.risk)) return;
       var v = await fetchWlValuation(r.item.ticker);
       if (v) {
-        vmap[r.item.ticker] = { score: v.score, verdict: v.verdict, at: Date.now() };
-        r.val = { score: v.score, verdict: v.verdict, fresh: true };
+        vmap[r.item.ticker] = { score: v.score, verdict: v.verdict, risk: v.risk, at: Date.now() };
+        r.val = { score: v.score, verdict: v.verdict, risk: v.risk, fresh: true };
         dirty = true;
       }
     }));
@@ -2708,7 +2714,7 @@ async function renderWatchlist(refresh) {
     }
     html += '<div class="wl-row"><div class="wl-left"><span class="wl-t">' + esc(item.ticker) + '</span>' +
       '<div class="wl-meta">Target buy: ' + (isNum(item.target) ? fmtMoney(item.target) : '\u2014') + '</div>' +
-      (r.val ? '<div class="wl-meta wl-val">Valuation <b style="color:hsl(' + Math.round(r.val.score * 1.2) + ', 78%, var(--val-l))">' + r.val.score + '</b></div>' : '') +
+      (r.val ? '<div class="wl-meta wl-val">Valuation <b style="color:hsl(' + Math.round(r.val.score * 1.2) + ', 78%, var(--val-l))">' + r.val.score + '</b>' + (isNum(r.val.risk) ? ' \u00b7 Risk <b style="color:hsl(' + Math.round((100 - r.val.risk) * 1.2) + ', 78%, var(--val-l))">' + r.val.risk + '</b>' : '') + '</div>' : '') +
       '</div>' +
       '<div class="wl-right"><div class="wl-price">' + (isNum(price) ? fmtMoney(price) : '\u2014') + '</div>' +
       '<div style="text-align:right">' + (r.err ? '<span class="factor-note">price unavailable</span>' : distHtml) + '</div>' +
