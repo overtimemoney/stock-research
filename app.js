@@ -2164,7 +2164,7 @@ var SCAN_IDXS = [
   { key: 'spx', label: 'S&P 500' },
   { key: 'rut', label: 'Russell 2000' }
 ];
-var SCAN_KEY = 'sr_scan_v3';
+var SCAN_KEY = 'sr_scan_v4';
 var scanRunning = false, scanActive = 0, scanCoolUntil = 0, scanTimer = null;
 
 function scanTodayKey() { return pfKeyToISO(pfDkey(new Date())); }
@@ -2250,7 +2250,7 @@ function scanFinalizeIdx(idxs) {
     out.push({ t: t, name: rec.name, score: combined, price: isNum(rec.price) ? rec.price : null });
   });
   out.sort(function (a, b) { return b.score - a.score; });
-  return out.slice(0, 5);
+  return out.slice(0, 10);
 }
 
 async function scanFetchPage(ixKey, v, r) {
