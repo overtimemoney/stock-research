@@ -2276,6 +2276,56 @@ async function scanFetchPage(ixKey, v, r) {
   return Promise.race([work, limit]);
 }
 
+/* Fallback route for scan pages (2026-10-28): every /screen page
+ * leaves through the relay Worker's single Cloudflare egress IP, and
+ * when Finviz flags that IP the whole scan stalls in cooldown cycles
+ * -- 'won't stop throttling'. This route pulls the same screener page
+ * through the public relays (different egress IPs) and extracts the
+ * rows here, with the worker's own extraction mirrored field-for-field. */
+var SCAN_VIEW_FIELDS = {
+  '121': ['marketCap', 'PE', 'forwardPE', 'PEG', 'epsYoY1', 'price', 'change'],
+  '161': ['grossMargin', 'netMargin', 'debtEq', 'curRatio'],
+  '171': ['high52w', 'beta']
+};
+function scanExtractRows(html, v) {
+  var anchor = '"data":{"rows":[';
+  var i = html.indexOf(anchor);
+  if (i < 0) return null;
+  var start = i + anchor.length - 1;
+  var j = html.indexOf('],"totalCount"', start);
+  if (j < 0) return null;
+  var rows = null, total = null;
+  try { rows = JSON.parse(html.slice(start, j + 1)); } catch (e) {}
+  if (!Array.isArray(rows)) return null;
+  var tm = html.slice(j, j + 80).match(/"totalCount":(\d+)/);
+  if (tm) total = parseInt(tm[1], 10);
+  var keep = SCAN_VIEW_FIELDS[v] || [];
+  var slim = rows.map(function (row) {
+    var n = {};
+    if (row.numbers) keep.forEach(function (k) { if (typeof row.numbers[k] === 'number') n[k] = row.numbers[k]; });
+    return { t: row.text ? row.text.ticker : '', name: row.text ? row.text.company : '', n: n };
+  }).filter(function (row) { return row.t; });
+  return { total: total, rows: slim };
+}
+
+async function scanFetchPageAlt(ixKey, v, r) {
+  var filter = ixKey === 'spx' ? 'idx_sp500' : 'idx_rut';
+  var url = 'https://finviz.com/screener?v=' + v + '&f=' + filter + (r > 1 ? '&r=' + r : '');
+  var work = (async function () {
+    var html = await relayFetch(url, {
+      timeout: 25000,
+      validate: function (t) { return t.indexOf('"data":{"rows"') !== -1; }
+    });
+    var data = scanExtractRows(html, v);
+    if (!data) { var e = new Error('screen payload'); e.status = 502; throw e; }
+    return data;
+  })();
+  var limit = new Promise(function (resolve, reject) {
+    setTimeout(function () { var e = new Error('screen timeout'); e.timeout = true; reject(e); }, 30000);
+  });
+  return Promise.race([work, limit]);
+}
+
 function scanSchedule(delay) {
   if (scanTimer) return;
   scanTimer = setTimeout(function () { scanTimer = null; scanStep(); scanStep(); }, delay);
@@ -2332,7 +2382,10 @@ function scanStep() {
   idxs.pending.shift();
   setScan(st);
   scanActive++;
-  scanFetchPage(jobIx, job[0], job[1]).then(function (data) {
+  scanFetchPage(jobIx, job[0], job[1]).catch(function (err) {
+    if (err && err.status === 502) return scanFetchPageAlt(jobIx, job[0], job[1]);
+    throw err;
+  }).then(function (data) {
     var st2 = getScan(); if (!st2) return;
     var ix2 = st2.idx[jobIx];
     if (isNum(data.total)) ix2.total = data.total;
