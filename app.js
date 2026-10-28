@@ -1935,7 +1935,7 @@ function qmBarsSVG(pts, fmt) {
   // charts, tighter when 17 bars share the width (Justin's ask,
   // 2026-10-26). Bars nearly touch for the same reason.
   var vfs = pts.length <= 8 ? 16.5 : pts.length <= 13 ? 14.5 : 12.5;
-  var out = '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Quarterly metric chart">';
+  var out = '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Metric chart">';
   out += '<line x1="' + padX + '" y1="' + zeroY + '" x2="' + (w - padX) + '" y2="' + zeroY + '" stroke="#3a372d" stroke-width="1"/>';
   pts.forEach(function (p, i) {
     var x = padX + i * bw + bw * 0.03, bwid = bw * 0.94;
