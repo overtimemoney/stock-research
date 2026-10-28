@@ -2574,7 +2574,7 @@ async function renderWatchlist(refresh) {
       '<span class="wl-sub"><button class="link-btn" data-research="' + esc(item.ticker) + '">Research</button>' +
       '<button class="link-btn" data-wl-edit="' + esc(item.ticker) + '">Edit target</button>' +
       '<a class="link-btn" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&ticker=' + encodeURIComponent(item.ticker) + '&type=10-Q&dateb=&owner=include&count=10" target="_blank" rel="noopener">Earnings report</a>' +
-      '<a class="link-btn" href="https://www.nasdaq.com/market-activity/stocks/' + encodeURIComponent(item.ticker.toLowerCase()) + '/earnings" target="_blank" rel="noopener">Earnings call</a>' +
+      '<a class="link-btn" href="https://www.youtube.com/results?search_query=' + encodeURIComponent(item.ticker + ' earnings call') + '" target="_blank" rel="noopener">Earnings call</a>' +
       '<button class="link-btn danger" data-wl-del="' + esc(item.ticker) + '">Remove</button></span></div></div></div>';
   });
   $('wl-status').textContent = '';
