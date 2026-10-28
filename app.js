@@ -2301,6 +2301,14 @@ function scanStep() {
         results[ix.key] = scanFinalizeIdx(z);
       });
       st.results = results;
+      // Feed the persistent dataset: any index that landed complete
+      // becomes the stored copy future days refresh incrementally.
+      SCAN_IDXS.forEach(function (ix) {
+        var z = st.idx[ix.key];
+        if (z.started === false) return;
+        if (z.pending.length || z.dropped.length) return;
+        if (Object.keys(z.merged).length > 100) scanPersistIdx(ix.key, z.merged);
+      });
       if (droppedTotal === 0) {
         st.done = true;
         st.partial = false;
@@ -2371,11 +2379,142 @@ function scanResume() {
   scanPump();
 }
 
+/* ---------- persistent scan dataset + earnings refresh ----------
+ * Justin's ask (2026-10-28): don't rescan all ~2,460 companies every
+ * day. A completed full scan stores every company's record; on later
+ * days only the companies that reported earnings since then get
+ * re-fetched (one Finviz quote page each -- earnings are when the
+ * numbers actually change), and the lists re-rank from the stored
+ * data. A full rescan still runs weekly (prices drift, companies
+ * come and go) or whenever he taps Rescan. */
+var SCAN_DATA_KEY = 'sr_scan_data_v1';
+function getScanData() {
+  try { var s = JSON.parse(localStorage.getItem(SCAN_DATA_KEY) || 'null'); return (s && s.recs) ? s : null; }
+  catch (e) { return null; }
+}
+function setScanData(s) { try { localStorage.setItem(SCAN_DATA_KEY, JSON.stringify(s)); } catch (e) {} }
+
+function scanPersistIdx(ixKey, merged) {
+  var ds = getScanData() || { recs: {}, asOf: null, lastRefreshDay: null, lastRefreshCount: 0 };
+  Object.keys(merged).forEach(function (t) {
+    var r = merged[t];
+    ds.recs[t] = { name: r.name, ix: ixKey, forwardPE: r.forwardPE, peg: r.peg, epsGrowthNextY: r.epsGrowthNextY,
+      price: r.price, marketCap: r.marketCap, grossMargin: r.grossMargin, profitMargin: r.profitMargin,
+      debtEq: r.debtEq, currentRatio: r.currentRatio, pctBelowHigh: r.pctBelowHigh, beta: r.beta };
+  });
+  if (ixKey === 'spx') ds.asOf = scanTodayKey();
+  setScanData(ds);
+}
+
+/* One Finviz quote page -> a scan-shaped record (same fields the
+ * screener merge produces). Missing fields keep the stored values. */
+function scanRecordFromQuote(html, prev) {
+  var d = { ticker: '', sources: [], errors: [] };
+  try { fillFromFinviz(d, html); } catch (e) { return null; }
+  var rec = { name: d.companyName || (prev && prev.name) || '', ix: prev && prev.ix };
+  ['forwardPE', 'peg', 'price', 'marketCap', 'grossMargin', 'profitMargin', 'debtEq', 'beta', 'currentRatio', 'pctBelowHigh'].forEach(function (k) {
+    rec[k] = isNum(d[k]) ? d[k] : (prev ? prev[k] : null);
+  });
+  if (isNum(d.epsNextY) && isNum(d.epsThisY) && d.epsThisY > 0) rec.epsGrowthNextY = (d.epsNextY / d.epsThisY - 1) * 100;
+  else rec.epsGrowthNextY = prev ? prev.epsGrowthNextY : null;
+  return rec;
+}
+
+function scanRankFromData(ds) {
+  var byIx = { spx: { merged: {} }, rut: { merged: {} } };
+  Object.keys(ds.recs).forEach(function (t) {
+    var r = ds.recs[t];
+    if (byIx[r.ix]) byIx[r.ix].merged[t] = r;
+  });
+  return { spx: scanFinalizeIdx(byIx.spx), rut: scanFinalizeIdx(byIx.rut) };
+}
+
+function scanShowDataResults(ds, refreshed) {
+  var today = scanTodayKey();
+  var s = getScan();
+  if (!s || s.date !== today) s = scanFreshState();
+  s.results = scanRankFromData(ds);
+  s.done = true;
+  s.partial = false;
+  s.fromData = true;
+  s.dataAsOf = ds.asOf;
+  s.refreshed = refreshed;
+  SCAN_IDXS.forEach(function (ix) {
+    var n = Object.keys(ds.recs).filter(function (t) { return ds.recs[t].ix === ix.key; }).length;
+    s.idx[ix.key].scored = n;
+    // Stored rows for this index mean its list renders; leaving the
+    // fresh-day started=false in place would swap in the on-demand
+    // "Scan Russell" button instead of the stored Russell list.
+    if (n > 0) s.idx[ix.key].started = true;
+  });
+  setScan(s);
+  renderScanCard();
+}
+
+var scanRefreshing = false;
+async function scanRefreshReporters() {
+  var ds = getScanData();
+  if (!ds || scanRefreshing) return;
+  var today = scanTodayKey();
+  if (ds.lastRefreshDay === today) { scanShowDataResults(ds, ds.lastRefreshCount || 0); return; }
+  scanRefreshing = true;
+  scanShowDataResults(ds, null); // stored lists instantly; counts update when the refresh lands
+  try {
+    // Earnings calendar for the days since the last refresh (plus a
+    // one-day overlap: evening reporters update Finviz overnight),
+    // capped at 10 days back.
+    var startMs = Date.parse((ds.lastRefreshDay || ds.asOf) + 'T12:00:00') - 86400000;
+    var todayMs = Date.parse(today + 'T12:00:00');
+    var reporters = {};
+    for (var ms = startMs; ms <= todayMs; ms += 86400000) {
+      if ((todayMs - ms) / 86400000 > 10) continue;
+      var iso = pfKeyToISO(pfDkey(new Date(ms)));
+      try {
+        var cal = await relayJSON('https://api.nasdaq.com/api/calendar/earnings?date=' + iso);
+        var rows = (cal && cal.data && cal.data.rows) || [];
+        rows.forEach(function (r) { if (r.symbol && ds.recs[r.symbol]) reporters[r.symbol] = 1; });
+      } catch (e) {}
+    }
+    var list = Object.keys(reporters);
+    var updated = 0;
+    for (var i = 0; i < list.length; i += 2) {
+      var batch = list.slice(i, i + 2);
+      await Promise.all(batch.map(async function (t) {
+        try {
+          var html = await relayFetch('https://finviz.com/quote.ashx?t=' + encodeURIComponent(t), { timeout: 20000 });
+          var rec = scanRecordFromQuote(html, ds.recs[t]);
+          if (rec) { ds.recs[t] = rec; updated++; }
+        } catch (e) {}
+      }));
+      if (i + 2 < list.length) await new Promise(function (r) { setTimeout(r, 300); });
+    }
+    ds.lastRefreshDay = today;
+    ds.lastRefreshCount = updated;
+    setScanData(ds);
+    scanShowDataResults(ds, updated);
+  } catch (e) {
+    scanShowDataResults(ds, 0);
+  }
+  scanRefreshing = false;
+}
+
 function maybeStartScan() {
   var s = getScan();
-  if (!s || s.date !== scanTodayKey()) { s = scanFreshState(); setScan(s); }
+  var today = scanTodayKey();
+  if (s && s.date === today) {
+    renderScanCard();
+    if (!s.done && !s.partial && !s.fromData) scanPump();
+    return;
+  }
+  var ds = getScanData();
+  if (ds && ds.asOf) {
+    var ageDays = (Date.parse(today + 'T12:00:00') - Date.parse(ds.asOf + 'T12:00:00')) / 86400000;
+    if (ageDays < 7) { scanRefreshReporters(); return; }
+  }
+  s = scanFreshState();
+  setScan(s);
   renderScanCard();
-  if (!s.done && !s.partial) scanPump();
+  scanPump();
 }
 
 function scanScoreClass(score) { return score >= 70 ? 'up' : (score >= 45 ? '' : 'down'); }
@@ -2451,7 +2590,11 @@ function renderScanCard() {
   };
   if (s.done && s.results) {
     html += listsHtml();
-    html += '<div class="scan-foot">One combined score: 60% valuation + 40% safety (100 \u2212 risk: beta, debt, margins, size, EPS trend, current ratio), refreshed once a day. <button type="button" class="btn-mini" id="scan-rescan">Rescan</button></div>';
+    html += '<div class="scan-foot">One combined score: 60% valuation + 40% safety (100 \u2212 risk: beta, debt, margins, size, EPS trend, current ratio).' +
+      (s.fromData
+        ? ' Stored data from ' + esc(s.dataAsOf || '') + (s.refreshed === null ? ' \u2014 refreshing today\u2019s earnings reporters\u2026' : ' \u00b7 ' + (s.refreshed || 0) + ' earnings reporters refreshed today') + ' \u00b7 full rescan weekly.'
+        : ' Full scan from today.') +
+      ' <button type="button" class="btn-mini" id="scan-rescan">Rescan</button></div>';
   } else if (s.partial && s.results) {
     var scoredSum = 0, totalSum = 0, droppedSum = 0;
     SCAN_IDXS.forEach(function (ix) {
