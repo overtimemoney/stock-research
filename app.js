@@ -2599,6 +2599,10 @@ function maybeStartScan() {
   var s = getScan();
   var today = scanTodayKey();
   if (s && s.date === today) {
+    // No stored dataset yet but a hosted snapshot exists: it is at
+    // least as current as any in-progress grind, so load it instead
+    // of making the phone finish a 375-page scan even once.
+    if (!s.fromData && !getScanData()) { scanBootstrapFromHosted(); return; }
     renderScanCard();
     if (!s.done && !s.partial && !s.fromData) scanPump();
     return;
