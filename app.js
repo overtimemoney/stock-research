@@ -715,20 +715,62 @@ function pjMatchPe(pairs, gStar) {
   };
 }
 
-/* The growth rate of the projection's final year, from the path as
- * currently built (analyst years + faded extrapolation). */
+/* The growth rate of the projection's final year -- the year at the
+ * current horizon (the path can hold more rows than the horizon when
+ * the year count was just lowered). Analyst years + faded
+ * extrapolation, as currently built. */
 function pjExitGrowth() {
   var growths = pjGrowths(pjBaseEps(), pjPath);
-  for (var i = pjPath.length - 1; i >= 0; i--) {
+  var idx = pjTtmOffset() + pjYearsWanted() - 1;
+  if (idx >= pjPath.length) idx = pjPath.length - 1;
+  for (var i = idx; i >= 0; i--) {
     if (pjPath[i].ttm) continue;
     if (isNum(growths[i])) return growths[i];
   }
   return null;
 }
 
+/* The stock record behind the builder, kept so the auto exit P/E can
+ * be re-matched when the horizon (or the path) changes the exit
+ * year's growth. Null for saved-projection restores: those keep
+ * their exact saved assumptions. */
+var pjLoaded = null;
+
+/* Recompute the auto exit P/E for the current horizon (Justin's ask,
+ * 2026-10-29: changing the years projected changes the exit year,
+ * whose growth rate may match different historical years). Only ever
+ * touches the box while it still holds the auto value -- a manual
+ * override is his and stays. */
+function pjRefreshAutoMult() {
+  if (!pjLoaded) return;
+  var T = ($('pj-ticker').value || '').trim().toUpperCase();
+  if (!T || pjLoaded.ticker !== T) return;
+  if (String($('pj-mult').value) !== String(pjMultAuto)) return;
+  var gStar = pjExitGrowth();
+  var match = isNum(gStar) ? pjMatchPe(pjPePairs(pjLoaded), gStar) : null;
+  var val = null, note = '';
+  if (match) {
+    val = Math.round(match.mult * 10) / 10;
+    note = pjMatchNote(match, gStar);
+  } else if (isNum(pjLoaded.pe5yAvg) && pjLoaded.pe5yAvg > 0) {
+    val = Math.round(pjLoaded.pe5yAvg * 10) / 10;
+    note = 'exit P/E = ' + (pjLoaded.pe5yYears >= 5 ? '5-yr' : pjLoaded.pe5yYears + '-yr') + ' avg P/E ' + fmtNum(pjLoaded.pe5yAvg, 1) + '\u00d7';
+  } else if (isNum(pjLoaded.pe) && pjLoaded.pe > 0) {
+    val = Math.round(pjLoaded.pe * 10) / 10;
+    note = 'exit P/E = current P/E ' + fmtNum(pjLoaded.pe, 1) + '\u00d7 (no 5-yr history)';
+  }
+  if (val == null) return;
+  $('pj-mult').value = val;
+  pjMultAuto = $('pj-mult').value;
+  if (note && note !== pjPeNote) {
+    pjPeNote = note;
+    $('pj-status').textContent = 'Loaded ' + T + ' \u2014 ' + note + '.';
+  }
+}
+
 function pjMatchNote(match, gStar) {
   return 'exit P/E = ' + fmtNum(match.mult, 1) + '\u00d7 \u2014 avg P/E in ' +
-    match.years.map(function (y) { return 'FY' + String(y).slice(2); }).join(', ') +
+    match.years.slice().sort(function (x, y) { return x - y; }).map(function (y) { return 'FY' + String(y).slice(2); }).join(', ') +
     ', when revenue grew ~' + fmtNum(match.avgGrowth, 0) + '% (exit-yr growth ' + fmtNum(gStar, 0) + '%)';
 }
 
@@ -1626,6 +1668,8 @@ function pjSaveCurrent() {
 function pjRestore(T) {
   var s = getProjections()[T];
   if (!s) return;
+  pjLoaded = null;
+  pjMultAuto = null;
   $('pj-ticker').value = T;
   if (isNum(s.price)) $('pj-price').value = s.price;
   if (isNum(s.baseEps)) $('pj-eps').value = s.baseEps;
@@ -1794,6 +1838,7 @@ function onPjPathEdit(e) {
 }
 var pjPeNote = '', pjMultAuto = null;
 function fillProjection(d) {
+  pjLoaded = d;
   if (isNum(d.price)) $('pj-price').value = d.price;
   var base = isNum(d.epsTTM) ? d.epsTTM : (isNum(d.epsNextY) ? d.epsNextY :
     (d.epsForecasts && d.epsForecasts[0] ? d.epsForecasts[0].eps : null));
@@ -1883,13 +1928,14 @@ function runProjection() {
   var price = parseFloat($('pj-price').value);
   var base = pjBaseEps();
   var years = pjYearsWanted();
-  var mult = parseFloat($('pj-mult').value);
   var out = $('pj-result');
+  if (!pjPath.length) pjSynthPath();
+  pjEnsureYears(years + pjTtmOffset());
+  pjRefreshAutoMult();
+  var mult = parseFloat($('pj-mult').value);
   if (!isNum(price) || !isNum(base) || !isNum(mult)) {
     out.innerHTML = '<div class="alert warn">Fill in price, EPS base and exit P/E to build the projection.</div>'; return;
   }
-  if (!pjPath.length) pjSynthPath();
-  pjEnsureYears(years + pjTtmOffset());
   renderPjPath();
   var path = pjPath.slice(0, years + pjTtmOffset());
   var scen = [
@@ -4554,7 +4600,7 @@ function initApp() {
   $('compare-form').addEventListener('submit', function (e) { e.preventDefault(); runCompare(); });
   $('pj-run').addEventListener('click', runProjection);
   $('pj-path').addEventListener('change', onPjPathEdit);
-  $('pj-years').addEventListener('change', function () { renderPjPath(); });
+  $('pj-years').addEventListener('change', function () { runProjection(); });
   $('pj-growth').addEventListener('change', function () { if (!pjPathFromForecast) pjSynthPath(); renderPjPath(); });
   $('pj-eps').addEventListener('change', function () { if (!pjPathFromForecast) pjSynthPath(); renderPjPath(); });
   renderPjPath();
