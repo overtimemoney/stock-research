@@ -47,10 +47,10 @@
   --ink2: #cfc9b8;
   --muted: #a79f8c;
   --line: #37342c;
-  --bg: #0d0d0f;
-  --card: #161617;
+  --bg: #000000;
+  --card: #000000;
   --field: #1e1e20;
-  --topbar: rgba(13,13,15,.92);
+  --topbar: rgba(0,0,0,.92);
   --shadow: rgba(0,0,0,.45);
   --row-line: #29271f;
   --accent-text: #f0b93e;
@@ -535,3 +535,10 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .ob-callout { font-size: 16px; font-weight: 700; line-height: 1.5; background: var(--chip-bg); border: 1px solid var(--line); border-left: 4px solid var(--gold); border-radius: 12px; padding: 13px 14px; margin: 0 0 14px; }
 .ob-punch { font-size: 14.5px; line-height: 1.6; color: var(--ink2); margin: 0 0 12px; }
 .ob-disclaimer { font-size: 11.5px; line-height: 1.5; color: var(--muted); margin: 0 0 16px; }
+
+/* Full-screen stock overview: a panel that pans in from the right
+ * over the watchlist and slides back out to the right on close
+ * (Justin's ask, 2026-10-29). Lives outside the tab system so the
+ * watchlist underneath never unloads. */
+.ov-panel { position: fixed; inset: 0; z-index: 80; background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; padding: calc(12px + env(safe-area-inset-top)) 14px calc(18px + env(safe-area-inset-bottom)); transform: translateX(103%); transition: transform .28s cubic-bezier(.32,.72,.24,1); pointer-events: none; }
+.ov-panel.open { transform: translateX(0); pointer-events: auto; }

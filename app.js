@@ -3120,24 +3120,64 @@ function renderOverview(d, item) {
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' +
     '<button type="button" class="btn-ghost" id="ov-scorecard">Full scorecard</button>' +
     '<button type="button" class="btn-ghost" id="ov-project">Projection</button>' +
+    '<button type="button" class="btn-ghost" id="ov-edit-target">Edit target</button>' +
+    '<button type="button" class="btn-ghost" id="ov-remove">Remove</button>' +
     '<a class="btn-ghost" style="text-decoration:none" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&ticker=' + encodeURIComponent(d.ticker) + '&type=10-Q&dateb=&owner=include&count=10" target="_blank" rel="noopener">Earnings report</a>' +
     '<a class="btn-ghost" style="text-decoration:none" href="https://www.youtube.com/results?search_query=' + encodeURIComponent(d.ticker + ' earnings call') + '" target="_blank" rel="noopener">Earnings call</a></div>';
   html += '</div>';
   return html;
 }
 
+function closeOverview() {
+  ovTicker = null;
+  var p = $('tab-overview');
+  if (p) p.classList.remove('open');
+}
+
 function wireOverviewActions(d) {
   var sc = $('ov-scorecard');
-  if (sc) sc.addEventListener('click', function () { switchTab('scorecard'); $('search-input').value = d.ticker; runSearch(d.ticker); });
+  if (sc) sc.addEventListener('click', function () { closeOverview(); switchTab('scorecard'); $('search-input').value = d.ticker; runSearch(d.ticker); });
   var pj = $('ov-project');
-  if (pj) pj.addEventListener('click', function () { switchTab('tools'); $('pj-ticker').value = d.ticker; loadProjectionTicker(); });
+  if (pj) pj.addEventListener('click', function () {
+    closeOverview();
+    switchTab('tools');
+    // Same behavior the row's Projection button had: a saved
+    // projection restores; otherwise the builder loads fresh data.
+    if (getProjections()[d.ticker]) {
+      pjRestore(d.ticker);
+      var el = $('pj-result');
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start' });
+    } else {
+      $('pj-ticker').value = d.ticker;
+      loadProjectionTicker();
+    }
+  });
+  var et = $('ov-edit-target');
+  if (et) et.addEventListener('click', function () {
+    var cur = getWatchlist().filter(function (x) { return x.ticker === d.ticker; })[0];
+    var v = window.prompt('Target buy price for ' + d.ticker + ' ($):', cur && isNum(cur.target) ? cur.target : '');
+    if (v === null) return;
+    var n = parseFloat(v);
+    var wl2 = getWatchlist();
+    wl2.forEach(function (x) { if (x.ticker === d.ticker) x.target = isNum(n) ? n : null; });
+    setWatchlist(wl2);
+    renderWatchlist(false);
+    openOverview(d.ticker);
+  });
+  var rm = $('ov-remove');
+  if (rm) rm.addEventListener('click', function () {
+    setWatchlist(getWatchlist().filter(function (x) { return x.ticker !== d.ticker; }));
+    closeOverview();
+    renderWatchlist(false);
+  });
 }
 
 function openOverview(T) {
   ovTicker = T;
   var item = null;
   getWatchlist().forEach(function (w) { if (w.ticker === T) item = w; });
-  switchTab('overview');
+  var panel = $('tab-overview');
+  if (panel) { panel.scrollTop = 0; panel.classList.add('open'); }
   var body = $('ov-body');
   var cache = lsGet(CACHE_KEY, {});
   var hit = cache[T];
@@ -3203,26 +3243,16 @@ async function renderWatchlist(refresh) {
   var html = '';
   rows.forEach(function (r) {
     var item = r.item, price = r.price;
-    var distHtml = '<span class="pill far">no target set</span>';
-    if (isNum(price) && isNum(item.target) && item.target > 0) {
-      var above = (price / item.target - 1) * 100;
-      if (price <= item.target) distHtml = '<span class="pill hit">\u2713 AT / BELOW TARGET</span>';
-      else if (above <= 10) distHtml = '<span class="pill near">' + fmtNum(above, 1) + '% above target</span>';
-      else distHtml = '<span class="pill far">' + fmtNum(above, 1) + '% above target</span>';
-    }
+    // Thumbnail-clean rows (Justin's ask, 2026-10-29): ticker, price
+    // and the valuation/risk line only. Target, distance-to-target,
+    // projection and the action menu all live in the full-screen
+    // overview a tap opens.
     html += '<div class="wl-row" data-ticker="' + esc(item.ticker) + '"><div class="wl-left"><span class="wl-t">' + esc(item.ticker) + '</span>' +
-      '<div class="wl-meta">Target buy: ' + (isNum(item.target) ? fmtMoney(item.target) : '\u2014') + '</div>' +
       '<div class="wl-meta wl-val">' + (r.val ? wlValInner(r.val) : '') + '</div>' +
       '</div>' +
       '<div class="wl-right"><div class="wl-price">' + (isNum(price) ? fmtMoney(price) : '\u2014') + '</div>' +
-      '<div style="text-align:right">' + (r.err ? '<span class="factor-note">price unavailable</span>' : distHtml) + '</div>' +
-      '<div class="wl-actions">' + '<button class="link-btn" data-wl-proj="' + esc(item.ticker) + '">Projection' + (r.proj && isNum(r.projCagr) ? ' \u00b7 Base ' + fmtPct(r.projCagr) + '/yr' : '') + '</button>' +
-      '<button class="link-btn wl-more-btn" data-wl-more="' + esc(item.ticker) + '" aria-label="More actions">\u00b7\u00b7\u00b7</button>' +
-      '<span class="wl-sub"><button class="link-btn" data-research="' + esc(item.ticker) + '">Research</button>' +
-      '<button class="link-btn" data-wl-edit="' + esc(item.ticker) + '">Edit target</button>' +
-      '<a class="link-btn" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&ticker=' + encodeURIComponent(item.ticker) + '&type=10-Q&dateb=&owner=include&count=10" target="_blank" rel="noopener">Earnings report</a>' +
-      '<a class="link-btn" href="https://www.youtube.com/results?search_query=' + encodeURIComponent(item.ticker + ' earnings call') + '" target="_blank" rel="noopener">Earnings call</a>' +
-      '<button class="link-btn danger" data-wl-del="' + esc(item.ticker) + '">Remove</button></span></div></div></div>';
+      (r.err ? '<div style="text-align:right"><span class="factor-note">price unavailable</span></div>' : '') +
+      '</div></div>';
   });
   $('wl-status').textContent = '';
   box.innerHTML = html;
@@ -3232,48 +3262,6 @@ async function renderWatchlist(refresh) {
       if (e.target.closest('button, a, select, input')) return;
       var T = row.getAttribute('data-ticker');
       if (T) openOverview(T);
-    });
-  });
-  box.querySelectorAll('[data-research]').forEach(function (b) {
-    b.addEventListener('click', function () { switchTab('scorecard'); $('search-input').value = b.getAttribute('data-research'); runSearch(b.getAttribute('data-research')); });
-  });
-  box.querySelectorAll('[data-wl-proj]').forEach(function (b) {
-    b.addEventListener('click', function () {
-      var T = b.getAttribute('data-wl-proj');
-      switchTab('tools');
-      if (getProjections()[T]) {
-        pjRestore(T);
-        var el = $('pj-result');
-        if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start' });
-      } else {
-        $('pj-ticker').value = T;
-        loadProjectionTicker();
-      }
-    });
-  });
-  box.querySelectorAll('[data-wl-more]').forEach(function (b) {
-    b.addEventListener('click', function () {
-      var sub = b.parentElement ? b.parentElement.querySelector('.wl-sub') : null;
-      if (sub) sub.classList.toggle('open');
-    });
-  });
-  box.querySelectorAll('[data-wl-del]').forEach(function (b) {
-    b.addEventListener('click', function () {
-      setWatchlist(getWatchlist().filter(function (x) { return x.ticker !== b.getAttribute('data-wl-del'); }));
-      renderWatchlist(false);
-    });
-  });
-  box.querySelectorAll('[data-wl-edit]').forEach(function (b) {
-    b.addEventListener('click', function () {
-      var T = b.getAttribute('data-wl-edit');
-      var cur = getWatchlist().filter(function (x) { return x.ticker === T; })[0];
-      var v = window.prompt('Target buy price for ' + T + ' ($):', cur && isNum(cur.target) ? cur.target : '');
-      if (v === null) return;
-      var n = parseFloat(v);
-      var wl2 = getWatchlist();
-      wl2.forEach(function (x) { if (x.ticker === T) x.target = isNum(n) ? n : null; });
-      setWatchlist(wl2);
-      renderWatchlist(false);
     });
   });
 }
@@ -4756,7 +4744,7 @@ function initApp() {
     $('btn-settings').setAttribute('aria-expanded', 'false');
     switchTab('journal');
   });
-  $('ov-back').addEventListener('click', function () { switchTab('watchlist'); });
+  $('ov-back').addEventListener('click', function () { closeOverview(); });
   $('btn-settings').addEventListener('click', function (e) {
     e.stopPropagation();
     var willOpen = settingsMenu.hidden;
