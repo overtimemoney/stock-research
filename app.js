@@ -5108,6 +5108,206 @@ if (typeof document !== 'undefined' && document.getElementById) {
   }
 })();
 
+/* ==================== Onboarding: The 5% Quiz ====================
+ * First-launch overlay (markup: #ob-overlay in index.html). Shown ONCE
+ * per device: the localStorage flag sr_onboard_v1 is LOCAL-ONLY — it is
+ * deliberately NOT one of the Supabase synced keys, so finishing or
+ * skipping the quiz never touches sync. Skipping sets the flag too
+ * (shown once means shown once), and Settings -> "The 5% Quiz"
+ * replays it any time.
+ *
+ * Every number on the chart comes from the same future-value-of-an-
+ * annuity formula, computed live: $500/month = $6,000/year, annual
+ * compounding, contributions at each year-end, FV = 6000*((1+r)^t-1)/r.
+ * At t=40 that gives $2,655,555 at 10%, $10,674,542 at 15% and
+ * $44,063,147 at 20% — the graph and the quiz answers can't disagree.
+ * A failure anywhere in this block must never break the app, so the
+ * whole thing is guarded and returns quietly. */
+(function srOnboarding() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  if (typeof localStorage === 'undefined') return;
+  try {
+    var FLAG = 'sr_onboard_v1';
+    var overlay = document.getElementById('ob-overlay');
+    if (!overlay) return;
+    var scroller = document.getElementById('ob-scroll');
+
+    var YEARLY = 6000, YEARS = 40;
+    function fv(rate, t) { return YEARLY * ((Math.pow(1 + rate, t) - 1) / rate); }
+    function fmtM(v) { return '$' + (v / 1e6).toFixed(2) + 'M'; }
+
+    var SERIES = [
+      { key: '10', rate: 0.10, color: 'var(--muted)', label: '10%/yr' },
+      { key: '15', rate: 0.15, color: 'var(--gold)', label: '15%/yr' },
+      { key: '20', rate: 0.20, color: 'var(--neon-up)', label: '20%/yr' }
+    ];
+    /* Plot geometry inside the 360x220 viewBox. */
+    var X0 = 6, X1 = 354, YTOP = 20, YBASE = 196;
+    var visible = ['10'];
+
+    function seriesByKey(k) {
+      for (var i = 0; i < SERIES.length; i++) if (SERIES[i].key === k) return SERIES[i];
+      return null;
+    }
+    function pathFor(s, yMax) {
+      var d = '';
+      for (var t = 0; t <= YEARS; t++) {
+        var x = X0 + (X1 - X0) * (t / YEARS);
+        var y = YBASE - (YBASE - YTOP) * (fv(s.rate, t) / yMax);
+        d += (t === 0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1);
+      }
+      return d;
+    }
+    function renderChart(animateKey) {
+      var yMax = 0;
+      visible.forEach(function (k) { yMax = Math.max(yMax, fv(seriesByKey(k).rate, YEARS)); });
+      var ymaxEl = document.getElementById('ob-ymax');
+      if (ymaxEl) ymaxEl.textContent = fmtM(yMax);
+      SERIES.forEach(function (s) {
+        var path = document.getElementById('ob-line-' + s.key);
+        var dot = document.getElementById('ob-dot-' + s.key);
+        if (!path) return;
+        var isVis = visible.indexOf(s.key) !== -1;
+        path.hidden = !isVis;
+        if (dot) dot.hidden = !isVis;
+        if (!isVis) return;
+        path.style.stroke = s.color;
+        path.setAttribute('d', pathFor(s, yMax));
+        if (dot) {
+          dot.style.fill = s.color;
+          dot.setAttribute('cx', X1.toFixed(1));
+          dot.setAttribute('cy', (YBASE - (YBASE - YTOP) * (fv(s.rate, YEARS) / yMax)).toFixed(1));
+        }
+        path.style.transition = 'none';
+        path.style.strokeDasharray = 'none';
+        path.style.strokeDashoffset = '0';
+        if (animateKey === s.key) {
+          try {
+            var len = path.getTotalLength();
+            path.style.strokeDasharray = String(len);
+            path.style.strokeDashoffset = String(len);
+            void path.getBoundingClientRect();
+            path.style.transition = 'stroke-dashoffset 1.1s ease';
+            path.style.strokeDashoffset = '0';
+          } catch (e) {}
+        }
+      });
+      var legend = document.getElementById('ob-legend');
+      if (legend) {
+        legend.innerHTML = '';
+        visible.forEach(function (k) {
+          var s = seriesByKey(k);
+          var item = document.createElement('span');
+          item.className = 'ob-leg';
+          var sw = document.createElement('i');
+          sw.style.background = s.color;
+          item.appendChild(sw);
+          item.appendChild(document.createTextNode(s.label + ' \u2192 ' + fmtM(fv(s.rate, YEARS))));
+          legend.appendChild(item);
+        });
+      }
+    }
+
+    function resetQuiz() {
+      visible = ['10'];
+      var intro = document.getElementById('ob-intro');
+      var p1 = document.getElementById('ob-panel-1');
+      var p2 = document.getElementById('ob-panel-2');
+      if (intro) intro.hidden = false;
+      if (p1) p1.hidden = false;
+      if (p2) p2.hidden = true;
+      ['ob-reveal-1', 'ob-reveal-2'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.hidden = true;
+      });
+      ['ob-opts-1', 'ob-opts-2'].forEach(function (id) {
+        var wrap = document.getElementById(id);
+        if (!wrap) return;
+        wrap.classList.remove('locked');
+        var opts = wrap.querySelectorAll('.ob-opt');
+        for (var i = 0; i < opts.length; i++) {
+          opts[i].disabled = false;
+          opts[i].classList.remove('right', 'wrong', 'dim');
+        }
+      });
+      if (scroller) scroller.scrollTop = 0;
+      renderChart('10');
+    }
+    function openQuiz() {
+      resetQuiz();
+      overlay.hidden = false;
+    }
+    function closeQuiz() {
+      overlay.hidden = true;
+      try { localStorage.setItem(FLAG, '1'); } catch (e) {}
+    }
+    function reveal(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.hidden = false;
+      setTimeout(function () {
+        try { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {}
+      }, 400);
+    }
+    function answer(q, btn) {
+      var wrap = document.getElementById('ob-opts-' + q);
+      if (!wrap || wrap.classList.contains('locked')) return;
+      wrap.classList.add('locked');
+      var opts = wrap.querySelectorAll('.ob-opt');
+      for (var i = 0; i < opts.length; i++) {
+        opts[i].disabled = true;
+        if (opts[i].hasAttribute('data-correct')) opts[i].classList.add('right');
+        else if (opts[i] === btn) opts[i].classList.add('wrong');
+        else opts[i].classList.add('dim');
+      }
+      if (q === 1) {
+        visible = ['10', '15'];
+        renderChart('15');
+        reveal('ob-reveal-1');
+      } else {
+        visible = ['10', '15', '20'];
+        renderChart('20');
+        reveal('ob-reveal-2');
+      }
+    }
+
+    var optsAll = overlay.querySelectorAll('.ob-opt');
+    for (var i = 0; i < optsAll.length; i++) {
+      (function (btn) {
+        btn.addEventListener('click', function () {
+          answer(parseInt(btn.getAttribute('data-obq'), 10), btn);
+        });
+      })(optsAll[i]);
+    }
+    var skipBtn = document.getElementById('ob-skip');
+    if (skipBtn) skipBtn.addEventListener('click', closeQuiz);
+    var ctaBtn = document.getElementById('ob-cta');
+    if (ctaBtn) ctaBtn.addEventListener('click', closeQuiz);
+    var nextBtn = document.getElementById('ob-next-1');
+    if (nextBtn) nextBtn.addEventListener('click', function () {
+      var intro = document.getElementById('ob-intro');
+      var p1 = document.getElementById('ob-panel-1');
+      var p2 = document.getElementById('ob-panel-2');
+      if (intro) intro.hidden = true;
+      if (p1) p1.hidden = true;
+      if (p2) p2.hidden = false;
+      if (scroller) { try { scroller.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { scroller.scrollTop = 0; } }
+    });
+    var replayBtn = document.getElementById('menu-quiz');
+    if (replayBtn) replayBtn.addEventListener('click', function () {
+      var menu = document.getElementById('settings-menu');
+      if (menu) menu.hidden = true;
+      var gear = document.getElementById('btn-settings');
+      if (gear) gear.setAttribute('aria-expanded', 'false');
+      openQuiz();
+    });
+
+    var seen = false;
+    try { seen = !!localStorage.getItem(FLAG); } catch (e) { seen = true; }
+    if (!seen) openQuiz();
+  } catch (e) {}
+})();
+
 /* Node export for offline pipeline tests (ignored in the browser). */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr, buildSwot: buildSwot, tickerSuggestions: tickerSuggestions, pjFadeGrowth: pjFadeGrowth, pfPaletteColors: pfPaletteColors, parseSAPeHistory: parseSAPeHistory, fetchPe5yAvg: fetchPe5yAvg };

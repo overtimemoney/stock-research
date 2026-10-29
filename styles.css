@@ -494,3 +494,43 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .pf-sh-save { background: var(--gold-grad); color: #141414; border: none; border-radius: 12px; font-size: 15px; font-weight: 800; padding: 11px 12px; cursor: pointer; }
 
 .wl-row { cursor: pointer; }
+
+/* ---------- onboarding: The 5% Quiz ---------- */
+/* Fixed full-screen layer above the whole app shell (tabbar is z 30,
+ * sheets are z 90, so the quiz sits at 200). The page itself never
+ * scrolls; the quiz has its own internal scroll container. Theme vars
+ * keep it matched to the black-and-gold identity in both themes. */
+.ob-overlay { position: fixed; inset: 0; z-index: 200; background: var(--bg); color: var(--ink); }
+.ob-overlay[hidden] { display: none; }
+.ob-scroll { height: 100%; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: calc(14px + env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom)); }
+.ob-inner { max-width: 560px; margin: 0 auto; }
+.ob-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.ob-kicker { font-size: 12px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
+.ob-skip { background: none; border: none; font: inherit; font-size: 14px; font-weight: 700; color: var(--muted); padding: 8px 2px; cursor: pointer; }
+.ob-h { font-size: 24px; line-height: 1.28; margin: 4px 0 14px; }
+.ob-context { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin: 0 0 14px; box-shadow: 0 2px 14px var(--shadow); }
+.ob-context p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--ink2); }
+.ob-big { font-size: 40px; font-weight: 900; letter-spacing: -.01em; line-height: 1.1; margin: 8px 0; }
+.ob-context .ob-small { font-size: 12.5px; color: var(--muted); }
+.ob-chart-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 12px 8px; margin: 0 0 16px; box-shadow: 0 2px 14px var(--shadow); }
+#ob-chart { display: block; width: 100%; height: auto; }
+#ob-axis { stroke: var(--line); }
+.ob-axis-txt { font-size: 9.5px; font-weight: 600; fill: var(--muted); }
+#ob-ymax { font-size: 10.5px; font-weight: 800; fill: var(--ink2); }
+.ob-line { vector-effect: non-scaling-stroke; }
+.ob-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 2px 2px; }
+.ob-leg { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; color: var(--ink2); }
+.ob-leg i { display: inline-block; width: 18px; height: 3.5px; border-radius: 99px; flex: 0 0 auto; }
+.ob-chart-note { font-size: 11px; color: var(--muted); margin: 4px 2px 2px; font-weight: 600; }
+.ob-q { font-size: 16.5px; font-weight: 700; line-height: 1.45; margin: 0 0 12px; }
+.ob-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ob-opt { font: inherit; font-size: 17px; font-weight: 800; text-align: center; padding: 15px 10px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.ob-opt:active { transform: scale(.98); }
+.ob-opts.locked .ob-opt { pointer-events: none; cursor: default; }
+.ob-opt.dim { opacity: .4; }
+.ob-opt.right { border-color: var(--good); background: var(--chip-pass-bg); color: var(--good); opacity: 1; }
+.ob-opt.wrong { border-color: var(--bad); background: var(--chip-fail-bg); color: var(--bad); opacity: 1; }
+.ob-reveal { margin-top: 16px; }
+.ob-callout { font-size: 16px; font-weight: 700; line-height: 1.5; background: var(--chip-bg); border: 1px solid var(--line); border-left: 4px solid var(--gold); border-radius: 12px; padding: 13px 14px; margin: 0 0 14px; }
+.ob-punch { font-size: 14.5px; line-height: 1.6; color: var(--ink2); margin: 0 0 12px; }
+.ob-disclaimer { font-size: 11.5px; line-height: 1.5; color: var(--muted); margin: 0 0 16px; }

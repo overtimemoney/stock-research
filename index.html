@@ -73,6 +73,8 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
           </div>
           <div id="sync-status" class="status" role="status"></div>
         </div>
+        <div class="set-h">Learn</div>
+        <button id="menu-quiz" class="btn-ghost wide" type="button" style="margin-bottom:4px"><svg class="ico" viewBox="0 0 24 24"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg> The 5% Quiz — what an extra 5%/yr is worth</button>
         <div class="set-h">Housekeeping</div>
         <div class="row-gap" style="flex-wrap:wrap">
           <button id="set-clear-ai" class="btn-ghost" type="button">Clear AI SWOTs</button>
@@ -290,6 +292,77 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
   <button data-tab="watchlist"><span class="tab-ico"><svg class="ico ico-f" viewBox="0 0 24 24"><polygon points="12 2.5 15.09 8.76 22 9.77 17 14.64 18.18 21.52 12 18.27 5.82 21.52 7 14.64 2 9.77 8.91 8.76"/></svg></span>Watchlist</button>
   <button data-tab="portfolio"><span class="tab-ico"><svg class="ico ico-f" viewBox="0 0 24 24"><path d="M12 12 L12 3.2 A8.8 8.8 0 1 0 20.8 12 Z"/><path d="M13.6 3.5 A8.3 8.3 0 0 1 20.3 10.4 L13.6 10.4 Z"/></svg></span>Portfolio</button>
 </nav>
+
+<!-- Onboarding: "The 5% Quiz". A fixed full-screen layer above the app
+     shell, shown once on first launch (localStorage flag sr_onboard_v1,
+     local-only, never synced) and replayable from Settings. All chart
+     curves and dollar figures are computed in app.js from the same
+     future-value-of-annuity formula, so graph and numbers always agree. -->
+<div id="ob-overlay" class="ob-overlay" hidden role="dialog" aria-modal="true" aria-label="The 5% Quiz">
+  <div class="ob-scroll" id="ob-scroll">
+    <div class="ob-inner">
+      <div class="ob-top">
+        <span class="ob-kicker">The 5% Quiz</span>
+        <button id="ob-skip" class="ob-skip" type="button">Skip</button>
+      </div>
+      <div id="ob-intro">
+        <h2 class="ob-h">How much more do you think you'd make if you earned an extra 5% per year?</h2>
+        <div class="ob-context">
+          <p>Meet the average 401(k) saver. They invest about $500 a month — roughly 9.6% of a typical paycheck, the national average contribution rate (Fidelity). At a typical 10% per year, after 40 years they'd have</p>
+          <div class="ob-big gold-text">$2.66 million</div>
+          <p class="ob-small">They only put in $240,000. Compounding did the rest.</p>
+        </div>
+      </div>
+      <div class="ob-chart-card">
+        <svg id="ob-chart" viewBox="0 0 360 220" role="img" aria-label="Chart of a $500 monthly investment compounding over 40 years">
+          <text id="ob-ymax" class="ob-axis-txt" x="6" y="12"></text>
+          <line id="ob-axis" x1="6" y1="196" x2="354" y2="196" stroke-width="1"/>
+          <text class="ob-axis-txt" x="6" y="210">0</text>
+          <text class="ob-axis-txt" x="88" y="210">10</text>
+          <text class="ob-axis-txt" x="175" y="210">20</text>
+          <text class="ob-axis-txt" x="262" y="210">30</text>
+          <text class="ob-axis-txt" x="344" y="210">40</text>
+          <path id="ob-line-10" class="ob-line" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path id="ob-line-15" class="ob-line" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" hidden/>
+          <path id="ob-line-20" class="ob-line" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" hidden/>
+          <circle id="ob-dot-10" class="ob-dot" r="3.5" hidden/>
+          <circle id="ob-dot-15" class="ob-dot" r="3.5" hidden/>
+          <circle id="ob-dot-20" class="ob-dot" r="3.5" hidden/>
+        </svg>
+        <div id="ob-legend" class="ob-legend"></div>
+        <p class="ob-chart-note">Years of investing $500/month</p>
+      </div>
+      <div id="ob-panel-1" class="ob-panel">
+        <p class="ob-q">Same $500 a month, same 40 years — but 15% per year instead of 10%. Where do they end up?</p>
+        <div class="ob-opts" id="ob-opts-1">
+          <button class="ob-opt" type="button" data-obq="1">$3.99M</button>
+          <button class="ob-opt" type="button" data-obq="1">$5.31M</button>
+          <button class="ob-opt" type="button" data-obq="1">$7.98M</button>
+          <button class="ob-opt" type="button" data-obq="1" data-correct="1">$10.67M</button>
+        </div>
+        <div id="ob-reveal-1" class="ob-reveal" hidden>
+          <p class="ob-callout">4&times; as much money. Same savings, same 40 years — just 5% more per year = $8.02 million more.</p>
+          <button id="ob-next-1" class="btn-gold wide" type="button">Now try 10% more &rarr;</button>
+        </div>
+      </div>
+      <div id="ob-panel-2" class="ob-panel" hidden>
+        <p class="ob-q">And at 20% per year — 10% more than the 401(k)? Same $500 a month.</p>
+        <div class="ob-opts" id="ob-opts-2">
+          <button class="ob-opt" type="button" data-obq="2">$21.35M</button>
+          <button class="ob-opt" type="button" data-obq="2">$26.64M</button>
+          <button class="ob-opt" type="button" data-obq="2" data-correct="1">$44.06M</button>
+          <button class="ob-opt" type="button" data-obq="2">$66.47M</button>
+        </div>
+        <div id="ob-reveal-2" class="ob-reveal" hidden>
+          <p class="ob-callout">16.6&times; the 401(k). $44.06M vs $2.66M — from the same $500 a month.</p>
+          <p class="ob-punch">Nobody can promise 15–20% a year — that's elite territory, and the market averages about 10%. But every extra 1% compounds for decades. This app exists to hunt for it: undervalued stocks, strong earnings, and avoiding the blowups that erase years of compounding.</p>
+          <p class="ob-disclaimer">Hypothetical example for education only — not financial advice, and not a prediction.</p>
+          <button id="ob-cta" class="btn-gold wide" type="button">Start researching</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script src="supabase-config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
