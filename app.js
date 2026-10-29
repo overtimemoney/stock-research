@@ -4395,6 +4395,342 @@ if (typeof document !== 'undefined' && document.getElementById) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initApp);
   else initApp();
 }
+/* ==================== Supabase cloud sync ====================
+ * Ported into the live app 2026-10-28 from the verified test copy
+ * (~/workspace/stock-research-supabase-test/) after sync was proven
+ * end-to-end there (sign-up, push, private-tab pull).
+ *
+ * Contract:
+ *  - Config lives in supabase-config.js (window.SR_SUPABASE_URL /
+ *    window.SR_SUPABASE_ANON_KEY). If either is empty, this whole block
+ *    returns without touching the UI, localStorage, or the network, so
+ *    the app behaves EXACTLY as the live version.
+ *  - localStorage is always the source of truth. Every Supabase call is
+ *    wrapped so a down/slow/misconfigured backend can only ever produce
+ *    a status line — never an app error.
+ *  - Only personal, irreplaceable data syncs (see SR_SYNC_DEFS). Price,
+ *    scan and chart caches are regenerable and are NEVER synced.
+ *
+ * Data formats (matching how the app itself stores each key):
+ *  - kind 'json'   — the app stores JSON.stringify(value) (via lsSet);
+ *                    the parsed value is stored in Supabase as jsonb.
+ *  - kind 'string' — the app stores a raw string (direct setItem);
+ *                    the string is stored in Supabase as a JSON string
+ *                    and written back raw, never JSON-quoted.
+ *
+ * Sign-in reconciliation (v1, deliberately conservative):
+ *  - remote has data + local is empty/default  -> pull remote into local
+ *  - local has data + remote is empty          -> push local up
+ *  - both have data                             -> keep BOTH untouched
+ *    (no silent overwrite in either direction; from then on, any new
+ *    local change debounce-pushes and becomes the cloud copy)
+ *  - a synced key removed locally deletes its cloud row.
+ */
+(function srSupabaseSync() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  if (typeof localStorage === 'undefined') return;
+
+  var SR_SYNC_DEFS = [
+    { key: 'sr_watchlist_v1', kind: 'json' },
+    { key: 'sr_portfolio_v1', kind: 'json' },
+    { key: 'sr_journal_v1', kind: 'json' },
+    { key: 'sr_projections_v1', kind: 'json' },
+    { key: 'sr_aiswot_v1', kind: 'json' },
+    { key: 'sr_theme', kind: 'string' },
+    { key: 'sr_wlsort_v1', kind: 'string' },
+    { key: 'sr_pfview_v1', kind: 'string' }
+  ];
+  var SR_SYNC_BY_KEY = {};
+  SR_SYNC_DEFS.forEach(function (d) { SR_SYNC_BY_KEY[d.key] = d; });
+
+  var url = String(window.SR_SUPABASE_URL || '').trim();
+  var anonKey = String(window.SR_SUPABASE_ANON_KEY || '').trim();
+  if (!url || !anonKey) return; // not configured: behave exactly as today
+
+  var client = null;
+  try {
+    if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+      throw new Error('Supabase library did not load');
+    }
+    client = window.supabase.createClient(url, anonKey);
+  } catch (e) {
+    client = null;
+  }
+
+  var section = document.getElementById('sync-section');
+  if (section) section.hidden = false;
+
+  var currentUser = null;
+  var patchInstalled = false;
+  var applyingRemote = false;
+  var pushTimers = {};
+
+  function setSyncStatus(msg, isErr) {
+    try {
+      var el = document.getElementById('sync-status');
+      if (!el) return;
+      el.className = 'status' + (isErr ? ' err' : '');
+      el.textContent = msg || '';
+    } catch (e) {}
+  }
+
+  function isEmptyParsed(v) {
+    if (v == null || v === '') return true;
+    if (Array.isArray(v)) return v.length === 0;
+    if (typeof v === 'object') return Object.keys(v).length === 0;
+    return false;
+  }
+
+  function readLocal(def) {
+    var raw = null;
+    try { raw = localStorage.getItem(def.key); } catch (e) {}
+    if (raw == null || raw === '') return { present: false, empty: true, value: null };
+    if (def.kind === 'string') return { present: true, empty: false, value: raw };
+    try {
+      var parsed = JSON.parse(raw);
+      return { present: true, empty: isEmptyParsed(parsed), value: parsed };
+    } catch (e) {
+      return { present: true, empty: false, value: raw };
+    }
+  }
+
+  function writeLocal(def, remoteValue) {
+    applyingRemote = true;
+    try {
+      if (def.kind === 'string') localStorage.setItem(def.key, String(remoteValue));
+      else localStorage.setItem(def.key, JSON.stringify(remoteValue));
+    } catch (e) {} finally { applyingRemote = false; }
+  }
+
+  function refreshAfterPull() {
+    applyingRemote = true;
+    try {
+      try {
+        var t = localStorage.getItem('sr_theme');
+        if ((t === 'light' || t === 'dark') && typeof applyTheme === 'function') applyTheme(t);
+      } catch (e) {}
+      try {
+        var sortSel = document.getElementById('wl-sort');
+        if (sortSel && typeof getWlSort === 'function') sortSel.value = getWlSort();
+      } catch (e) {}
+      try { if (typeof pfSetView === 'function' && typeof pfView === 'function') pfSetView(pfView()); } catch (e) {}
+      try { if (typeof renderWatchlist === 'function') renderWatchlist(false); } catch (e) {}
+      try { if (typeof renderPortfolio === 'function') renderPortfolio(false); } catch (e) {}
+      try { if (typeof renderJournal === 'function') renderJournal(); } catch (e) {}
+      try { if (typeof renderPjSaved === 'function') renderPjSaved(); } catch (e) {}
+      try {
+        if (typeof lastStock !== 'undefined' && lastStock && typeof renderScorecard === 'function') {
+          renderScorecard(lastStock);
+        }
+      } catch (e) {}
+    } finally { applyingRemote = false; }
+  }
+
+  async function pushKey(key) {
+    if (!client || !currentUser) return;
+    var def = SR_SYNC_BY_KEY[key];
+    if (!def) return;
+    try {
+      var local = readLocal(def);
+      var res;
+      if (!local.present) {
+        res = await client.from('user_data').delete()
+          .eq('user_id', currentUser.id).eq('data_key', key);
+      } else {
+        res = await client.from('user_data').upsert({
+          user_id: currentUser.id,
+          data_key: key,
+          value: local.value,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id,data_key' });
+      }
+      if (res && res.error) throw res.error;
+      setSyncStatus('Synced just now.');
+    } catch (e) {
+      setSyncStatus('Sync failed — changes are safe on this device and will retry on the next change.', true);
+    }
+  }
+
+  function schedulePush(key) {
+    if (!currentUser || applyingRemote) return;
+    if (!SR_SYNC_BY_KEY[key]) return;
+    if (pushTimers[key]) clearTimeout(pushTimers[key]);
+    pushTimers[key] = setTimeout(function () {
+      delete pushTimers[key];
+      pushKey(key);
+    }, 2000);
+  }
+
+  function installWritePatch() {
+    if (patchInstalled) return;
+    patchInstalled = true;
+    try {
+      var origSet = Storage.prototype.setItem;
+      var origRemove = Storage.prototype.removeItem;
+      Storage.prototype.setItem = function (k, v) {
+        var out = origSet.call(this, k, v);
+        try { if (this === localStorage) schedulePush(String(k)); } catch (e) {}
+        return out;
+      };
+      Storage.prototype.removeItem = function (k) {
+        var out = origRemove.call(this, k);
+        try { if (this === localStorage) schedulePush(String(k)); } catch (e) {}
+        return out;
+      };
+    } catch (e) {
+      /* If the prototype cannot be patched on this browser, sign-in
+       * reconciliation above still works; only live push is lost. */
+    }
+  }
+
+  async function reconcile() {
+    if (!client || !currentUser) return;
+    setSyncStatus('Checking your cloud backup…');
+    try {
+      var res = await client.from('user_data')
+        .select('data_key, value')
+        .eq('user_id', currentUser.id);
+      if (res && res.error) throw res.error;
+      var remote = {};
+      ((res && res.data) || []).forEach(function (row) { remote[row.data_key] = row.value; });
+
+      var pulled = [], pushKeys = [], both = 0;
+      SR_SYNC_DEFS.forEach(function (def) {
+        var hasRemote = Object.prototype.hasOwnProperty.call(remote, def.key) &&
+          remote[def.key] != null && !isEmptyParsed(remote[def.key]);
+        var local = readLocal(def);
+        if (hasRemote && local.empty) {
+          writeLocal(def, remote[def.key]);
+          pulled.push(def.key);
+        } else if (!local.empty && !hasRemote) {
+          pushKeys.push(def.key);
+        } else if (!local.empty && hasRemote) {
+          both++;
+        }
+      });
+      for (var i = 0; i < pushKeys.length; i++) await pushKey(pushKeys[i]);
+      if (pulled.length) refreshAfterPull();
+      if (pulled.length || pushKeys.length) {
+        setSyncStatus('Sync done — ' +
+          (pulled.length ? pulled.length + ' item(s) restored from the cloud. ' : '') +
+          (pushKeys.length ? pushKeys.length + ' item(s) backed up. ' : '') +
+          (both ? both + ' item(s) exist in both places — kept this device\u2019s copy.' : ''));
+      } else if (both) {
+        setSyncStatus('Signed in. Your data here and in the cloud both exist — kept this device\u2019s copy; new changes sync from now on.');
+      } else {
+        setSyncStatus('Signed in. Nothing to sync yet — add something and it backs up automatically.');
+      }
+    } catch (e) {
+      setSyncStatus('Could not reach Supabase — the app keeps working from this device.', true);
+    }
+  }
+
+  function showAuthState() {
+    try {
+      var out = document.getElementById('sync-signed-out');
+      var inn = document.getElementById('sync-signed-in');
+      var userEl = document.getElementById('sync-user');
+      if (currentUser) {
+        if (out) out.hidden = true;
+        if (inn) inn.hidden = false;
+        if (userEl) userEl.textContent = currentUser.email || '';
+      } else {
+        if (out) out.hidden = false;
+        if (inn) inn.hidden = true;
+        if (userEl) userEl.textContent = '';
+      }
+    } catch (e) {}
+  }
+
+  async function afterSignIn(user) {
+    currentUser = user || null;
+    showAuthState();
+    if (!currentUser) return;
+    installWritePatch();
+    await reconcile();
+  }
+
+  function wireSyncUi() {
+    var signInBtn = document.getElementById('sync-signin');
+    var signUpBtn = document.getElementById('sync-signup');
+    var signOutBtn = document.getElementById('sync-signout');
+    var syncNowBtn = document.getElementById('sync-now');
+    function creds() {
+      var em = document.getElementById('sync-email');
+      var pw = document.getElementById('sync-password');
+      return {
+        email: em ? String(em.value || '').trim() : '',
+        password: pw ? String(pw.value || '') : ''
+      };
+    }
+    if (signInBtn) signInBtn.addEventListener('click', async function () {
+      if (!client) { setSyncStatus('Sync is unavailable right now — the app still works offline.', true); return; }
+      var c = creds();
+      if (!c.email || !c.password) { setSyncStatus('Enter your email and password first.', true); return; }
+      setSyncStatus('Signing in…');
+      try {
+        var r = await client.auth.signInWithPassword(c);
+        if (r.error) throw r.error;
+        await afterSignIn(r.data && r.data.user);
+      } catch (e) {
+        setSyncStatus('Sign-in failed: ' + (e && e.message ? e.message : 'unknown error'), true);
+      }
+    });
+    if (signUpBtn) signUpBtn.addEventListener('click', async function () {
+      if (!client) { setSyncStatus('Sync is unavailable right now — the app still works offline.', true); return; }
+      var c = creds();
+      if (!c.email || !c.password) { setSyncStatus('Enter an email and a password first.', true); return; }
+      setSyncStatus('Creating your account…');
+      try {
+        var r = await client.auth.signUp(c);
+        if (r.error) throw r.error;
+        if (r.data && r.data.session && r.data.user) {
+          await afterSignIn(r.data.user);
+        } else {
+          setSyncStatus('Account created — confirm it from the email Supabase sent you, then sign in.');
+        }
+      } catch (e) {
+        setSyncStatus('Sign-up failed: ' + (e && e.message ? e.message : 'unknown error'), true);
+      }
+    });
+    if (signOutBtn) signOutBtn.addEventListener('click', async function () {
+      try { if (client) await client.auth.signOut(); } catch (e) {}
+      currentUser = null;
+      showAuthState();
+      setSyncStatus('Signed out — your data stays on this device.');
+    });
+    if (syncNowBtn) syncNowBtn.addEventListener('click', function () { reconcile(); });
+    window.addEventListener('online', function () { if (currentUser) reconcile(); });
+  }
+
+  try {
+    wireSyncUi();
+    if (!client) {
+      setSyncStatus('Sync is unavailable (library or connection problem) — the app still works from this device.', true);
+      return;
+    }
+    showAuthState();
+    setSyncStatus('Not signed in.');
+    client.auth.getSession().then(function (r) {
+      var session = r && r.data && r.data.session;
+      if (session && session.user) return afterSignIn(session.user);
+      return null;
+    }).catch(function () {
+      setSyncStatus('Could not reach Supabase — the app keeps working from this device.', true);
+    });
+    try {
+      client.auth.onAuthStateChange(function (event) {
+        if (event === 'SIGNED_OUT') {
+          currentUser = null;
+          showAuthState();
+        }
+      });
+    } catch (e) {}
+  } catch (e) {
+    try { setSyncStatus('Sync failed to start — the app still works from this device.', true); } catch (e2) {}
+  }
+})();
+
 /* Node export for offline pipeline tests (ignored in the browser). */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr, buildSwot: buildSwot, tickerSuggestions: tickerSuggestions, pjFadeGrowth: pjFadeGrowth, pfPaletteColors: pfPaletteColors, parseSAPeHistory: parseSAPeHistory, fetchPe5yAvg: fetchPe5yAvg };

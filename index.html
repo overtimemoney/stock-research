@@ -50,6 +50,29 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
         <div class="row-gap" style="margin-top:6px">
           <button id="btn-import-text" class="btn-ghost" type="button">Import from text</button>
         </div>
+        <!-- Cloud sync (Supabase). This whole section starts
+             hidden and stays hidden unless supabase-config.js is filled
+             in; with an empty config the app behaves exactly as before. -->
+        <div id="sync-section" hidden>
+          <div class="set-h">Cloud sync</div>
+          <p class="fineprint" style="margin:0 0 8px">Sign in to back up your watchlist, portfolio, journal, saved projections and AI SWOTs to your Supabase account and sync them across devices. Your data still lives on this device too — sync never blocks the app.</p>
+          <div id="sync-signed-out">
+            <label>Email<input id="sync-email" type="email" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you@example.com"></label>
+            <label>Password<input id="sync-password" type="password" autocomplete="current-password" placeholder="Password"></label>
+            <div class="row-gap">
+              <button id="sync-signin" class="btn-gold" type="button">Sign in</button>
+              <button id="sync-signup" class="btn-ghost" type="button">Sign up</button>
+            </div>
+          </div>
+          <div id="sync-signed-in" hidden>
+            <p class="fineprint" style="margin:0 0 8px">Signed in as <span id="sync-user"></span></p>
+            <div class="row-gap">
+              <button id="sync-now" class="btn-ghost" type="button">Sync now</button>
+              <button id="sync-signout" class="btn-ghost" type="button">Sign out</button>
+            </div>
+          </div>
+          <div id="sync-status" class="status" role="status"></div>
+        </div>
         <div class="set-h">Housekeeping</div>
         <div class="row-gap" style="flex-wrap:wrap">
           <button id="set-clear-ai" class="btn-ghost" type="button">Clear AI SWOTs</button>
@@ -262,6 +285,8 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
   <button data-tab="portfolio"><span class="tab-ico"><svg class="ico ico-f" viewBox="0 0 24 24"><path d="M12 12 L12 3.2 A8.8 8.8 0 1 0 20.8 12 Z"/><path d="M13.6 3.5 A8.3 8.3 0 0 1 20.3 10.4 L13.6 10.4 Z"/></svg></span>Portfolio</button>
 </nav>
 
+<script src="supabase-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="app.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
