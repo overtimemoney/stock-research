@@ -2227,7 +2227,7 @@ async function fetchLightPrice(T) {
 }
 
 /* ---- watchlist valuation scores + sorting ---- */
-var WLVAL_KEY = 'sr_wlval_v1';
+var WLVAL_KEY = 'sr_wlval_v2';
 var WLSORT_KEY = 'sr_wlsort_v1';
 function getWlSort() {
   try { return localStorage.getItem(WLSORT_KEY) || 'added'; } catch (e) { return 'added'; }
@@ -2251,7 +2251,15 @@ function wlValuationDisplay(T) {
   if (e && isNum(e.score)) return { score: e.score, verdict: e.verdict, risk: isNum(e.risk) ? e.risk : null, fresh: (Date.now() - (e.at || 0)) < 24 * 3600 * 1000 };
   return null;
 }
-/* Finviz-only valuation pass for the watchlist (one fetch per ticker). */
+/* Watchlist valuation pass. Finviz covers most fields, but two risk
+ * factors need data Finviz alone can't supply: the EPS path (Nasdaq
+ * yearly consensus -> EPS-trend factor + cliff tests) and the revenue
+ * path (StockAnalysis -> boom-bust factor). Without them riskScore
+ * normalizes over a smaller factor pool and inflates the number --
+ * RH read Risk 80 here vs 52 on the scorecard (2026-10-29) because
+ * its 60 raw risk points were divided by a 75-pt pool instead of
+ * the full 115. Fetch both so the watchlist and the scorecard
+ * compute risk over the same factors. */
 async function fetchWlValuation(T) {
   var d = { ticker: T, sources: [], errors: [] };
   try {
@@ -2259,8 +2267,37 @@ async function fetchWlValuation(T) {
       validate: function (t) { return t.indexOf('snapshot-td-label') !== -1; }
     });
     fillFromFinviz(d, fvHtml);
-    if (isNum(d.epsNextY) && isNum(d.epsThisY) && d.epsThisY > 0) d.epsGrowthNextY = (d.epsNextY / d.epsThisY - 1) * 100;
   } catch (e) {}
+  try {
+    var fc = await relayJSON('https://api.nasdaq.com/api/analyst/' + encodeURIComponent(T) + '/earnings-forecast?assetclass=stocks');
+    var rows = (fc && fc.data && fc.data.yearlyForecast && fc.data.yearlyForecast.rows) || [];
+    d.epsForecasts = rows.map(function (r) {
+      return {
+        fiscalEnd: r.fiscalEnd,
+        eps: typeof r.consensusEPSForecast === 'number' ? r.consensusEPSForecast : parseNum(r.consensusEPSForecast),
+        high: parseNum(r.highEPSForecast),
+        low: parseNum(r.lowEPSForecast),
+        n: parseNum(r.noOfEstimates)
+      };
+    }).filter(function (r) { return isNum(r.eps); });
+  } catch (e) {}
+  try {
+    var saHtml = await relayFetch('https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/forecast/', {
+      timeout: 20000,
+      validate: function (t) { return t.indexOf('Fiscal Year') !== -1 && t.indexOf('Revenue') !== -1; }
+    });
+    var rp = parseSAForecast(saHtml);
+    if (rp.length >= 3) d.revPath = rp;
+  } catch (e) {}
+  // EPS growth next yr: fiscal-year over fiscal-year, the scorecard's
+  // rule -- Nasdaq FY pair first, Finviz pair as fallback.
+  var nextFY = (d.epsForecasts && d.epsForecasts[0]) || null;
+  var f1 = (d.epsForecasts && d.epsForecasts[1]) || null;
+  if (nextFY && f1 && isNum(nextFY.eps) && isNum(f1.eps) && nextFY.eps > 0) {
+    d.epsGrowthNextY = (f1.eps / nextFY.eps - 1) * 100;
+  } else if (isNum(d.epsNextY) && isNum(d.epsThisY) && d.epsThisY > 0) {
+    d.epsGrowthNextY = (d.epsNextY / d.epsThisY - 1) * 100;
+  }
   var sc = scoreStock(d);
   if (sc.score == null) return null;
   var rk = riskScore(d);
@@ -2694,7 +2731,7 @@ async function scanBootstrapFromHosted() {
     var resp = await fetch('scan-data.json?cb=' + Date.now(), { cache: 'no-store' });
     if (resp.ok) {
       var snap = await resp.json();
-      if (snap && snap.recs && snap.asOf && Object.keys(snap.recs).length > 1000) {
+      if (snap && snap.recs && snap.asOf && Object.keys(snap.recs).length > 400) {
         var ageDays = (Date.parse(scanTodayKey() + 'T12:00:00') - Date.parse(snap.asOf + 'T12:00:00')) / 86400000;
         if (ageDays <= 10) {
           setScanData({ recs: snap.recs, asOf: snap.asOf, lastRefreshDay: null, lastRefreshCount: 0 });
