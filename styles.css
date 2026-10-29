@@ -100,8 +100,7 @@ h2, h3 { font-weight: 800; letter-spacing: -0.01em; }
 .topbar {
   flex: 0 0 auto; z-index: 20;
   background: var(--topbar); backdrop-filter: blur(10px);
-  border-top: 3px solid transparent;
-  border-image: var(--gold-grad) 1;
+  position: relative;
   padding: calc(4px + env(safe-area-inset-top)) 16px 4px;
 }
 .brand { display: flex; align-items: center; gap: 12px; max-width: 860px; margin: 0 auto; }
@@ -545,3 +544,7 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .tabbar.mini { padding: 4px; }
 .tabbar.mini button { height: 36px; }
 .tabbar.mini button .tab-ico .ico { width: 20px; height: 20px; }
+
+/* Gold line pinned to the bottom edge of the status-bar zone --
+ * directly beneath the clock/battery (Justin's call, 2026-10-29). */
+.topbar::before { content: ''; position: absolute; left: 0; right: 0; top: env(safe-area-inset-top); height: 3px; background: var(--gold-grad); }
