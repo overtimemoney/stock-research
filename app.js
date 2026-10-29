@@ -4590,6 +4590,7 @@ function attachAutocomplete(input, onPick) {
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(function (s) { s.classList.toggle('active', s.id === 'tab-' + name); });
   document.querySelectorAll('.tabbar button').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-tab') === name); });
+  document.querySelectorAll('.tabbar').forEach(function (n) { n.classList.remove('mini'); });
   var mn = document.querySelector('main');
   if (mn) mn.scrollTop = 0;
 }
@@ -4745,6 +4746,20 @@ function initApp() {
     switchTab('journal');
   });
   $('ov-back').addEventListener('click', function () { closeOverview(); });
+  /* Floating nav shrinks while scrolling down (Instagram-style) and
+   * restores on scroll up or near the top (Justin's ask, 2026-10-29). */
+  var navEl = document.querySelector('.tabbar');
+  var mainEl = document.querySelector('main');
+  if (navEl && mainEl) {
+    var lastSt = 0;
+    mainEl.addEventListener('scroll', function () {
+      var st = mainEl.scrollTop;
+      if (st < 24) navEl.classList.remove('mini');
+      else if (st > lastSt + 4 && st > 80) navEl.classList.add('mini');
+      else if (st < lastSt - 4) navEl.classList.remove('mini');
+      lastSt = st;
+    }, { passive: true });
+  }
   $('btn-settings').addEventListener('click', function (e) {
     e.stopPropagation();
     var willOpen = settingsMenu.hidden;
