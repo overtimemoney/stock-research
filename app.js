@@ -2557,6 +2557,44 @@ async function scanRefreshReporters() {
   scanRefreshing = false;
 }
 
+/* Bootstrap snapshot: a pre-built dataset hosted next to the app
+ * (scan-data.json, public market data only) so a cold start never has
+ * to grind through 375 screener pages -- the exact grind that made
+ * the scan feel like it would never stop throttling. Used only when
+ * this device has no stored dataset of its own; once it does, the
+ * on-device machinery owns everything. */
+var scanBootstrapping = false;
+async function scanBootstrapFromHosted() {
+  if (scanBootstrapping) return;
+  if (getScanData()) { var s0 = scanFreshState(); setScan(s0); renderScanCard(); scanPump(); return; }
+  scanBootstrapping = true;
+  var s = scanFreshState();
+  setScan(s);
+  renderScanCard();
+  try {
+    var resp = await fetch('scan-data.json?cb=' + Date.now(), { cache: 'no-store' });
+    if (resp.ok) {
+      var snap = await resp.json();
+      if (snap && snap.recs && snap.asOf && Object.keys(snap.recs).length > 1000) {
+        var ageDays = (Date.parse(scanTodayKey() + 'T12:00:00') - Date.parse(snap.asOf + 'T12:00:00')) / 86400000;
+        if (ageDays <= 10) {
+          setScanData({ recs: snap.recs, asOf: snap.asOf, lastRefreshDay: null, lastRefreshCount: 0 });
+          scanBootstrapping = false;
+          scanRefreshReporters();
+          return;
+        }
+      }
+    }
+  } catch (e) {}
+  scanBootstrapping = false;
+  scanPump();
+}
+
+function scanRestart() {
+  if (getScanData()) { setScan(scanFreshState()); renderScanCard(); scanPump(); return; }
+  scanBootstrapFromHosted();
+}
+
 function maybeStartScan() {
   var s = getScan();
   var today = scanTodayKey();
@@ -2570,10 +2608,7 @@ function maybeStartScan() {
     var ageDays = (Date.parse(today + 'T12:00:00') - Date.parse(ds.asOf + 'T12:00:00')) / 86400000;
     if (ageDays < 7) { scanRefreshReporters(); return; }
   }
-  s = scanFreshState();
-  setScan(s);
-  renderScanCard();
-  scanPump();
+  scanBootstrapFromHosted();
 }
 
 function scanScoreClass(score) { return score >= 70 ? 'up' : (score >= 45 ? '' : 'down'); }
@@ -2687,9 +2722,9 @@ function renderScanCard() {
   html += '</div>';
   box.innerHTML = html;
   var rs = $('scan-rescan');
-  if (rs) rs.addEventListener('click', function () { setScan(scanFreshState()); renderScanCard(); scanPump(); });
+  if (rs) rs.addEventListener('click', function () { scanRestart(); });
   var rt = $('scan-retry');
-  if (rt) rt.addEventListener('click', function () { setScan(scanFreshState()); renderScanCard(); scanPump(); });
+  if (rt) rt.addEventListener('click', function () { scanRestart(); });
   var rm = $('scan-resume');
   if (rm) rm.addEventListener('click', function () { scanResume(); });
   var sr2 = $('scan-start-rut');
