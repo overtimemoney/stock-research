@@ -492,3 +492,5 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .pf-sheet-row { display: flex; gap: 8px; align-items: stretch; }
 .pf-sheet input { flex: 1; min-width: 0; background: var(--field); border: 1.5px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 17px; font-weight: 700; padding: 11px 12px; }
 .pf-sh-save { background: var(--gold-grad); color: #141414; border: none; border-radius: 12px; font-size: 15px; font-weight: 800; padding: 11px 12px; cursor: pointer; }
+
+.wl-row { cursor: pointer; }

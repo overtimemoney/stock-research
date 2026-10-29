@@ -630,7 +630,29 @@ function parseSAPeHistory(html) {
   return { avg: avg, years: vals.length };
 }
 
-var PE5Y_KEY = 'sr_pe5y_v1';
+/* Same ratios table, but keeps each fiscal year's P/E: the raw
+ * material for the growth-matched exit P/E (pair each year's P/E with
+ * that year's revenue growth). */
+function parseSAPeByYear(html) {
+  var out = [];
+  if (!html) return out;
+  saTables(html).forEach(function (rows) {
+    if (!rows.length || rows[0][0] !== 'Fiscal Year' || out.length) return;
+    var peRow = null;
+    rows.forEach(function (r) { if (r[0] === 'PE Ratio') peRow = r; });
+    if (!peRow) return;
+    for (var i = 1; i < rows[0].length; i++) {
+      if (rows[0][i] === 'Current') continue;
+      var ym = String(rows[0][i]).match(/(\d{4})/);
+      var v = parseNum(peRow[i]);
+      if (ym && isNum(v) && v > 0 && v < 1000) out.push({ fy: parseInt(ym[1], 10), pe: v });
+    }
+  });
+  out.sort(function (a, b) { return a.fy - b.fy; });
+  return out;
+}
+
+var PE5Y_KEY = 'sr_pe5y_v2';
 async function fetchPe5yAvg(T) {
   var cache = lsGet(PE5Y_KEY, {});
   var day = new Date().toDateString();
@@ -639,7 +661,12 @@ async function fetchPe5yAvg(T) {
     timeout: 25000,
     validate: function (t) { return t.indexOf('PE Ratio') !== -1; }
   });
-  var data = parseSAPeHistory(html);
+  var byYear = parseSAPeByYear(html);
+  var data = null;
+  if (byYear.length >= 3) {
+    var recent = byYear.slice(-5);
+    data = { avg: recent.reduce(function (a, p) { return a + p.pe; }, 0) / recent.length, years: recent.length, byYear: byYear };
+  }
   cache[T] = { day: day, data: data };
   lsSet(PE5Y_KEY, cache);
   return data;
@@ -652,7 +679,73 @@ async function pjEnsurePe5y(d) {
   if (!d || !d.ticker || isNum(d.pe5yAvg)) return d;
   try {
     var pe = await fetchPe5yAvg(d.ticker);
-    if (pe) { d.pe5yAvg = pe.avg; d.pe5yYears = pe.years; }
+    if (pe) { d.pe5yAvg = pe.avg; d.pe5yYears = pe.years; d.peByYear = pe.byYear; }
+  } catch (e) {}
+  return d;
+}
+
+/* ---- growth-matched exit P/E (Justin's ask, 2026-10-29) ----
+ * The plain 5-yr average P/E mixes years when the company grew at
+ * very different rates. Instead: pair each historical year's P/E
+ * with that year's REVENUE growth, then average the P/Es of the
+ * years whose growth looks like the growth projected for the exit
+ * year. Falls back to the plain average when history is too thin. */
+function pjPePairs(d) {
+  var out = [];
+  if (!d || !d.peByYear || !d.revByYear) return out;
+  d.peByYear.forEach(function (p) {
+    var rev = d.revByYear[p.fy], prev = d.revByYear[p.fy - 1];
+    var g = (isNum(rev) && isNum(prev) && prev > 0 && rev > 0) ? (rev / prev - 1) * 100 : null;
+    out.push({ fy: p.fy, pe: p.pe, revGrowth: g });
+  });
+  return out;
+}
+
+function pjMatchPe(pairs, gStar) {
+  var cand = (pairs || []).filter(function (p) { return isNum(p.pe) && isNum(p.revGrowth); });
+  if (cand.length < 2 || !isNum(gStar)) return null;
+  var inBand = cand.filter(function (p) { return Math.abs(p.revGrowth - gStar) <= 5; });
+  var used = inBand.length ? inBand : cand.slice().sort(function (a, b) {
+    return Math.abs(a.revGrowth - gStar) - Math.abs(b.revGrowth - gStar);
+  }).slice(0, 2);
+  return {
+    mult: used.reduce(function (a, p) { return a + p.pe; }, 0) / used.length,
+    years: used.map(function (p) { return p.fy; }),
+    avgGrowth: used.reduce(function (a, p) { return a + p.revGrowth; }, 0) / used.length
+  };
+}
+
+/* The growth rate of the projection's final year, from the path as
+ * currently built (analyst years + faded extrapolation). */
+function pjExitGrowth() {
+  var growths = pjGrowths(pjBaseEps(), pjPath);
+  for (var i = pjPath.length - 1; i >= 0; i--) {
+    if (pjPath[i].ttm) continue;
+    if (isNum(growths[i])) return growths[i];
+  }
+  return null;
+}
+
+function pjMatchNote(match, gStar) {
+  return 'exit P/E = ' + fmtNum(match.mult, 1) + '\u00d7 \u2014 avg P/E in ' +
+    match.years.map(function (y) { return 'FY' + String(y).slice(2); }).join(', ') +
+    ', when revenue grew ~' + fmtNum(match.avgGrowth, 0) + '% (exit-yr growth ' + fmtNum(gStar, 0) + '%)';
+}
+
+/* Attach yearly revenue (for the growth pairing) to a stock record
+ * from the Charts tool's annual statements, best-effort. */
+async function pjEnsureRevByYear(d) {
+  if (!d || !d.ticker || d.revByYear) return d;
+  try {
+    var qm = await fetchQMetrics(d.ticker, 'y');
+    if (qm && qm.revenue) {
+      var map = {};
+      qm.periods.forEach(function (p, i) {
+        var m = String(p).match(/(\d{4})/);
+        if (m && isNum(qm.revenue[i])) map[parseInt(m[1], 10)] = qm.revenue[i];
+      });
+      if (Object.keys(map).length) d.revByYear = map;
+    }
   } catch (e) {}
   return d;
 }
@@ -1365,15 +1458,22 @@ function renderScorecard(d) {
     $('pj-ticker').value = d.ticker;
     fillProjection(d);
     runProjection();
-    if (!isNum(d.pe5yAvg)) {
-      pjEnsurePe5y(d).then(function () {
-        if (isNum(d.pe5yAvg) && String($('pj-mult').value) === String(pjMultAuto) && ($('pj-ticker').value || '').trim().toUpperCase() === d.ticker) {
+    if (!isNum(d.pe5yAvg) || !d.revByYear) {
+      pjEnsurePe5y(d).then(function () { return pjEnsureRevByYear(d); }).then(function () {
+        if (String($('pj-mult').value) !== String(pjMultAuto) || ($('pj-ticker').value || '').trim().toUpperCase() !== d.ticker) return;
+        var gStar = pjExitGrowth();
+        var match = isNum(gStar) ? pjMatchPe(pjPePairs(d), gStar) : null;
+        if (match) {
+          $('pj-mult').value = Math.round(match.mult * 10) / 10;
+          pjMultAuto = $('pj-mult').value;
+          pjPeNote = pjMatchNote(match, gStar);
+        } else if (isNum(d.pe5yAvg)) {
           $('pj-mult').value = Math.round(d.pe5yAvg * 10) / 10;
           pjMultAuto = $('pj-mult').value;
           pjPeNote = 'exit P/E = ' + (d.pe5yYears >= 5 ? '5-yr' : d.pe5yYears + '-yr') + ' avg P/E ' + fmtNum(d.pe5yAvg, 1) + '\u00d7';
-          $('pj-status').textContent = 'Loaded ' + d.ticker + ' from the scorecard \u2014 ' + pjPeNote + '.';
-          runProjection();
-        }
+        } else return;
+        $('pj-status').textContent = 'Loaded ' + d.ticker + ' from the scorecard \u2014 ' + pjPeNote + '.';
+        runProjection();
       });
     }
   });
@@ -1700,20 +1800,7 @@ function fillProjection(d) {
   if (isNum(base)) $('pj-eps').value = base;
   if (isNum(d.epsGrowth5Y)) $('pj-growth').value = Math.max(-20, Math.min(60, Math.round(d.epsGrowth5Y)));
   else if (isNum(d.epsGrowthNextY)) $('pj-growth').value = Math.round(Math.max(-20, Math.min(60, d.epsGrowthNextY)));
-  // Exit P/E starts at the stock's 5-year average P/E (StockAnalysis
-  // ratios history) — what the market has paid across a full cycle.
-  // Falls back to the current trailing P/E when no usable history
-  // exists; either way the box stays editable.
   pjPeNote = '';
-  if (isNum(d.pe5yAvg) && d.pe5yAvg > 0) {
-    $('pj-mult').value = Math.round(d.pe5yAvg * 10) / 10;
-    pjMultAuto = $('pj-mult').value;
-    pjPeNote = 'exit P/E = ' + (d.pe5yYears >= 5 ? '5-yr' : d.pe5yYears + '-yr') + ' avg P/E ' + fmtNum(d.pe5yAvg, 1) + '\u00d7';
-  } else if (isNum(d.pe) && d.pe > 0) {
-    $('pj-mult').value = Math.round(d.pe * 10) / 10;
-    pjMultAuto = $('pj-mult').value;
-    pjPeNote = 'exit P/E = current P/E ' + fmtNum(d.pe, 1) + '\u00d7 (no 5-yr history)';
-  }
   // Year-by-year path: the first row is the current TTM position (EPS and
   // its actual TTM growth), then the analysts' forecast years, up to 5.
   var ttmRow = isNum(d.epsTTM) ? {
@@ -1732,6 +1819,28 @@ function fillProjection(d) {
     pjSynthPath(ttmRow);
   }
   renderPjPath();
+  // Exit P/E (Justin's growth-matched rule, 2026-10-29): extend the
+  // path to the full horizon, read the exit year's growth, and set
+  // the multiple to the average P/E of the historical years whose
+  // revenue growth matched it. Fallbacks: the plain 5-yr average
+  // P/E, then the current trailing P/E. Always editable.
+  pjEnsureYears(pjYearsWanted() + pjTtmOffset());
+  var gStar = pjExitGrowth();
+  var match = isNum(gStar) ? pjMatchPe(pjPePairs(d), gStar) : null;
+  if (match) {
+    $('pj-mult').value = Math.round(match.mult * 10) / 10;
+    pjMultAuto = $('pj-mult').value;
+    pjPeNote = pjMatchNote(match, gStar);
+  } else if (isNum(d.pe5yAvg) && d.pe5yAvg > 0) {
+    $('pj-mult').value = Math.round(d.pe5yAvg * 10) / 10;
+    pjMultAuto = $('pj-mult').value;
+    pjPeNote = 'exit P/E = ' + (d.pe5yYears >= 5 ? '5-yr' : d.pe5yYears + '-yr') + ' avg P/E ' + fmtNum(d.pe5yAvg, 1) + '\u00d7';
+  } else if (isNum(d.pe) && d.pe > 0) {
+    $('pj-mult').value = Math.round(d.pe * 10) / 10;
+    pjMultAuto = $('pj-mult').value;
+    pjPeNote = 'exit P/E = current P/E ' + fmtNum(d.pe, 1) + '\u00d7 (no 5-yr history)';
+  }
+  renderPjPath();
 }
 async function loadProjectionTicker() {
   var T = ($('pj-ticker').value || '').trim().toUpperCase();
@@ -1741,9 +1850,19 @@ async function loadProjectionTicker() {
   status.innerHTML = '<span class="spinner"></span>Loading live data for ' + esc(T) + '…';
   try {
     var peP = fetchPe5yAvg(T).catch(function () { return null; });
+    var qmP = fetchQMetrics(T, 'y').catch(function () { return null; });
     var d = await fetchStock(T);
     var pe5 = await peP;
-    if (pe5) { d.pe5yAvg = pe5.avg; d.pe5yYears = pe5.years; }
+    if (pe5) { d.pe5yAvg = pe5.avg; d.pe5yYears = pe5.years; d.peByYear = pe5.byYear; }
+    var qm = await qmP;
+    if (qm && qm.revenue) {
+      var rmap = {};
+      qm.periods.forEach(function (p, i) {
+        var m = String(p).match(/(\d{4})/);
+        if (m && isNum(qm.revenue[i])) rmap[parseInt(m[1], 10)] = qm.revenue[i];
+      });
+      if (Object.keys(rmap).length) d.revByYear = rmap;
+    }
     fillProjection(d);
     var bits = [];
     if (pjPeNote) bits.push(pjPeNote);
@@ -2743,6 +2862,124 @@ function renderScanCard() {
   });
 }
 
+/* ---------- full-screen stock overview (watchlist tap) ----------
+ * Justin's ask (2026-10-29): tapping a watchlist row opens a
+ * full-screen overview of the stock -- a condensed scorecard
+ * (verdicts, both screens, key stats, EPS path) with one-tap jumps
+ * to the full scorecard and the Projection Builder. */
+var ovTicker = null;
+function renderOverview(d, item) {
+  var sc = scoreStock(d);
+  var rk = riskScore(d);
+  var chgCls = isNum(d.dayChangePct) ? (d.dayChangePct >= 0 ? 'up' : 'down') : '';
+  var html = '<div class="card">';
+  html += '<div class="sc-head"><div><div class="sc-name">' + esc(d.companyName || d.ticker) + ' <span class="gold-text">' + esc(d.ticker) + '</span></div>' +
+    '<div class="sc-sub">' + esc([d.exchange, d.sector, d.industry].filter(Boolean).join(' \u00b7 ')) + '</div></div>' +
+    '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
+    '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
+  if (item && isNum(item.target) && item.target > 0 && isNum(d.price)) {
+    var above = (d.price / item.target - 1) * 100;
+    html += '<p class="fineprint" style="margin:2px 0 8px">Your target buy: ' + fmtMoney(item.target) + ' \u2014 ' +
+      (d.price <= item.target ? 'price is at or below it' : fmtNum(above, 1) + '% above it') + '.</p>';
+  }
+  if (sc.score != null) {
+    var vClass = sc.verdict === 'Undervalued' ? 'undervalued' : sc.verdict === 'Fairly valued' ? 'fair' : 'overpriced';
+    html += '<div class="verdict ' + vClass + '"><div><div class="v-label">Valuation verdict</div>' +
+      '<div class="v-word">' + esc(sc.verdict) + '</div></div>' +
+      '<div class="v-score">' + sc.score + '<small> / 100</small></div></div>';
+    html += '<div class="score-bar"><div style="width:' + sc.score + '%"></div></div>';
+  }
+  if (rk.score != null) {
+    var rClass = rk.score <= 25 ? 'risk-low' : rk.score <= 45 ? 'risk-mod' : rk.score <= 65 ? 'risk-elev' : 'risk-high';
+    html += '<div class="verdict ' + rClass + '"><div><div class="v-label">Risk score</div>' +
+      '<div class="v-word">' + esc(rk.verdict) + '</div></div>' +
+      '<div class="v-score">' + rk.score + '<small> / 100</small></div></div>';
+    html += '<div class="score-bar risk-bar"><div style="width:' + rk.score + '%"></div></div>';
+  }
+  var pw = epsProfitWarning(d);
+  if (pw) html += '<div class="alert warn">' + esc(pw) + '</div>';
+  var traj = epsTrajectory(d);
+  if (traj.warning) html += '<div class="alert warn">' + esc(traj.warning) + '</div>';
+  if (traj.points && traj.points.length) {
+    html += '<div class="section-h">EPS <span class="gold-text">path</span></div>' +
+      '<p style="margin:0 0 4px">' + traj.points.map(function (p) { return esc(p.label) + ' ' + fmtNum(p.eps); }).join(' \u2192 ') + '</p>';
+  }
+  var screen = valueScreen(d);
+  var passCount = screen.filter(function (s) { return s.test === true; }).length;
+  var knownCount = screen.filter(function (s) { return s.test !== null; }).length;
+  html += '<div class="section-h">Your value screen \u2014 <span class="gold-text">' + passCount + ' of ' + knownCount + '</span></div><div class="screen-chips">';
+  screen.forEach(function (s) {
+    var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
+    var mark = s.test === null ? '?' : s.test ? '\u2713 PASS' : '\u2717';
+    html += '<div class="chip ' + cls + '"><span>' + esc(s.label) + '<br><span class="factor-note">' + esc(s.value) + '</span></span><span class="mark">' + mark + '</span></div>';
+  });
+  html += '</div>';
+  var rScreen = riskScreen(d);
+  var rPass = rScreen.filter(function (s) { return s.test === true; }).length;
+  var rKnown = rScreen.filter(function (s) { return s.test !== null; }).length;
+  html += '<div class="section-h">Risk screen \u2014 <span class="gold-text">' + rPass + ' of ' + rKnown + ' clear</span></div><div class="screen-chips">';
+  rScreen.forEach(function (s) {
+    var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
+    var mark = s.test === null ? '?' : s.test ? '\u2713 CLEAR' : '\u2717 FLAG';
+    html += '<div class="chip ' + cls + '"><span>' + esc(s.label) + '<br><span class="factor-note">' + esc(s.value) + '</span></span><span class="mark">' + mark + '</span></div>';
+  });
+  html += '</div>';
+  html += '<div class="section-h">Key <span class="gold-text">stats</span></div><div class="kv-grid">';
+  html += kvItem('Market cap', fmtCap(d.marketCap));
+  html += kvItem('Forward P/E', isNum(d.forwardPE) ? fmtNum(d.forwardPE, 2) : '\u2014');
+  html += kvItem('P/E (trailing)', isNum(d.pe) ? fmtNum(d.pe, 2) : '\u2014');
+  html += kvItem('PEG', isNum(d.peg) ? fmtNum(d.peg, 2) : '\u2014');
+  html += kvItem('EPS (trailing)', isNum(d.epsTTM) ? fmtNum(d.epsTTM) : '\u2014');
+  html += kvItem('EPS growth next yr', isNum(d.epsGrowthNextY) ? fmtPct(d.epsGrowthNextY) : '\u2014');
+  html += kvItem('Revenue growth (TTM)', isNum(d.salesGrowthTTM) ? fmtPct(d.salesGrowthTTM) : '\u2014');
+  html += kvItem('Profit margin', isNum(d.profitMargin) ? fmtNum(d.profitMargin, 1) + '%' : '\u2014');
+  html += kvItem('Gross margin', isNum(d.grossMargin) ? fmtNum(d.grossMargin, 1) + '%' : '\u2014');
+  html += kvItem('Debt / Equity', isNum(d.debtEq) ? fmtNum(d.debtEq, 2) : '\u2014');
+  html += kvItem('Beta', isNum(d.beta) ? fmtNum(d.beta, 2) : '\u2014');
+  html += kvItem('Current ratio', isNum(d.currentRatio) ? fmtNum(d.currentRatio, 2) : '\u2014');
+  html += kvItem('Dividend yield', isNum(d.divYield) ? fmtNum(d.divYield, 2) + '%' : '\u2014');
+  html += kvItem('Below 52-wk high', isNum(d.pctBelowHigh) ? fmtNum(d.pctBelowHigh, 1) + '%' : '\u2014');
+  html += '</div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' +
+    '<button type="button" class="btn-ghost" id="ov-scorecard">Full scorecard</button>' +
+    '<button type="button" class="btn-ghost" id="ov-project">Projection</button>' +
+    '<a class="btn-ghost" style="text-decoration:none" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&ticker=' + encodeURIComponent(d.ticker) + '&type=10-Q&dateb=&owner=include&count=10" target="_blank" rel="noopener">Earnings report</a>' +
+    '<a class="btn-ghost" style="text-decoration:none" href="https://www.youtube.com/results?search_query=' + encodeURIComponent(d.ticker + ' earnings call') + '" target="_blank" rel="noopener">Earnings call</a></div>';
+  html += '</div>';
+  return html;
+}
+
+function wireOverviewActions(d) {
+  var sc = $('ov-scorecard');
+  if (sc) sc.addEventListener('click', function () { switchTab('scorecard'); $('search-input').value = d.ticker; runSearch(d.ticker); });
+  var pj = $('ov-project');
+  if (pj) pj.addEventListener('click', function () { switchTab('tools'); $('pj-ticker').value = d.ticker; loadProjectionTicker(); });
+}
+
+function openOverview(T) {
+  ovTicker = T;
+  var item = null;
+  getWatchlist().forEach(function (w) { if (w.ticker === T) item = w; });
+  switchTab('overview');
+  var body = $('ov-body');
+  var cache = lsGet(CACHE_KEY, {});
+  var hit = cache[T];
+  if (hit && hit.data) {
+    body.innerHTML = renderOverview(hit.data, item);
+    wireOverviewActions(hit.data);
+  } else {
+    body.innerHTML = '<div class="card"><div class="status"><span class="spinner"></span>Loading ' + esc(T) + '\u2026</div></div>';
+  }
+  fetchStock(T).then(function (d) {
+    if (ovTicker !== T) return;
+    body.innerHTML = renderOverview(d, item);
+    wireOverviewActions(d);
+  }).catch(function (e) {
+    if (ovTicker !== T || (hit && hit.data)) return;
+    body.innerHTML = '<div class="card"><div class="alert warn">Could not load ' + esc(T) + ' \u2014 ' + esc((e && e.message) || 'fetch failed') + '</div></div>';
+  });
+}
+
 async function renderWatchlist(refresh) {
   var wl = getWatchlist();
   var box = $('wl-list');
@@ -2804,7 +3041,7 @@ async function renderWatchlist(refresh) {
       else if (above <= 10) distHtml = '<span class="pill near">' + fmtNum(above, 1) + '% above target</span>';
       else distHtml = '<span class="pill far">' + fmtNum(above, 1) + '% above target</span>';
     }
-    html += '<div class="wl-row"><div class="wl-left"><span class="wl-t">' + esc(item.ticker) + '</span>' +
+    html += '<div class="wl-row" data-ticker="' + esc(item.ticker) + '"><div class="wl-left"><span class="wl-t">' + esc(item.ticker) + '</span>' +
       '<div class="wl-meta">Target buy: ' + (isNum(item.target) ? fmtMoney(item.target) : '\u2014') + '</div>' +
       (r.val ? '<div class="wl-meta wl-val">Valuation <b style="color:hsl(' + Math.round(r.val.score * 1.2) + ', 78%, var(--val-l))">' + r.val.score + '</b>' + (isNum(r.val.risk) ? ' \u00b7 Risk <b style="color:hsl(' + Math.round((100 - r.val.risk) * 1.2) + ', 78%, var(--val-l))">' + r.val.risk + '</b>' : '') + '</div>' : '') +
       '</div>' +
@@ -2820,6 +3057,13 @@ async function renderWatchlist(refresh) {
   });
   $('wl-status').textContent = '';
   box.innerHTML = html;
+  box.querySelectorAll('.wl-row').forEach(function (row) {
+    row.addEventListener('click', function (e) {
+      if (e.target.closest('button, a, select, input')) return;
+      var T = row.getAttribute('data-ticker');
+      if (T) openOverview(T);
+    });
+  });
   box.querySelectorAll('[data-research]').forEach(function (b) {
     b.addEventListener('click', function () { switchTab('scorecard'); $('search-input').value = b.getAttribute('data-research'); runSearch(b.getAttribute('data-research')); });
   });
@@ -4342,6 +4586,7 @@ function initApp() {
     $('btn-settings').setAttribute('aria-expanded', 'false');
     switchTab('journal');
   });
+  $('ov-back').addEventListener('click', function () { switchTab('watchlist'); });
   $('btn-settings').addEventListener('click', function (e) {
     e.stopPropagation();
     var willOpen = settingsMenu.hidden;
