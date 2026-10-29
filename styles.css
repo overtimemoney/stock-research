@@ -98,12 +98,14 @@ h2, h3 { font-weight: 800; letter-spacing: -0.01em; }
 
 /* ---------- header ---------- */
 .topbar {
+  /* Now just the status-bar zone + the gold line at its bottom edge;
+   * the settings gear floats (see .settings-wrap). Content scrolls
+   * right up to the line (Justin, 2026-10-29). */
   flex: 0 0 auto; z-index: 20;
-  background: var(--topbar); backdrop-filter: blur(10px);
-  position: relative;
-  padding: calc(4px + env(safe-area-inset-top)) 16px 4px;
+  height: calc(env(safe-area-inset-top) + 3px);
+  background: var(--bg);
+  border-bottom: 3px solid transparent; border-image: var(--gold-grad) 1;
 }
-.brand { display: flex; align-items: center; gap: 12px; max-width: 860px; margin: 0 auto; }
 
 /* ---------- layout ---------- */
 main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; width: 100%; max-width: 860px; margin: 0 auto; padding: 10px 14px calc(88px + env(safe-area-inset-bottom)); }
@@ -285,7 +287,7 @@ table.scen td { padding: 8px 6px; }
 @media (max-width: 640px) { .swot-grid { grid-template-columns: 1fr; } }
 
 /* ---------- settings (gear + dropdown) ---------- */
-.settings-wrap { position: relative; margin-left: auto; flex: 0 0 auto; }
+.settings-wrap { position: fixed; top: calc(env(safe-area-inset-top) + 9px); right: 12px; z-index: 40; }
 .gear-btn {
   width: 34px; height: 34px; border-radius: 10px; cursor: pointer; line-height: 1;
   border: 1.5px solid var(--line); background: var(--field); color: var(--ink); font-size: 19px;
@@ -544,7 +546,3 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .tabbar.mini { padding: 4px; }
 .tabbar.mini button { height: 36px; }
 .tabbar.mini button .tab-ico .ico { width: 20px; height: 20px; }
-
-/* Gold line pinned to the bottom edge of the status-bar zone --
- * directly beneath the clock/battery (Justin's call, 2026-10-29). */
-.topbar::before { content: ''; position: absolute; left: 0; right: 0; top: env(safe-area-inset-top); height: 3px; background: var(--gold-grad); }

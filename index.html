@@ -20,68 +20,65 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
 </script>
 </head>
 <body>
-<header class="topbar">
-  <div class="brand">
-    <div class="settings-wrap">
-      <button id="btn-settings" class="gear-btn" type="button" aria-label="Settings" aria-haspopup="true" aria-expanded="false"><svg class="ico ico-f" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M19.30 12.00 L19.17 13.39 L20.94 14.56 L20.13 16.51 L18.05 16.08 L17.75 16.49 L17.42 16.88 L17.16 17.16 L16.08 18.05 L16.51 20.13 L14.56 20.94 L13.39 19.17 L12.89 19.25 L12.38 19.29 L12.00 19.30 L10.61 19.17 L9.44 20.94 L7.49 20.13 L7.92 18.05 L7.51 17.75 L7.12 17.42 L6.84 17.16 L5.95 16.08 L3.87 16.51 L3.06 14.56 L4.83 13.39 L4.75 12.89 L4.71 12.38 L4.70 12.00 L4.83 10.61 L3.06 9.44 L3.87 7.49 L5.95 7.92 L6.25 7.51 L6.58 7.12 L6.84 6.84 L7.92 5.95 L7.49 3.87 L9.44 3.06 L10.61 4.83 L11.11 4.75 L11.62 4.71 L12.00 4.70 L13.39 4.83 L14.56 3.06 L16.51 3.87 L16.08 5.95 L16.49 6.25 L16.88 6.58 L17.16 6.84 L18.05 7.92 L20.13 7.49 L20.94 9.44 L19.17 10.61 L19.25 11.11 L19.29 11.62 Z M12 8.9 a3.1 3.1 0 1 0 0 6.2 a3.1 3.1 0 1 0 0 -6.2 Z"/></svg></button>
-      <div id="settings-menu" class="settings-menu" hidden>
-        <div class="set-h">Reference</div>
-        <button id="menu-journal" class="btn-ghost wide" type="button" style="margin-bottom:6px"><svg class="ico" viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg> Journal — your research notes</button>
-        <button id="menu-glossary" class="btn-ghost wide" type="button" style="margin-bottom:4px"><svg class="ico" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> Glossary — plain-English terms</button>
-        <div class="set-h">Appearance</div>
-        <div class="seg" role="group" aria-label="Theme">
-          <button id="theme-dark" type="button"><svg class="ico ico-f" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg> Dark</button>
-          <button id="theme-light" type="button"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> Light</button>
-        </div>
-        <div class="set-h">Back up your data</div>
-        <p class="fineprint" style="margin:0 0 8px">Your watchlist, portfolio, journal and saved AI SWOTs live only on this device. Export a backup and keep it somewhere safe (Files, iCloud, email it to yourself). Import a backup here to restore everything.</p>
-        <div class="row-gap">
-          <button id="btn-export" class="btn-gold" type="button"><svg class="ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export</button>
-          <button id="btn-import" class="btn-ghost" type="button"><svg class="ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Import</button>
-          <input id="import-file" type="file" accept="application/json,.json" hidden>
-        </div>
-        <div id="backup-status" class="status"></div>
-        <textarea id="backup-text" rows="4" placeholder="Your backup appears here as text too. To restore from text, paste a backup here and tap Import from text."></textarea>
-        <div class="row-gap" style="margin-top:6px">
-          <button id="btn-import-text" class="btn-ghost" type="button">Import from text</button>
-        </div>
-        <!-- Cloud sync (Supabase). This whole section starts
-             hidden and stays hidden unless supabase-config.js is filled
-             in; with an empty config the app behaves exactly as before. -->
-        <div id="sync-section" hidden>
-          <div class="set-h">Cloud sync</div>
-          <p class="fineprint" style="margin:0 0 8px">Sign in to back up your watchlist, portfolio, journal, saved projections and AI SWOTs to your Supabase account and sync them across devices. Your data still lives on this device too — sync never blocks the app.</p>
-          <div id="sync-signed-out">
-            <label>Email<input id="sync-email" type="email" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you@example.com"></label>
-            <label>Password<input id="sync-password" type="password" autocomplete="current-password" placeholder="Password"></label>
-            <div class="row-gap">
-              <button id="sync-signin" class="btn-gold" type="button">Sign in</button>
-              <button id="sync-signup" class="btn-ghost" type="button">Sign up</button>
-            </div>
-          </div>
-          <div id="sync-signed-in" hidden>
-            <p class="fineprint" style="margin:0 0 8px">Signed in as <span id="sync-user"></span></p>
-            <div class="row-gap">
-              <button id="sync-now" class="btn-ghost" type="button">Sync now</button>
-              <button id="sync-signout" class="btn-ghost" type="button">Sign out</button>
-            </div>
-          </div>
-          <div id="sync-status" class="status" role="status"></div>
-        </div>
-        <div class="set-h">Learn</div>
-        <button id="menu-quiz" class="btn-ghost wide" type="button" style="margin-bottom:4px"><svg class="ico" viewBox="0 0 24 24"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg> The 5% Quiz — what an extra 5%/yr is worth</button>
-        <div class="set-h">Housekeeping</div>
-        <div class="row-gap" style="flex-wrap:wrap">
-          <button id="set-clear-ai" class="btn-ghost" type="button">Clear AI SWOTs</button>
-          <button id="set-clear-cache" class="btn-ghost" type="button">Clear price cache</button>
-          <button id="set-reload" class="btn-ghost" type="button"><svg class="ico" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Reload app</button>
-        </div>
-        <div id="settings-note" class="status"></div>
-        <p class="fineprint">Data: Finviz · Nasdaq · Yahoo · MarketBeat, through your own Cloudflare relay. AI SWOTs: Llama 4 Scout on your Cloudflare account. Saved data never leaves this device — only the tickers you look up are sent.</p>
-      </div>
+<header class="topbar"></header>
+<div class="settings-wrap">
+  <button id="btn-settings" class="gear-btn" type="button" aria-label="Settings" aria-haspopup="true" aria-expanded="false"><svg class="ico ico-f" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M19.30 12.00 L19.17 13.39 L20.94 14.56 L20.13 16.51 L18.05 16.08 L17.75 16.49 L17.42 16.88 L17.16 17.16 L16.08 18.05 L16.51 20.13 L14.56 20.94 L13.39 19.17 L12.89 19.25 L12.38 19.29 L12.00 19.30 L10.61 19.17 L9.44 20.94 L7.49 20.13 L7.92 18.05 L7.51 17.75 L7.12 17.42 L6.84 17.16 L5.95 16.08 L3.87 16.51 L3.06 14.56 L4.83 13.39 L4.75 12.89 L4.71 12.38 L4.70 12.00 L4.83 10.61 L3.06 9.44 L3.87 7.49 L5.95 7.92 L6.25 7.51 L6.58 7.12 L6.84 6.84 L7.92 5.95 L7.49 3.87 L9.44 3.06 L10.61 4.83 L11.11 4.75 L11.62 4.71 L12.00 4.70 L13.39 4.83 L14.56 3.06 L16.51 3.87 L16.08 5.95 L16.49 6.25 L16.88 6.58 L17.16 6.84 L18.05 7.92 L20.13 7.49 L20.94 9.44 L19.17 10.61 L19.25 11.11 L19.29 11.62 Z M12 8.9 a3.1 3.1 0 1 0 0 6.2 a3.1 3.1 0 1 0 0 -6.2 Z"/></svg></button>
+  <div id="settings-menu" class="settings-menu" hidden>
+    <div class="set-h">Reference</div>
+    <button id="menu-journal" class="btn-ghost wide" type="button" style="margin-bottom:6px"><svg class="ico" viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg> Journal — your research notes</button>
+    <button id="menu-glossary" class="btn-ghost wide" type="button" style="margin-bottom:4px"><svg class="ico" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> Glossary — plain-English terms</button>
+    <div class="set-h">Appearance</div>
+    <div class="seg" role="group" aria-label="Theme">
+      <button id="theme-dark" type="button"><svg class="ico ico-f" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg> Dark</button>
+      <button id="theme-light" type="button"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> Light</button>
     </div>
+    <div class="set-h">Back up your data</div>
+    <p class="fineprint" style="margin:0 0 8px">Your watchlist, portfolio, journal and saved AI SWOTs live only on this device. Export a backup and keep it somewhere safe (Files, iCloud, email it to yourself). Import a backup here to restore everything.</p>
+    <div class="row-gap">
+      <button id="btn-export" class="btn-gold" type="button"><svg class="ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export</button>
+      <button id="btn-import" class="btn-ghost" type="button"><svg class="ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Import</button>
+      <input id="import-file" type="file" accept="application/json,.json" hidden>
+    </div>
+    <div id="backup-status" class="status"></div>
+    <textarea id="backup-text" rows="4" placeholder="Your backup appears here as text too. To restore from text, paste a backup here and tap Import from text."></textarea>
+    <div class="row-gap" style="margin-top:6px">
+      <button id="btn-import-text" class="btn-ghost" type="button">Import from text</button>
+    </div>
+    <!-- Cloud sync (Supabase). This whole section starts
+         hidden and stays hidden unless supabase-config.js is filled
+         in; with an empty config the app behaves exactly as before. -->
+    <div id="sync-section" hidden>
+      <div class="set-h">Cloud sync</div>
+      <p class="fineprint" style="margin:0 0 8px">Sign in to back up your watchlist, portfolio, journal, saved projections and AI SWOTs to your Supabase account and sync them across devices. Your data still lives on this device too — sync never blocks the app.</p>
+      <div id="sync-signed-out">
+        <label>Email<input id="sync-email" type="email" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you@example.com"></label>
+        <label>Password<input id="sync-password" type="password" autocomplete="current-password" placeholder="Password"></label>
+        <div class="row-gap">
+          <button id="sync-signin" class="btn-gold" type="button">Sign in</button>
+          <button id="sync-signup" class="btn-ghost" type="button">Sign up</button>
+        </div>
+      </div>
+      <div id="sync-signed-in" hidden>
+        <p class="fineprint" style="margin:0 0 8px">Signed in as <span id="sync-user"></span></p>
+        <div class="row-gap">
+          <button id="sync-now" class="btn-ghost" type="button">Sync now</button>
+          <button id="sync-signout" class="btn-ghost" type="button">Sign out</button>
+        </div>
+      </div>
+      <div id="sync-status" class="status" role="status"></div>
+    </div>
+    <div class="set-h">Learn</div>
+    <button id="menu-quiz" class="btn-ghost wide" type="button" style="margin-bottom:4px"><svg class="ico" viewBox="0 0 24 24"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg> The 5% Quiz — what an extra 5%/yr is worth</button>
+    <div class="set-h">Housekeeping</div>
+    <div class="row-gap" style="flex-wrap:wrap">
+      <button id="set-clear-ai" class="btn-ghost" type="button">Clear AI SWOTs</button>
+      <button id="set-clear-cache" class="btn-ghost" type="button">Clear price cache</button>
+      <button id="set-reload" class="btn-ghost" type="button"><svg class="ico" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Reload app</button>
+    </div>
+    <div id="settings-note" class="status"></div>
+    <p class="fineprint">Data: Finviz · Nasdaq · Yahoo · MarketBeat, through your own Cloudflare relay. AI SWOTs: Llama 4 Scout on your Cloudflare account. Saved data never leaves this device — only the tickers you look up are sent.</p>
   </div>
-</header>
+</div>
 
 <main id="app">
   <!-- SCORECARD -->
