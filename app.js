@@ -2306,17 +2306,32 @@ function wlValuationDisplay(T) {
  * its 60 raw risk points were divided by a 75-pt pool instead of
  * the full 115. Fetch both so the watchlist and the scorecard
  * compute risk over the same factors. */
+var WLAUX_KEY = 'sr_wlaux_v1';
 async function fetchWlValuation(T) {
   var d = { ticker: T, sources: [], errors: [] };
-  try {
-    var fvHtml = await relayFetch('https://finviz.com/stock?t=' + encodeURIComponent(T), {
+  // The EPS path and revenue path move at most daily, so they are
+  // day-cached per ticker; a same-day refresh then only re-fetches
+  // the Finviz quote. All three fetches fire in parallel -- run
+  // sequentially they tripled each row's wait (2026-10-29).
+  var auxCache = lsGet(WLAUX_KEY, {});
+  var day = new Date().toDateString();
+  var aux = (auxCache[T] && auxCache[T].day === day) ? auxCache[T] : null;
+  var parts = await Promise.all([
+    relayFetch('https://finviz.com/stock?t=' + encodeURIComponent(T), {
       validate: function (t) { return t.indexOf('snapshot-td-label') !== -1; }
-    });
-    fillFromFinviz(d, fvHtml);
-  } catch (e) {}
-  try {
-    var fc = await relayJSON('https://api.nasdaq.com/api/analyst/' + encodeURIComponent(T) + '/earnings-forecast?assetclass=stocks');
-    var rows = (fc && fc.data && fc.data.yearlyForecast && fc.data.yearlyForecast.rows) || [];
+    }).catch(function () { return null; }),
+    aux ? Promise.resolve(null) : relayJSON('https://api.nasdaq.com/api/analyst/' + encodeURIComponent(T) + '/earnings-forecast?assetclass=stocks').catch(function () { return null; }),
+    aux ? Promise.resolve(null) : relayFetch('https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/forecast/', {
+      timeout: 20000,
+      validate: function (t) { return t.indexOf('Fiscal Year') !== -1 && t.indexOf('Revenue') !== -1; }
+    }).catch(function () { return null; })
+  ]);
+  if (parts[0]) fillFromFinviz(d, parts[0]);
+  if (aux) {
+    d.epsForecasts = aux.epsForecasts || [];
+    if (aux.revPath) d.revPath = aux.revPath;
+  } else {
+    var rows = (parts[1] && parts[1].data && parts[1].data.yearlyForecast && parts[1].data.yearlyForecast.rows) || [];
     d.epsForecasts = rows.map(function (r) {
       return {
         fiscalEnd: r.fiscalEnd,
@@ -2326,15 +2341,13 @@ async function fetchWlValuation(T) {
         n: parseNum(r.noOfEstimates)
       };
     }).filter(function (r) { return isNum(r.eps); });
-  } catch (e) {}
-  try {
-    var saHtml = await relayFetch('https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/forecast/', {
-      timeout: 20000,
-      validate: function (t) { return t.indexOf('Fiscal Year') !== -1 && t.indexOf('Revenue') !== -1; }
-    });
-    var rp = parseSAForecast(saHtml);
-    if (rp.length >= 3) d.revPath = rp;
-  } catch (e) {}
+    if (parts[2]) {
+      var rp = parseSAForecast(parts[2]);
+      if (rp.length >= 3) d.revPath = rp;
+    }
+    auxCache[T] = { day: day, epsForecasts: d.epsForecasts || [], revPath: d.revPath || null };
+    lsSet(WLAUX_KEY, auxCache);
+  }
   // EPS growth next yr: fiscal-year over fiscal-year, the scorecard's
   // rule -- Nasdaq FY pair first, Finviz pair as fallback.
   var nextFY = (d.epsForecasts && d.epsForecasts[0]) || null;
@@ -2366,6 +2379,49 @@ async function fetchWlValuation(T) {
  * up to 5 tries per page, dropped pages remembered for Resume, and a
  * scan only counts as DONE when every page landed. Partial results
  * are labelled partial, with the true scored count. */
+function wlValInner(v) {
+  return 'Valuation <b style="color:hsl(' + Math.round(v.score * 1.2) + ', 78%, var(--val-l))">' + v.score + '</b>' +
+    (isNum(v.risk) ? ' \u00b7 Risk <b style="color:hsl(' + Math.round((100 - v.risk) * 1.2) + ', 78%, var(--val-l))">' + v.risk + '</b>' : '');
+}
+
+/* Background fill for stale watchlist scores. The old version fired
+ * every stale ticker at once and blocked the first paint until the
+ * slowest finished: a burst through one relay IP earns Finviz 403s,
+ * so the refresh crawled (Justin's "still throttling", 2026-10-29).
+ * Now: rows paint immediately with whatever is cached, then a pool
+ * of 2 workers with a short gap walks the stale list, updating each
+ * row in place as its score lands. */
+var wlFillRunning = false;
+async function wlFillPass(tickers) {
+  if (wlFillRunning || !tickers.length) return;
+  wlFillRunning = true;
+  var queue = tickers.slice();
+  var vmap = lsGet(WLVAL_KEY, {});
+  async function worker() {
+    while (queue.length) {
+      var T = queue.shift();
+      try {
+        var v = await fetchWlValuation(T);
+        if (v) {
+          vmap[T] = { score: v.score, verdict: v.verdict, risk: v.risk, at: Date.now() };
+          lsSet(WLVAL_KEY, vmap);
+          var rowEls = document.querySelectorAll('#wl-list .wl-row');
+          for (var i = 0; i < rowEls.length; i++) {
+            if (rowEls[i].getAttribute('data-ticker') === T) {
+              var valEl = rowEls[i].querySelector('.wl-val');
+              if (valEl) valEl.innerHTML = wlValInner(v);
+              break;
+            }
+          }
+        }
+      } catch (e) {}
+      if (queue.length) await new Promise(function (res) { setTimeout(res, 250); });
+    }
+  }
+  await Promise.all([worker(), worker()]);
+  wlFillRunning = false;
+}
+
 var SCAN_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/screen';
 var SCAN_VIEWS = ['121', '161', '171'];
 var SCAN_IDXS = [
@@ -3080,21 +3136,13 @@ async function renderWatchlist(refresh) {
     var projMap = getProjections();
     rows.push({ item: item, price: price, err: err, val: wlValuationDisplay(item.ticker), proj: !!projMap[item.ticker], projCagr: projMap[item.ticker] ? pjSavedCagr(item.ticker) : null });
   }
-  // On an explicit refresh, fill in missing or stale valuation scores
-  // with a Finviz-only pass (a fresh full scorecard score wins as-is).
+  // Stale or missing scores are filled by the paced background pass
+  // after the rows paint (see wlFillPass) -- never by blocking here.
+  var staleTickers = [];
   if (refresh) {
-    var vmap = lsGet(WLVAL_KEY, {});
-    var dirty = false;
-    await Promise.all(rows.map(async function (r) {
-      if (r.val && r.val.fresh && isNum(r.val.risk)) return;
-      var v = await fetchWlValuation(r.item.ticker);
-      if (v) {
-        vmap[r.item.ticker] = { score: v.score, verdict: v.verdict, risk: v.risk, at: Date.now() };
-        r.val = { score: v.score, verdict: v.verdict, risk: v.risk, fresh: true };
-        dirty = true;
-      }
-    }));
-    if (dirty) lsSet(WLVAL_KEY, vmap);
+    rows.forEach(function (r) {
+      if (!(r.val && r.val.fresh && isNum(r.val.risk))) staleTickers.push(r.item.ticker);
+    });
   }
   var mode = getWlSort();
   rows.sort(function (a, b) {
@@ -3126,7 +3174,7 @@ async function renderWatchlist(refresh) {
     }
     html += '<div class="wl-row" data-ticker="' + esc(item.ticker) + '"><div class="wl-left"><span class="wl-t">' + esc(item.ticker) + '</span>' +
       '<div class="wl-meta">Target buy: ' + (isNum(item.target) ? fmtMoney(item.target) : '\u2014') + '</div>' +
-      (r.val ? '<div class="wl-meta wl-val">Valuation <b style="color:hsl(' + Math.round(r.val.score * 1.2) + ', 78%, var(--val-l))">' + r.val.score + '</b>' + (isNum(r.val.risk) ? ' \u00b7 Risk <b style="color:hsl(' + Math.round((100 - r.val.risk) * 1.2) + ', 78%, var(--val-l))">' + r.val.risk + '</b>' : '') + '</div>' : '') +
+      '<div class="wl-meta wl-val">' + (r.val ? wlValInner(r.val) : '') + '</div>' +
       '</div>' +
       '<div class="wl-right"><div class="wl-price">' + (isNum(price) ? fmtMoney(price) : '\u2014') + '</div>' +
       '<div style="text-align:right">' + (r.err ? '<span class="factor-note">price unavailable</span>' : distHtml) + '</div>' +
@@ -3140,6 +3188,7 @@ async function renderWatchlist(refresh) {
   });
   $('wl-status').textContent = '';
   box.innerHTML = html;
+  if (staleTickers.length) wlFillPass(staleTickers);
   box.querySelectorAll('.wl-row').forEach(function (row) {
     row.addEventListener('click', function (e) {
       if (e.target.closest('button, a, select, input')) return;
