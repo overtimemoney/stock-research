@@ -1296,7 +1296,7 @@ function aiSwotGridHtml(entry) {
   return '<div class="swot-grid">' +
     swotBox('S', 'Strengths', entry.swot.S, 'sw-s') + swotBox('W', 'Weaknesses', entry.swot.W, 'sw-w') +
     swotBox('O', 'Opportunities', entry.swot.O, 'sw-o') + swotBox('T', 'Threats', entry.swot.T, 'sw-t') + '</div>' +
-    '<p class="fineprint">AI-generated ' + esc(entry.asOf || '') + ' by Llama 4 on your Cloudflare account, from the live numbers above, recent headlines' + (entry.tenk ? ', and the Risk Factors section of its most recent 10-K (filed ' + esc(entry.tenk.filed) + ')' : '') + '. Strengths/Weaknesses are internal to the company; Opportunities/Threats are external factors. AI can be wrong or out of date — a starting point, not gospel. <button class="btn-ghost" id="ai-swot-btn" type="button">↻ Regenerate</button></p>';
+    '<div style="margin-top:8px"><button class="btn-ghost" id="ai-swot-btn" type="button">↻ Regenerate</button></div>';
 }
 function bindAiSwotBtn(d) {
   var b = $('ai-swot-btn');
