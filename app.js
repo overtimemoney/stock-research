@@ -4676,7 +4676,8 @@ function initApp() {
   $('compare-form').addEventListener('submit', function (e) { e.preventDefault(); runCompare(); });
   $('pj-run').addEventListener('click', runProjection);
   $('pj-path').addEventListener('change', onPjPathEdit);
-  $('pj-years').addEventListener('change', function () { runProjection(); });
+  /* No auto-build on Years edits (Justin's ask, 2026-10-29): the
+   * projection only rebuilds when Build projection is clicked. */
   $('pj-growth').addEventListener('change', function () { if (!pjPathFromForecast) pjSynthPath(); renderPjPath(); });
   $('pj-eps').addEventListener('change', function () { if (!pjPathFromForecast) pjSynthPath(); renderPjPath(); });
   renderPjPath();
