@@ -100,21 +100,12 @@ h2, h3 { font-weight: 800; letter-spacing: -0.01em; }
   background: var(--topbar); backdrop-filter: blur(10px);
   border-bottom: 3px solid transparent;
   border-image: var(--gold-grad) 1;
-  padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  padding: calc(4px + env(safe-area-inset-top)) 16px 4px;
 }
 .brand { display: flex; align-items: center; gap: 12px; max-width: 860px; margin: 0 auto; }
-.brand-mark {
-  width: 44px; height: 44px; border-radius: 12px; flex: 0 0 auto;
-  background: var(--gold-grad); color: #141414;
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 900; font-size: 17px; letter-spacing: .02em;
-  box-shadow: 0 3px 10px rgba(212, 141, 21, .35);
-}
-.brand-name { font-size: 20px; font-weight: 900; letter-spacing: .04em; line-height: 1; }
-.brand-tag { font-size: 12px; color: var(--muted); margin-top: 3px; font-weight: 600; }
 
 /* ---------- layout ---------- */
-main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; width: 100%; max-width: 860px; margin: 0 auto; padding: 16px 14px 20px; }
+main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; width: 100%; max-width: 860px; margin: 0 auto; padding: 10px 14px 20px; }
 .tab { display: none; }
 .tab.active { display: block; }
 .tab-title { font-size: 24px; margin: 6px 0 14px; text-transform: uppercase; letter-spacing: .02em; }
@@ -290,7 +281,7 @@ table.scen td { padding: 8px 6px; }
 /* ---------- settings (gear + dropdown) ---------- */
 .settings-wrap { position: relative; margin-left: auto; flex: 0 0 auto; }
 .gear-btn {
-  width: 42px; height: 42px; border-radius: 12px; cursor: pointer; line-height: 1;
+  width: 34px; height: 34px; border-radius: 10px; cursor: pointer; line-height: 1;
   border: 1.5px solid var(--line); background: var(--field); color: var(--ink); font-size: 19px;
 }
 .gear-btn:active { transform: translateY(1px); }
@@ -424,7 +415,7 @@ table.scen td { padding: 8px 6px; }
 /* ---------- vector icons (stroke style, inherit text color) ---------- */
 .ico { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: -4px; flex: 0 0 auto; }
 .tab-ico .ico { width: 23px; height: 23px; vertical-align: 0; }
-.gear-btn .ico { width: 25px; height: 25px; vertical-align: 0; }
+.gear-btn .ico { width: 21px; height: 21px; vertical-align: 0; }
 .btn-gold .ico, .btn-ghost .ico, .seg .ico { margin-right: 2px; }
 
 .ico { stroke-width: 2.1; }
@@ -540,5 +531,5 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
  * over the watchlist and slides back out to the right on close
  * (Justin's ask, 2026-10-29). Lives outside the tab system so the
  * watchlist underneath never unloads. */
-.ov-panel { position: fixed; inset: 0; z-index: 80; background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; padding: calc(12px + env(safe-area-inset-top)) 14px calc(18px + env(safe-area-inset-bottom)); transform: translateX(103%); transition: transform .28s cubic-bezier(.32,.72,.24,1); pointer-events: none; }
+.ov-panel { position: fixed; inset: 0; z-index: 85; background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; padding: calc(12px + env(safe-area-inset-top)) 14px calc(18px + env(safe-area-inset-bottom)); transform: translateX(103%); transition: transform .28s cubic-bezier(.32,.72,.24,1); pointer-events: none; }
 .ov-panel.open { transform: translateX(0); pointer-events: auto; }
