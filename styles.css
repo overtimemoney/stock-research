@@ -100,14 +100,14 @@ h2, h3 { font-weight: 800; letter-spacing: -0.01em; }
 .topbar {
   flex: 0 0 auto; z-index: 20;
   background: var(--topbar); backdrop-filter: blur(10px);
-  border-bottom: 3px solid transparent;
+  border-top: 3px solid transparent;
   border-image: var(--gold-grad) 1;
   padding: calc(4px + env(safe-area-inset-top)) 16px 4px;
 }
 .brand { display: flex; align-items: center; gap: 12px; max-width: 860px; margin: 0 auto; }
 
 /* ---------- layout ---------- */
-main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; width: 100%; max-width: 860px; margin: 0 auto; padding: 10px 14px 20px; }
+main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; width: 100%; max-width: 860px; margin: 0 auto; padding: 10px 14px calc(88px + env(safe-area-inset-bottom)); }
 .tab { display: none; }
 .tab.active { display: block; }
 .tab-title { font-size: 24px; margin: 6px 0 14px; text-transform: uppercase; letter-spacing: .02em; }
@@ -240,9 +240,9 @@ table.scen td { padding: 8px 6px; }
 
 /* ---------- tab bar ---------- */
 .tabbar {
-  flex: 0 0 auto; z-index: 30;
+  position: fixed; left: 12px; right: 12px; bottom: calc(8px + env(safe-area-inset-bottom)); z-index: 30;
   display: flex; gap: 2px;
-  margin: 0 12px calc(8px + env(safe-area-inset-bottom));
+  margin: 0;
   padding: 6px;
   background: var(--nav-bg);
   border: 1px solid var(--line); border-radius: 999px;
