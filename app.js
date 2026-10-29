@@ -3016,10 +3016,17 @@ function renderScanCard() {
   if (sr2) sr2.addEventListener('click', function () { scanStartIndex('rut'); });
   var su = $('scan-use-snapshot');
   if (su) su.addEventListener('click', function () {
-    if (getScanData()) return;
+    // Stop the grind and show the stored lists NOW. Two sources:
+    // this device's own dataset (a completed scan stored one) or the
+    // hosted snapshot. The first version silently returned when a
+    // dataset existed -- a button that does nothing is a bug
+    // (Justin's report, 2026-10-29).
     scanRunning = false;
     scanBootstrapping = false;
     scanDiag('manual snapshot load tapped');
+    var card = $('scan-card');
+    if (card) card.innerHTML = '<div class="status"><span class="spinner"></span>Loading the ready-made S&P 500 list\u2026</div>';
+    if (getScanData()) { scanRefreshReporters(); return; }
     scanBootstrapFromHosted();
   });
   box.querySelectorAll('[data-scan-research]').forEach(function (b) {
