@@ -2822,28 +2822,49 @@ async function scanRefreshReporters() {
  * this device has no stored dataset of its own; once it does, the
  * on-device machinery owns everything. */
 var scanBootstrapping = false;
+/* Diagnostic trail for the scan bootstrap: the harness version
+ * works, but on Justin's phone the snapshot rescue kept not firing
+ * (2026-10-29) with no visibility into which step failed. The last
+ * few events persist on-device and the newest prints on the scan
+ * card, so a screenshot carries the evidence. */
+function scanDiag(msg) {
+  try {
+    var a = lsGet('sr_scan_diag', []);
+    a.push(new Date().toTimeString().slice(0, 8) + ' ' + msg);
+    lsSet('sr_scan_diag', a.slice(-6));
+  } catch (e) {}
+}
+function scanDiagLast() {
+  var a = lsGet('sr_scan_diag', []);
+  return a.length ? a[a.length - 1] : '';
+}
 async function scanBootstrapFromHosted() {
-  if (scanBootstrapping) return;
-  if (getScanData()) { var s0 = scanFreshState(); setScan(s0); renderScanCard(); scanPump(); return; }
+  if (scanBootstrapping) { scanDiag('bootstrap skipped: already running'); return; }
+  if (getScanData()) { scanDiag('bootstrap: dataset exists, fresh scan'); var s0 = scanFreshState(); setScan(s0); renderScanCard(); scanPump(); return; }
   scanBootstrapping = true;
   var s = scanFreshState();
   setScan(s);
   renderScanCard();
   try {
     var resp = await fetch('scan-data.json?cb=' + Date.now(), { cache: 'no-store' });
-    if (resp.ok) {
+    if (!resp.ok) {
+      scanDiag('snapshot fetch failed: HTTP ' + resp.status);
+    } else {
       var snap = await resp.json();
-      if (snap && snap.recs && snap.asOf && Object.keys(snap.recs).length > 400) {
-        var ageDays = (Date.parse(scanTodayKey() + 'T12:00:00') - Date.parse(snap.asOf + 'T12:00:00')) / 86400000;
-        if (ageDays <= 10) {
-          setScanData({ recs: snap.recs, asOf: snap.asOf, lastRefreshDay: null, lastRefreshCount: 0 });
-          scanBootstrapping = false;
-          scanRefreshReporters();
-          return;
-        }
+      var n = (snap && snap.recs) ? Object.keys(snap.recs).length : 0;
+      var ageDays = snap && snap.asOf ? (Date.parse(scanTodayKey() + 'T12:00:00') - Date.parse(snap.asOf + 'T12:00:00')) / 86400000 : -1;
+      if (n > 400 && ageDays >= 0 && ageDays <= 10) {
+        setScanData({ recs: snap.recs, asOf: snap.asOf, lastRefreshDay: null, lastRefreshCount: 0 });
+        scanBootstrapping = false;
+        scanDiag('snapshot loaded: ' + n + ' recs, asOf ' + snap.asOf);
+        scanRefreshReporters();
+        return;
       }
+      scanDiag('snapshot rejected: recs=' + n + ' ageDays=' + ageDays);
     }
-  } catch (e) {}
+  } catch (e) {
+    scanDiag('snapshot fetch error: ' + (e && e.message ? e.message : String(e)));
+  }
   scanBootstrapping = false;
   scanPump();
 }
@@ -2978,7 +2999,9 @@ function renderScanCard() {
       var cooling = scanCoolUntil > Date.now();
       var rutOn = s.idx.rut && s.idx.rut.started !== false;
       html += '<div class="status"><span class="spinner"></span>' + (cooling ? 'Finviz is throttling \u2014 cooling down for a few seconds, then continuing\u2026 ' : (rutOn ? 'Scanning the S&P 500 and Russell 2000\u2026 ' : 'Scanning the S&P 500\u2026 ')) + pages + ' pages in, ' + stocks + ' stocks so far. It runs gently (a few minutes) to stay under Finviz\'s rate limit, and resumes if you close the app.</div>' +
-        '<div class="scan-bar"><i style="width:' + pct + '%"></i></div>';
+        '<div class="scan-bar"><i style="width:' + pct + '%"></i></div>' +
+        '<button type="button" class="btn-ghost" id="scan-use-snapshot" style="margin-top:8px">Stop scan \u2014 load the ready-made S&P 500 list</button>' +
+        (scanDiagLast() ? '<div class="factor-note" style="margin-top:6px">Snapshot check: ' + esc(scanDiagLast()) + '</div>' : '');
     }
   }
   html += '</div>';
@@ -2991,6 +3014,14 @@ function renderScanCard() {
   if (rm) rm.addEventListener('click', function () { scanResume(); });
   var sr2 = $('scan-start-rut');
   if (sr2) sr2.addEventListener('click', function () { scanStartIndex('rut'); });
+  var su = $('scan-use-snapshot');
+  if (su) su.addEventListener('click', function () {
+    if (getScanData()) return;
+    scanRunning = false;
+    scanBootstrapping = false;
+    scanDiag('manual snapshot load tapped');
+    scanBootstrapFromHosted();
+  });
   box.querySelectorAll('[data-scan-research]').forEach(function (b) {
     b.addEventListener('click', function () {
       var T = b.getAttribute('data-scan-research');
