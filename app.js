@@ -2380,7 +2380,7 @@ async function fetchWlValuation(T) {
  * scan only counts as DONE when every page landed. Partial results
  * are labelled partial, with the true scored count. */
 function wlValInner(v) {
-  return 'Valuation <b style="color:hsl(' + Math.round(v.score * 1.2) + ', 78%, var(--val-l))">' + v.score + '</b>' +
+  return 'Value <b style="color:hsl(' + Math.round(v.score * 1.2) + ', 78%, var(--val-l))">' + v.score + '</b>' +
     (isNum(v.risk) ? ' \u00b7 Risk <b style="color:hsl(' + Math.round((100 - v.risk) * 1.2) + ', 78%, var(--val-l))">' + v.risk + '</b>' : '');
 }
 
