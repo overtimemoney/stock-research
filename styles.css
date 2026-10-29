@@ -507,6 +507,7 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .ob-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .ob-kicker { font-size: 12px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
 .ob-skip { background: none; border: none; font: inherit; font-size: 14px; font-weight: 700; color: var(--muted); padding: 8px 2px; cursor: pointer; }
+.ob-overlay.ob-locked .ob-skip { display: none; }
 .ob-h { font-size: 24px; line-height: 1.28; margin: 4px 0 14px; }
 .ob-context { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin: 0 0 14px; box-shadow: 0 2px 14px var(--shadow); }
 .ob-context p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--ink2); }

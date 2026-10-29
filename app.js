@@ -5142,10 +5142,13 @@ if (typeof document !== 'undefined' && document.getElementById) {
 /* ==================== Onboarding: The 5% Quiz ====================
  * First-launch overlay (markup: #ob-overlay in index.html). Shown ONCE
  * per device: the localStorage flag sr_onboard_v1 is LOCAL-ONLY — it is
- * deliberately NOT one of the Supabase synced keys, so finishing or
- * skipping the quiz never touches sync. Skipping sets the flag too
- * (shown once means shown once), and Settings -> "The 5% Quiz"
- * replays it any time.
+ * deliberately NOT one of the Supabase synced keys, so finishing the
+ * quiz never touches sync. The automatic first-launch showing is
+ * UNSKIPPABLE (mode 'auto': the Skip control is hidden and guarded, so
+ * the only exit is completing the flow via the final "Start
+ * researching" CTA, which sets the flag). Settings -> "The 5% Quiz"
+ * replays it any time in mode 'replay', where Skip stays available and
+ * leaving a replay never changes the flag.
  *
  * Every number on the chart comes from the same future-value-of-an-
  * annuity formula, computed live: $500/month = $6,000/year, annual
@@ -5264,11 +5267,26 @@ if (typeof document !== 'undefined' && document.getElementById) {
       if (scroller) scroller.scrollTop = 0;
       renderChart('10');
     }
-    function openQuiz() {
+    /* Two ways the quiz can be open:
+     * 'auto'   — the automatic first-launch showing. UNSKIPPABLE: the
+     *            overlay gets the .ob-locked class (CSS hides the Skip
+     *            control) and dismissQuiz() refuses to close, so the
+     *            only way out is finishing via the final CTA.
+     * 'replay' — opened manually from Settings by a returning user.
+     *            Skip stays visible and closes the overlay without
+     *            touching the flag (it is already set). */
+    var quizMode = 'replay';
+    function openQuiz(m) {
+      quizMode = (m === 'auto') ? 'auto' : 'replay';
+      overlay.classList.toggle('ob-locked', quizMode === 'auto');
       resetQuiz();
       overlay.hidden = false;
     }
-    function closeQuiz() {
+    function dismissQuiz() {
+      if (quizMode === 'auto') return; /* unskippable on first launch */
+      overlay.hidden = true;
+    }
+    function finishQuiz() {
       overlay.hidden = true;
       try { localStorage.setItem(FLAG, '1'); } catch (e) {}
     }
@@ -5311,9 +5329,9 @@ if (typeof document !== 'undefined' && document.getElementById) {
       })(optsAll[i]);
     }
     var skipBtn = document.getElementById('ob-skip');
-    if (skipBtn) skipBtn.addEventListener('click', closeQuiz);
+    if (skipBtn) skipBtn.addEventListener('click', dismissQuiz);
     var ctaBtn = document.getElementById('ob-cta');
-    if (ctaBtn) ctaBtn.addEventListener('click', closeQuiz);
+    if (ctaBtn) ctaBtn.addEventListener('click', finishQuiz);
     var nextBtn = document.getElementById('ob-next-1');
     if (nextBtn) nextBtn.addEventListener('click', function () {
       var intro = document.getElementById('ob-intro');
@@ -5330,12 +5348,12 @@ if (typeof document !== 'undefined' && document.getElementById) {
       if (menu) menu.hidden = true;
       var gear = document.getElementById('btn-settings');
       if (gear) gear.setAttribute('aria-expanded', 'false');
-      openQuiz();
+      openQuiz('replay');
     });
 
     var seen = false;
     try { seen = !!localStorage.getItem(FLAG); } catch (e) { seen = true; }
-    if (!seen) openQuiz();
+    if (!seen) openQuiz('auto');
   } catch (e) {}
 })();
 
