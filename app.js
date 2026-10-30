@@ -4872,8 +4872,15 @@ function initApp() {
   $('compare-form').addEventListener('submit', function (e) { e.preventDefault(); runCompare(); });
   $('pj-run').addEventListener('click', runProjection);
   $('pj-path').addEventListener('change', onPjPathEdit);
-  /* No auto-build on Years edits (Justin's ask, 2026-10-29): the
-   * projection only rebuilds when Build projection is clicked. */
+  /* Years edits sync the year-by-year rows only (Justin's refined
+   * ask, 2026-10-29): committing the Years box (the keyboard check)
+   * grows or trims the path rows to match, extrapolating new rows
+   * with the fade rule. The projection itself still runs only when
+   * Build projection is clicked. */
+  $('pj-years').addEventListener('change', function () {
+    $('pj-years').value = pjYearsWanted();
+    renderPjPath();
+  });
   $('pj-growth').addEventListener('change', function () { if (!pjPathFromForecast) pjSynthPath(); renderPjPath(); });
   $('pj-eps').addEventListener('change', function () { if (!pjPathFromForecast) pjSynthPath(); renderPjPath(); });
   renderPjPath();
