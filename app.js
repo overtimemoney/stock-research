@@ -3773,10 +3773,11 @@ async function renderPortfolio(doFetch) {
     if (isNum(dayDol) && isNum(dayPct)) {
       var dSign = dayDol > 0 ? '+' : (dayDol < 0 ? '\u2212' : '');
       var dFill = dayDol > 0 ? 'var(--neon-up)' : (dayDol < 0 ? 'var(--neon-dn)' : 'var(--chart-val)');
-      center = '<text x="100" y="103" text-anchor="middle" class="pf-c-v" style="fill:' + dFill + '">' + fmtPct(dayPct) + '</text>' +
-        '<text x="100" y="126" text-anchor="middle" class="pf-c-l">TODAY \u00b7 ' + dSign + fmtMoney(Math.abs(dayDol), 0) + '</text>';
+      center = '<text x="100" y="79" text-anchor="middle" class="pf-c-l">TODAY</text>' +
+        '<text x="100" y="107" text-anchor="middle" class="pf-c-v" style="fill:' + dFill + '">' + fmtPct(dayPct) + '</text>' +
+        '<text x="100" y="129" text-anchor="middle" class="pf-c-l">' + dSign + fmtMoney(Math.abs(dayDol), 0) + '</text>';
     } else {
-      center = '<text x="100" y="103" text-anchor="middle" class="pf-c-v">' + fmtMoney(totVal, 0) + '</text><text x="100" y="126" text-anchor="middle" class="pf-c-l">TOTAL VALUE</text>';
+      center = '<text x="100" y="92" text-anchor="middle" class="pf-c-l">TOTAL VALUE</text><text x="100" y="120" text-anchor="middle" class="pf-c-v">' + fmtMoney(totVal, 0) + '</text>';
     }
     chartHtml = '<div class="pf-donut"><svg viewBox="0 0 200 200" role="img" aria-label="Portfolio allocation chart"><g transform="rotate(-90 100 100)">' + circles + '</g>' + center + '</svg>' + pills + '</div><div class="pf-pop" hidden></div>';
   }
