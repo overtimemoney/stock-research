@@ -4781,6 +4781,8 @@ function switchTab(name) {
   document.querySelectorAll('.tabbar').forEach(function (n) { n.classList.remove('mini'); });
   var mn = document.querySelector('main');
   if (mn) mn.scrollTop = 0;
+  var ti = document.querySelector('.tool-intro');
+  if (ti) { ti.style.maxHeight = ''; ti.style.opacity = ''; ti.style.marginBottom = ''; }
   /* The glossary renders at init while its tab is hidden (getBBox is 0
    * there), so re-run the label fit once the tab is actually visible. */
   if (name === 'glossary' && typeof fitGlossText === 'function') fitGlossText();
@@ -4957,6 +4959,8 @@ function initApp() {
    * restores on scroll up or near the top (Justin's ask, 2026-10-29). */
   var navEl = document.querySelector('.tabbar');
   var mainEl = document.querySelector('main');
+  var introEl = document.querySelector('.tool-intro');
+  var introH = 0;
   if (navEl && mainEl) {
     var lastSt = 0;
     mainEl.addEventListener('scroll', function () {
@@ -4965,6 +4969,25 @@ function initApp() {
       else if (st > lastSt + 4 && st > 80) navEl.classList.add('mini');
       else if (st < lastSt - 4) navEl.classList.remove('mini');
       lastSt = st;
+      /* The tab's intro text folds into itself over the first ~150px
+       * of scrolling and unfolds again back at the top (Justin's ask,
+       * 2026-10-29). Height is re-measured at the top, where the
+       * inline styles are cleared and the text sits natural. */
+      if (introEl) {
+        if (st < 2) introH = introEl.scrollHeight;
+        if (introH) {
+          var p = Math.max(0, Math.min(1, st / 150));
+          if (p <= 0) {
+            introEl.style.maxHeight = '';
+            introEl.style.opacity = '';
+            introEl.style.marginBottom = '';
+          } else {
+            introEl.style.maxHeight = (introH * (1 - p)) + 'px';
+            introEl.style.opacity = String(1 - p);
+            introEl.style.marginBottom = (12 * (1 - p)) + 'px';
+          }
+        }
+      }
     }, { passive: true });
   }
   $('btn-settings').addEventListener('click', function (e) {

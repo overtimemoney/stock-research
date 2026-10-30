@@ -586,4 +586,4 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 @keyframes gflash { 0% { background: rgba(232,178,60,.30); } 100% { background: transparent; } }
 
 /* Short newcomer intro under a tool's title. */
-.tool-intro { color: var(--ink2); font-size: 14px; line-height: 1.55; margin: 0 0 12px; }
+.tool-intro { color: var(--ink2); font-size: 14px; line-height: 1.55; margin: 0 0 12px; overflow: hidden; }
