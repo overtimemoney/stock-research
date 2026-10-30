@@ -1205,7 +1205,7 @@ var INFO_TEXT = {
   size: 'Company size by market cap (price \u00d7 shares). Smaller companies tend to swing harder, get less analyst coverage, and can be harder to sell in a panic \u2014 so small size adds risk points here.',
   currentratio: 'Current ratio = short-term assets \u00f7 short-term bills. Above 1 means the company can cover what it owes within the year. Below 1 can mean cash stress if business dips.',
   boombust: 'Some businesses boom then bust in cycles (memory chips are the classic case). This flags it when the forecast shows a big earnings peak followed by a cliff, after revenue roughly doubled into the peak \u2014 peak earnings make a stock look deceptively cheap.',
-  scanscore: 'Every stock in the index gets two 0\u2013100 scores: a Value score (cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt) and a Risk score (debt, volatility, size, earnings trend, boom-bust pattern). The Score on this list = 60% Value + 40% safety, where safety = 100 \u2212 Risk. Only stocks with enough data to score fairly can appear, and it shows the Top 10 for each index. Scores refresh when a company reports earnings, and the full index is rescanned about once a week.'
+  scanscore: 'Every stock in the index gets two 0\u2013100 scores: a Value score (cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt) and a Risk score (debt, volatility, size, earnings trend, boom-bust pattern). The Score on this list = 60% Value + 40% safety, where safety = 100 \u2212 Risk. Only stocks with enough data to score fairly can appear, and it shows the Top 10 for each index. Scores refresh when a company reports earnings, and the full index is rescanned about once a week. Scans fetch gently to stay under Finviz\'s rate limit, so a full scan takes a few minutes \u2014 you can close the app and it resumes where it left off.'
 };
 var FACTOR_INFO = {
   'Forward P/E': 'fwpe', 'PEG ratio': 'peg', 'Below 52-wk high': 'belowhigh',
@@ -1375,7 +1375,7 @@ function bindAiSwotBtn(d) {
 async function runAiSwot(d) {
   var zone = $('ai-swot-zone');
   if (!zone) return;
-  zone.innerHTML = '<p class="fineprint"><span class="spinner"></span>Writing the SWOT — the AI is reading the numbers, recent headlines and the 10-K risk factors; give it up to ~30 seconds…</p>';
+  zone.innerHTML = '<p class="fineprint"><span class="spinner"></span>Writing the SWOT — reading the numbers, headlines and 10-K risks…</p>';
   try {
     var ctrl = ('AbortController' in window) ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 90000) : null;
@@ -1434,7 +1434,7 @@ function renderScorecard(d) {
     });
     html += '</table>';
     if (sc.maxAvailable < 100) {
-      html += '<p class="fineprint">Score is scaled to 100 over the ' + sc.factors.length + ' factors with available data (' + sc.maxAvailable + ' pts possible). Missing data is never guessed.</p>';
+      html += '<p class="fineprint">Scaled to 100 over factors with data (' + sc.maxAvailable + ' pts). Missing data is never guessed.</p>';
     }
   } else {
     html += '<div class="alert warn">Not enough data came back to score this stock. The key stats below show what was found.</div>';
@@ -1453,7 +1453,7 @@ function renderScorecard(d) {
       html += '<tr><td><strong>' + esc(f.name) + '</strong>' + (ik ? infoDot(ik) : '') + '<div class="factor-note">' + esc(f.note) + '</div>' + (ik ? infoText(ik) : '') + '</td><td>' + esc(f.display) + '</td><td class="num"><strong>' + f.pts + '</strong> / ' + f.max + '</td></tr>';
     });
     html += '</table>';
-    html += '<p class="fineprint">Higher = riskier. Scaled to 100 over the ' + rk.factors.length + ' factors with available data (' + rk.maxAvailable + ' pts possible).</p>';
+    html += '<p class="fineprint">Higher = riskier \u00b7 scaled to 100 over factors with data (' + rk.maxAvailable + ' pts).</p>';
   }
 
   html += '<div class="section-h">Your value screen — <span class="gold-text">' + passCount + ' of ' + knownCount + '</span></div>';
@@ -1521,7 +1521,7 @@ function renderScorecard(d) {
   if (aiSaved && aiSaved.swot) {
     html += aiSwotGridHtml(aiSaved);
   } else {
-    html += '<p class="fineprint">Written on demand by an AI (Llama 4, running free on your own Cloudflare account) from the live numbers on this page plus recent headlines — the qualitative side the numbers can\'t show: brand, rivals, regulation. Classic rules: Strengths and Weaknesses are internal to the company; Opportunities and Threats are external factors.</p>' +
+    html += '<p class="fineprint">Written on demand by AI from the live numbers here, recent headlines and 10-K risks.</p>' +
       '<button class="btn-ghost" id="ai-swot-btn" type="button">✦ Generate AI SWOT</button>';
   }
   html += '</div>';
@@ -1531,7 +1531,7 @@ function renderScorecard(d) {
   html += '<div class="swot-grid">' +
     swotBox('S', 'Strengths', swot.S, 'sw-s') + swotBox('W', 'Weaknesses', swot.W, 'sw-w') +
     swotBox('O', 'Opportunities', swot.O, 'sw-o') + swotBox('T', 'Threats', swot.T, 'sw-t') + '</div>';
-  html += '<p class="fineprint">Auto-generated from the figures on this page — it reads the numbers, not the news, so company-specific events (lawsuits, new rivals, regulation) won\'t show up here.</p>';
+  html += '<p class="fineprint">Auto-generated from the figures on this page — numbers only, no news.</p>';
 
   if (d.history && d.history.length >= 2) {
     html += '<div class="section-h">Price — <span class="gold-text" id="sc-range-label">1 year</span></div>' +
@@ -3018,7 +3018,7 @@ function renderScanCard() {
     var ds = getScanData();
     if (!ds || !ds.recs || !Object.keys(ds.recs).length) return '';
     var ranked = scanRankFromData(ds);
-    var out = '<div class="status">Showing the last completed list (data from ' + esc(ds.asOf || 'an earlier scan') + ') \u2014 it stays up while the new scan runs and swaps in when the new stocks land.</div>';
+    var out = '<div class="fineprint" style="margin:2px 0 8px">Last completed list \u00b7 data from ' + esc(ds.asOf || 'an earlier scan') + '</div>';
     SCAN_IDXS.forEach(function (ix) {
       var n = Object.keys(ds.recs).filter(function (t) { return ds.recs[t].ix === ix.key; }).length;
       if (!n) return;
@@ -3057,7 +3057,7 @@ function renderScanCard() {
       var z = s.idx[ix.key];
       if (z.started === false) {
         out += '<div class="scan-group">' + esc(ix.label) + '</div>' +
-          '<div class="fineprint" style="margin:0 0 8px">297 of the 375 scan pages — on demand, so the daily S&amp;P scan stays fast.</div>' +
+          '<div class="fineprint" style="margin:0 0 8px">Scanned on demand, so the daily scan stays fast.</div>' +
           '<button type="button" class="btn-ghost" id="scan-start-rut">Scan Russell 2000</button>';
         return;
       }
@@ -3076,11 +3076,11 @@ function renderScanCard() {
   };
   if (s.done && s.results) {
     html += listsHtml();
-    html += '<div class="scan-foot">One combined score: 60% valuation + 40% safety (100 \u2212 risk: beta, debt, margins, size, EPS trend, current ratio).' +
+    html += '<div class="scan-foot">' +
       (s.fromData
-        ? ' Stored data from ' + esc(s.dataAsOf || '') + (s.refreshed === null ? ' \u2014 refreshing today\u2019s earnings reporters\u2026' : ' \u00b7 ' + (s.refreshed || 0) + ' earnings reporters refreshed today') + ' \u00b7 full rescan weekly.'
-        : ' Full scan from today.') +
-      ' <button type="button" class="btn-mini" id="scan-rescan">Rescan</button></div>';
+        ? 'Data from ' + esc(s.dataAsOf || '') + (s.refreshed === null ? ' \u00b7 refreshing\u2026' : ' \u00b7 ' + (s.refreshed || 0) + ' refreshed today')
+        : 'Full scan \u00b7 today') +
+      '<button type="button" class="btn-mini" id="scan-rescan">Rescan</button></div>';
   } else if (s.partial && s.results) {
     var scoredSum = 0, totalSum = 0, droppedSum = 0;
     SCAN_IDXS.forEach(function (ix) {
@@ -3090,7 +3090,7 @@ function renderScanCard() {
       totalSum += z.total || 0;
       droppedSum += z.dropped.length;
     });
-    html += '<div class="status err">Partial scan \u2014 Finviz throttled the feed partway (' + scoredSum + ' of ' + totalSum + ' stocks in, ' + droppedSum + ' pages blocked). These lists are provisional.</div>' +
+    html += '<div class="status err">Partial scan \u2014 Finviz throttled (' + scoredSum + ' of ' + totalSum + ' stocks in). Provisional lists.</div>' +
       '<button type="button" class="btn-ghost" id="scan-resume">Resume the scan</button>';
     html += listsHtml();
     html += '<div class="scan-foot"><button type="button" class="btn-mini" id="scan-rescan">Start over</button></div>';
@@ -3107,10 +3107,9 @@ function renderScanCard() {
       var pct = (pages + pending) > 0 ? Math.round(pages / (pages + pending) * 100) : 0;
       var cooling = scanCoolUntil > Date.now();
       var rutOn = s.idx.rut && s.idx.rut.started !== false;
-      html += '<div class="status"><span class="spinner"></span>' + (cooling ? 'Finviz is throttling \u2014 cooling down for a few seconds, then continuing\u2026 ' : (rutOn ? 'Scanning the S&P 500 and Russell 2000\u2026 ' : 'Scanning the S&P 500\u2026 ')) + pages + ' pages in, ' + stocks + ' stocks so far. It runs gently (a few minutes) to stay under Finviz\'s rate limit, and resumes if you close the app.</div>' +
+      html += '<div class="status"><span class="spinner"></span>' + (cooling ? 'Finviz throttling \u2014 cooling down\u2026' : ((rutOn ? 'Scanning S&P 500 + Russell 2000' : 'Scanning S&P 500') + ' \u00b7 ' + pages + ' pages in')) + '</div>' +
         '<div class="scan-bar"><i style="width:' + pct + '%"></i></div>' +
-        '<button type="button" class="btn-ghost" id="scan-use-snapshot" style="margin-top:8px">Stop scan \u2014 load the ready-made S&P 500 list</button>' +
-        (scanDiagLast() ? '<div class="factor-note" style="margin-top:6px">Snapshot check: ' + esc(scanDiagLast()) + '</div>' : '');
+        '<button type="button" class="btn-ghost" id="scan-use-snapshot" style="margin-top:8px">Stop scan \u2014 load the ready-made S&P 500 list</button>';
     }
     html += prevListsHtml();
   }
@@ -3345,7 +3344,7 @@ async function renderWatchlist(refresh) {
   var wl = getWatchlist();
   var box = $('wl-list');
   if (!wl.length) {
-    box.innerHTML = '<div class="empty-note"><h2>Nothing here yet</h2><p>Add a ticker and the buy price you\'re waiting for. Prices refresh live; the list lives only on this device.</p></div>';
+    box.innerHTML = '<div class="empty-note"><h2>Nothing here yet</h2><p>Add a ticker and the buy price you\'re waiting for.</p></div>';
     return;
   }
   if (refresh) $('wl-status').innerHTML = '<span class="spinner"></span>Refreshing\u2026';
@@ -3678,7 +3677,7 @@ async function renderPortfolio(doFetch) {
     sumBox.innerHTML = '';
     var bb0 = $('pf-bench'); if (bb0) bb0.innerHTML = '';
     var cb0 = $('pf-closed'); if (cb0) cb0.innerHTML = '';
-    listBox.innerHTML = '<div class="card"><h3 style="margin-top:0">Nothing here yet</h3><p class="fineprint" style="margin:0">Add a stock you own above \u2014 the app asks how many shares you have and whether its dividends are reinvested \u2014 and it will track the value and dividend income here.</p></div>';
+    listBox.innerHTML = '<div class="card"><h3 style="margin-top:0">Nothing here yet</h3><p class="fineprint" style="margin:0">Add a stock you own above and the app tracks its value and dividend income here.</p></div>';
     if (status) status.textContent = '';
     return;
   }
@@ -4225,7 +4224,7 @@ function renderJournal() {
   var tickers = Object.keys(j).sort();
   var box = $('journal-list');
   if (!tickers.length) {
-    box.innerHTML = '<div class="empty-note"><h2>No journal entries yet</h2><p>Write down your thesis before you buy — future you will want to know what past you was thinking. Entries live only on this device.</p></div>';
+    box.innerHTML = '<div class="empty-note"><h2>No journal entries yet</h2><p>Write down your thesis before you buy — future you will want to know what past you was thinking.</p></div>';
     return;
   }
   var html = '';
