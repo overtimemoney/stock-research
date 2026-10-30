@@ -462,7 +462,7 @@ table.scen td { padding: 8px 6px; }
 #tab-portfolio.news-mode .pf-ov { display: none; }
 .pf-view-switch { display: flex; gap: 4px; background: var(--chip-bg); border: 1px solid var(--line); border-radius: 999px; padding: 4px; margin-bottom: 12px; }
 .pf-view-switch button { flex: 1; border: 0; background: none; color: var(--muted); font-weight: 900; font-size: 14px; padding: 8px 0; border-radius: 999px; cursor: pointer; }
-.pf-view-switch button.on { background: var(--gold); color: #191204; }
+.pf-view-switch button.on { background: var(--gold-grad); color: #191204; }
 .news-card { padding: 6px 14px; }
 .news-row { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--line); text-decoration: none; color: inherit; }
 .news-row:last-child { border-bottom: 0; }
