@@ -4825,6 +4825,9 @@ function initApp() {
   $('sc-back').addEventListener('click', goBackToOverview);
   $('jr-back').addEventListener('click', function () { switchTab(jrReturnTab); });
   $('gl-back').addEventListener('click', function () { switchTab(glossReturn); });
+  $('privacy-back').addEventListener('click', function () { switchTab('portfolio'); });
+  $('terms-back').addEventListener('click', function () { switchTab('portfolio'); });
+  $('disclaimer-back').addEventListener('click', function () { switchTab('portfolio'); });
   $('tool-back').addEventListener('click', goBackToOverview);
   $('search-form').addEventListener('submit', function (e) {
     e.preventDefault();
@@ -4953,6 +4956,21 @@ function initApp() {
     settingsMenu.hidden = true;
     $('btn-settings').setAttribute('aria-expanded', 'false');
     switchTab('journal');
+  });
+  $('menu-privacy').addEventListener('click', function () {
+    settingsMenu.hidden = true;
+    $('btn-settings').setAttribute('aria-expanded', 'false');
+    switchTab('privacy');
+  });
+  $('menu-terms').addEventListener('click', function () {
+    settingsMenu.hidden = true;
+    $('btn-settings').setAttribute('aria-expanded', 'false');
+    switchTab('terms');
+  });
+  $('menu-disclaimer').addEventListener('click', function () {
+    settingsMenu.hidden = true;
+    $('btn-settings').setAttribute('aria-expanded', 'false');
+    switchTab('disclaimer');
   });
   $('ov-back').addEventListener('click', function () { closeOverview(); });
   /* Floating nav shrinks while scrolling down (Instagram-style) and

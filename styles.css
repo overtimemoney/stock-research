@@ -587,3 +587,14 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 
 /* Short newcomer intro under a tool's title. */
 .tool-intro { color: var(--ink2); font-size: 14px; line-height: 1.55; margin: 0 0 12px; overflow: hidden; }
+
+/* ---------- legal pages ---------- */
+.legal-doc { font-size: 14.5px; line-height: 1.65; color: var(--ink2); }
+.legal-doc .legal-updated { color: var(--accent-text); font-size: 12px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; margin-bottom: 14px; }
+.legal-doc h3 { color: var(--ink); font-size: 16px; line-height: 1.35; margin: 20px 0 7px; }
+.legal-doc h3:first-of-type { margin-top: 16px; }
+.legal-doc p { margin: 0 0 12px; }
+.legal-doc ul { margin: 2px 0 14px; padding-left: 21px; }
+.legal-doc li { margin: 4px 0; }
+.legal-doc strong { color: var(--ink); }
+.legal-contact { color: var(--accent-text); font-weight: 800; overflow-wrap: anywhere; }

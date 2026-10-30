@@ -203,6 +203,11 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
     </div>
     <div class="set-h">Learn</div>
     <button id="menu-quiz" class="btn-ghost wide" type="button" style="margin-bottom:4px"><svg class="ico" viewBox="0 0 24 24"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg> The 5% Quiz — what an extra 5%/yr is worth</button>
+    <div class="set-h">Legal</div>
+    <button id="menu-privacy" class="btn-ghost wide" type="button" style="margin-bottom:6px"><svg class="ico" viewBox="0 0 24 24"><path d="M12 22s8-3.6 8-10V5l-8-3-8 3v7c0 6.4 8 10 8 10z"/><polyline points="9 11.5 11 13.5 15 9.5"/></svg> Privacy Policy</button>
+    <button id="menu-terms" class="btn-ghost wide" type="button" style="margin-bottom:6px"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg> Terms of Use</button>
+    <button id="menu-disclaimer" class="btn-ghost wide" type="button" style="margin-bottom:4px"><svg class="ico" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.1" y2="17"/></svg> Investment Disclaimer</button>
+    <p class="fineprint" style="margin:0 0 4px">Stock Research is an educational tool, not financial advice.</p>
     <div class="set-h">Housekeeping</div>
     <div class="row-gap" style="flex-wrap:wrap">
       <button id="set-clear-ai" class="btn-ghost" type="button">Clear AI SWOTs</button>
@@ -276,6 +281,126 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
     <h2 class="tab-title">Plain-English <span class="gold-text">Glossary</span></h2>
     <input id="gloss-search" type="search" placeholder="Search terms…" aria-label="Search glossary">
     <div id="gloss-list"></div>
+  </section>
+
+  <!-- PRIVACY POLICY -->
+  <section id="tab-privacy" class="tab legal-tab">
+    <button id="privacy-back" class="back-chip" type="button">← Back</button>
+    <h2 class="tab-title">Privacy <span class="gold-text">Policy</span></h2>
+    <article class="card legal-doc">
+      <p class="legal-updated">Last updated: October 29, 2026</p>
+      <p><strong>Operator:</strong> Stock Research (“we,” “us,” or “our”). This policy explains what information Stock Research collects, how it is used, and the choices you have. Questions and privacy requests can be sent to <span class="legal-contact">[contact email]</span>.</p>
+
+      <h3>Information you provide</h3>
+      <p>You can use much of Stock Research without an account. If you choose to create a Cloud Sync account, Supabase Auth processes your email address and password so you can sign in. Your password is handled by Supabase Auth; Stock Research does not store your password in its synced app data.</p>
+      <p>When Cloud Sync is enabled, the app data you choose to sync is stored with your account in Supabase, on servers in the United States. That data can include:</p>
+      <ul>
+        <li>your watchlist;</li>
+        <li>portfolio entries, including holdings and sales information you enter;</li>
+        <li>research journal notes;</li>
+        <li>saved projections;</li>
+        <li>saved AI SWOTs; and</li>
+        <li>display and app preferences, such as theme and view settings.</li>
+      </ul>
+
+      <h3>Information kept on your device</h3>
+      <p>Stock Research also keeps information in your browser or app storage so the app works quickly and can work from its local copy. Price and scan caches stay on your device. The flag that records whether you completed the onboarding quiz also stays on your device and is not included in Cloud Sync.</p>
+      <p>If you never create a Cloud Sync account, your watchlist, portfolio, journal, projections, and preferences remain on your device, subject to your browser or device storage settings.</p>
+
+      <h3>Market data and service providers</h3>
+      <p>Stock quotes, charts, fundamentals, estimates, headlines, and other market information come from third-party data sources. Requests for that market information may pass through a Cloudflare Worker relay operated for Stock Research. When you look up a ticker, the ticker and the related market-data request may be visible to Cloudflare and the data source that answers it.</p>
+      <p>We use service providers only to operate the app, including Supabase for optional authentication and Cloud Sync storage and Cloudflare for relay and related app services. Hosting and infrastructure providers may process ordinary technical information, such as an IP address, device or browser details, request time, and error information, to deliver and secure their services.</p>
+
+      <h3>How information is used</h3>
+      <ul>
+        <li>to provide, maintain, and secure Stock Research;</li>
+        <li>to sign you in and sync the app data described above;</li>
+        <li>to respond to support, privacy, and deletion requests; and</li>
+        <li>to diagnose errors and protect the service from misuse.</li>
+      </ul>
+      <p>We do not sell your personal information. Stock Research does not use advertising trackers.</p>
+
+      <h3>Your choices and deletion</h3>
+      <p>You can sign out of Cloud Sync, use the app without an account, export a local backup from Settings, or clear data stored by your browser or device. To request deletion of your Cloud Sync account and the synced data associated with it, contact <span class="legal-contact">[contact email]</span>. We may need to verify that the request concerns your account before completing it. Some records may be retained where required for security, legal, or operational reasons.</p>
+
+      <h3>Children</h3>
+      <p>Stock Research is intended for adults and is not directed to children under 13.</p>
+
+      <h3>Changes to this policy</h3>
+      <p>We may update this policy as Stock Research changes. The revised policy will be posted in the app with a new “Last updated” date. Material changes may also be highlighted in the app.</p>
+    </article>
+  </section>
+
+  <!-- TERMS OF USE -->
+  <section id="tab-terms" class="tab legal-tab">
+    <button id="terms-back" class="back-chip" type="button">← Back</button>
+    <h2 class="tab-title">Terms of <span class="gold-text">Use</span></h2>
+    <article class="card legal-doc">
+      <p class="legal-updated">Last updated: October 29, 2026</p>
+      <p>These terms are an agreement between you and <strong>Stock Research</strong>, the operator of this app. By using Stock Research, you agree to these terms. If you do not agree, do not use the app.</p>
+
+      <h3>An educational research tool</h3>
+      <p>Stock Research is provided for general education and personal research. It organizes and displays market information, calculations, estimates, and research tools. It is not financial, investment, tax, or legal advice.</p>
+      <p>Stock Research is not a broker, dealer, investment adviser, financial planner, or fiduciary. Using the app does not create an advisory or client relationship. Nothing in the app is a recommendation or solicitation to buy, sell, or hold any security.</p>
+
+      <h3>Your decisions and risks</h3>
+      <p>You are responsible for your own investment decisions. Investing involves risk, including possible loss of principal. Review information from primary sources and consider speaking with a qualified professional before making financial decisions.</p>
+
+      <h3>Market data and availability</h3>
+      <p>Market data may be delayed, incomplete, unavailable, or wrong, and calculations can be affected by source errors or changes in how a source reports information. We do not guarantee the accuracy, completeness, timeliness, reliability, or availability of Stock Research or any data shown in it. Features may change, pause, or end without notice.</p>
+
+      <h3>Your account and content</h3>
+      <p>If you create a Cloud Sync account, keep your sign-in credentials secure and tell us promptly if you believe your account has been misused. You retain your rights in notes and other content you enter. You are responsible for content you add and for making sure you have the right to use it in the app.</p>
+
+      <h3>Acceptable use</h3>
+      <p>You agree not to:</p>
+      <ul>
+        <li>scrape, bulk-download, copy, resell, or redistribute Stock Research, its data, or its outputs at scale;</li>
+        <li>use automated tools to overload, probe, disrupt, or gain unauthorized access to the app or its providers;</li>
+        <li>remove or evade access controls, rate limits, or security measures;</li>
+        <li>use the app for unlawful activity or in a way that infringes another person’s rights; or</li>
+        <li>present app output as personalized financial advice or as your own real-time market-data service.</li>
+      </ul>
+      <p>Reasonable personal use—such as researching stocks, keeping a journal, and viewing your own synced data—is the intended use.</p>
+
+      <h3>Subscriptions and payments</h3>
+      <p>Stock Research may offer paid subscriptions in the future. When payments are enabled, they will be processed by Stripe or another disclosed payment processor. Paid-plan price, billing period, renewal, and cancellation terms will be shown before purchase. Unless a checkout page states otherwise, you may cancel at any time and keep access through the end of the period already paid for.</p>
+
+      <h3>Third-party services and links</h3>
+      <p>Stock Research uses and links to third-party services, including market-data sources, Supabase, Cloudflare, and payment processors if enabled. Those services have their own terms and privacy practices. We are not responsible for third-party services or content.</p>
+
+      <h3>Disclaimers and limits of liability</h3>
+      <p>To the fullest extent allowed by law, Stock Research is provided “as is” and “as available,” without warranties of any kind, whether express or implied. To the fullest extent allowed by law, Stock Research and its operator will not be liable for indirect, incidental, special, consequential, or punitive damages, or for lost profits or trading losses, arising from use of the app or reliance on its information. Nothing in these terms limits a right or liability that cannot legally be limited.</p>
+
+      <h3>Changes and contact</h3>
+      <p>We may update these terms. The revised version will be posted in the app with a new “Last updated” date. Continuing to use Stock Research after an update takes effect means you accept the revised terms. Questions can be sent to <span class="legal-contact">[contact email]</span>.</p>
+    </article>
+  </section>
+
+  <!-- INVESTMENT DISCLAIMER -->
+  <section id="tab-disclaimer" class="tab legal-tab">
+    <button id="disclaimer-back" class="back-chip" type="button">← Back</button>
+    <h2 class="tab-title">Investment <span class="gold-text">Disclaimer</span></h2>
+    <article class="card legal-doc">
+      <p class="legal-updated">Last updated: October 29, 2026</p>
+      <p><strong>Stock Research is an educational and research tool, not financial advice.</strong> It does not recommend securities or tell any person what to buy, sell, or hold.</p>
+
+      <h3>Hypothetical examples are illustrations</h3>
+      <p>The 5% Quiz and other calculators or examples in Stock Research use hypothetical returns to show how compounding works. For example, the quiz compares scenarios at 10%, 15%, and 20% per year over 40 years. Those scenarios are illustrations only. They are not predictions, forecasts, guarantees, or promises of what any saver, fund, stock, or strategy will earn.</p>
+      <p>The examples may not include taxes, fees, inflation, contribution changes, market losses, or the ups and downs of real markets. Actual returns vary and can be negative.</p>
+
+      <h3>High returns are rare</h3>
+      <p>Returns of 15% or 20% per year, repeated over long periods, are historically rare. Past performance does not guarantee, predict, or imply future results. A stock, portfolio, or period that performed well before may perform poorly in the future.</p>
+
+      <h3>Scores, screens, and estimates</h3>
+      <p>Scores, rankings, screens, projections, price targets, analyst estimates, SWOTs, and other app outputs are informational tools based on available data and stated formulas. They are not personal recommendations. Analysts can be wrong, estimates can change, and a high score does not mean a stock is safe or suitable for you.</p>
+
+      <h3>Data can be delayed or wrong</h3>
+      <p>Quotes, fundamentals, earnings information, headlines, and other market data may be delayed, incomplete, revised, unavailable, or contain errors. Confirm important information with the company’s filings, your brokerage, or another primary source before acting.</p>
+
+      <h3>Make your own decision</h3>
+      <p>Every investment involves risk, including possible loss of the money invested. Consider your goals, time horizon, finances, and risk tolerance. A qualified financial, tax, or legal professional can advise you about your personal situation. Questions about this disclaimer can be sent to <span class="legal-contact">[contact email]</span>.</p>
+    </article>
   </section>
 </main>
 <!-- STOCK OVERVIEW (from watchlist) -->
