@@ -3010,8 +3010,43 @@ function renderScanCard() {
   var box = $('scan-card');
   if (!box) return;
   var s = getScan();
+  /* The last completed list, ranked from the stored dataset. Justin's
+   * rule (2026-10-30): a list that was shown before is never taken
+   * away while a new scan loads -- it stays on screen, even if it is
+   * from yesterday, until the new stocks have actually landed. */
+  var prevListsHtml = function () {
+    var ds = getScanData();
+    if (!ds || !ds.recs || !Object.keys(ds.recs).length) return '';
+    var ranked = scanRankFromData(ds);
+    var out = '<div class="status">Showing the last completed list (data from ' + esc(ds.asOf || 'an earlier scan') + ') \u2014 it stays up while the new scan runs and swaps in when the new stocks land.</div>';
+    SCAN_IDXS.forEach(function (ix) {
+      var n = Object.keys(ds.recs).filter(function (t) { return ds.recs[t].ix === ix.key; }).length;
+      if (!n) return;
+      var rows = ranked[ix.key] || [];
+      out += '<div class="scan-group">' + esc(ix.label) + ' <span class="scan-count">' + n + ' stocks scored</span></div>';
+      if (!rows.length) { out += '<div class="status">No scored stocks came back.</div>'; }
+      rows.forEach(function (row, i) {
+        out += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
+          '<span class="scan-rank">' + (i + 1) + '</span>' +
+          '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + '</span></span>' +
+          '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
+          '<span class="scan-score ' + scanScoreClass(row.score) + '">Score ' + row.score + '</span></button>';
+      });
+    });
+    return out;
+  };
   if (!s || s.date !== scanTodayKey()) {
-    box.innerHTML = '<div class="card scan-card"><div class="scan-h">Top value + low risk today' + infoDot('scanscore') + '</div>' + infoText('scanscore') + '<div class="status">Preparing today\'s scan\u2026</div></div>';
+    var prev0 = prevListsHtml();
+    box.innerHTML = '<div class="card scan-card"><div class="scan-h">Top value + low risk today' + infoDot('scanscore') + '</div>' + infoText('scanscore') +
+      (prev0 || '<div class="status">Preparing today\'s scan\u2026</div>') + '</div>';
+    box.querySelectorAll('[data-scan-research]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var T = b.getAttribute('data-scan-research');
+        switchTab('scorecard');
+        $('search-input').value = T;
+        runSearch(T);
+      });
+    });
     return;
   }
   var html = '<div class="card scan-card"><div class="scan-h">Top value + low risk today <span class="scan-date">' + esc(s.date) + '</span>' + infoDot('scanscore') + '</div>' + infoText('scanscore');
@@ -3077,6 +3112,7 @@ function renderScanCard() {
         '<button type="button" class="btn-ghost" id="scan-use-snapshot" style="margin-top:8px">Stop scan \u2014 load the ready-made S&P 500 list</button>' +
         (scanDiagLast() ? '<div class="factor-note" style="margin-top:6px">Snapshot check: ' + esc(scanDiagLast()) + '</div>' : '');
     }
+    html += prevListsHtml();
   }
   html += '</div>';
   box.innerHTML = html;
