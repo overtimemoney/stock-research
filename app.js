@@ -4511,6 +4511,36 @@ var GLOSS_ART = {
 };
 
 
+/* Glossary diagrams are fixed 300-unit-wide SVGs whose labels are placed
+ * at absolute x positions — a long label placed mid-diagram runs past the
+ * right edge and gets clipped by the viewBox (Justin's screenshot,
+ * 2026-10-29: Profit margin's "EVERYTHING IT COSTS TO EARN IT" cut off).
+ * Root fix: measure every label after render and shrink its font just
+ * enough to fit inside the viewBox, honoring its text-anchor. Applies to
+ * every diagram, present and future; wording and layout are untouched. */
+function fitGlossText() {
+  var svgs = document.querySelectorAll('#gloss-list .gloss-art svg');
+  for (var i = 0; i < svgs.length; i++) {
+    var texts = svgs[i].querySelectorAll('text');
+    for (var j = 0; j < texts.length; j++) {
+      var el = texts[j];
+      try {
+        var bb = el.getBBox();
+        if (!bb || !bb.width) continue; /* hidden tab: retried on switchTab */
+        var anchor = el.getAttribute('text-anchor') || 'start';
+        var allowed;
+        if (anchor === 'middle') allowed = 2 * Math.min(bb.x + bb.width / 2 - 2, 298 - (bb.x + bb.width / 2));
+        else if (anchor === 'end') allowed = bb.x + bb.width - 2;
+        else allowed = 298 - bb.x;
+        if (allowed < bb.width) {
+          var fs = parseFloat(window.getComputedStyle(el).fontSize) || 10.5;
+          el.style.fontSize = Math.max(6, fs * (allowed / bb.width) * 0.99) + 'px';
+        }
+      } catch (e) {}
+    }
+  }
+}
+
 function renderGlossary(filter) {
   var f = (filter || '').toLowerCase();
   var html = '';
@@ -4521,6 +4551,7 @@ function renderGlossary(filter) {
       '<div class="g-def">' + esc(g[1]) + '</div></div>';
   });
   $('gloss-list').innerHTML = html || '<p class="fineprint">No terms match that search.</p>';
+  fitGlossText();
 }
 
 /* ============================== data backup ============================== */
@@ -4721,6 +4752,9 @@ function switchTab(name) {
   document.querySelectorAll('.tabbar').forEach(function (n) { n.classList.remove('mini'); });
   var mn = document.querySelector('main');
   if (mn) mn.scrollTop = 0;
+  /* The glossary renders at init while its tab is hidden (getBBox is 0
+   * there), so re-run the label fit once the tab is actually visible. */
+  if (name === 'glossary' && typeof fitGlossText === 'function') fitGlossText();
 }
 /* iOS standalone quirk: 100dvh intermittently resolves SHORT at
  * launch/resume, leaving the tab bar floating above a dead black
