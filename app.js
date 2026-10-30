@@ -1208,7 +1208,7 @@ var INFO_TEXT = {
   scanscore: 'Every stock in the index gets two 0\u2013100 scores: a Value score (cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt) and a Risk score (debt, volatility, size, earnings trend, boom-bust pattern). The Score on this list = 60% Value + 40% safety, where safety = 100 \u2212 Risk. Only stocks with enough data to score fairly can appear, and it shows the Top 10 for each index. Scores refresh when a company reports earnings, and the full index is rescanned about once a week.'
 };
 var FACTOR_INFO = {
-  'Forward P/E': 'fwpe', 'PEG ratio': 'peg', 'Below 52-wk high': 'belowhigh',
+  'Forward P/E': '<rect x="14" y="8" width="118" height="27" class="ga"/><text x="73" y="26" class="gt" text-anchor="middle">PRICE $150</text><path d="M14 42h118"/><rect x="14" y="49" width="118" height="27" stroke-dasharray="5 4"/><text x="73" y="67" class="gt" text-anchor="middle">EPS $6 EST.</text><text x="146" y="50" class="gt" font-size="15">=</text><text x="168" y="47" class="gtf" font-size="23">25\u00d7</text><text x="168" y="67" class="gt">NEXT-YEAR FORECAST</text>',
   'EPS growth, next yr': 'epsgrowth', 'Profit margin': 'pmargin', 'Gross margin': 'gmargin',
   'Debt / Equity': 'debteq', 'Beta (volatility)': 'beta', 'Company size': 'size',
   'EPS trend, next yr': 'epstrend', 'Current ratio': 'currentratio', 'Boom-bust pattern': 'boombust'
@@ -4468,7 +4468,7 @@ var GLOSSARY = [
 /* Tiny line diagrams for the glossary (Justin's ask, 2026-10-29):
  * one simple visual per term, drawn in the app's two tones. */
 var GLOSS_ART = {
-'P/E ratio': '<rect x="18" y="18" width="196" height="14" class="ga"/><rect x="18" y="50" width="64" height="14"/><text x="18" y="12" class="gt">PRICE</text><text x="18" y="44" class="gt">EARNINGS (EPS)</text><text x="238" y="64" class="gtf" font-size="16">30x</text>',
+'P/E ratio': '<rect x="14" y="8" width="118" height="27" class="ga"/><text x="73" y="26" class="gt" text-anchor="middle">PRICE $150</text><path d="M14 42h118"/><rect x="14" y="49" width="118" height="27"/><text x="73" y="67" class="gt" text-anchor="middle">EPS $5</text><text x="146" y="50" class="gt" font-size="15">=</text><text x="168" y="47" class="gtf" font-size="23">30\u00d7</text><text x="168" y="67" class="gt">PER $1 OF PROFIT</text>',
 'Forward P/E': '<rect x="18" y="18" width="196" height="14" class="ga"/><rect x="18" y="50" width="64" height="14" stroke-dasharray="5 4"/><text x="18" y="12" class="gt">PRICE</text><text x="18" y="44" class="gt">NEXT-YEAR EPS (ESTIMATE)</text><circle cx="254" cy="28" r="13"/><path d="M254 20v8l6 4"/>',
 'PEG ratio': '<path d="M150 14v42"/><path d="M98 56h104"/><path d="M150 14 106 28M150 14l44 14"/><path d="M90 28h32l-6 13H96Z"/><path d="M178 28h32l-6 13h-20Z"/><text x="94" y="20" class="gt">P/E</text><text x="172" y="20" class="gt">GROWTH</text><path d="M128 72h44"/>',
 'Market cap': '<rect x="38" y="48" width="34" height="26"/><rect x="94" y="34" width="40" height="40" class="ga"/><rect x="156" y="16" width="48" height="58"/><path d="M22 74h256"/><text x="172" y="52" class="gtf">$</text><text x="222" y="40" class="gt">WHOLE COMPANY</text><text x="222" y="56" class="gt">VALUE</text>',
