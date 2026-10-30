@@ -598,3 +598,11 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .legal-doc li { margin: 4px 0; }
 .legal-doc strong { color: var(--ink); }
 .legal-contact { color: var(--accent-text); font-weight: 800; overflow-wrap: anywhere; }
+
+/* Locked intro dropdown bar: appears once the intro has been
+ * scrolled fully past; only its triangle reopens the text. */
+.intro-bar { display: flex; align-items: center; justify-content: space-between; width: 100%; background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; color: var(--ink2); font-size: 13.5px; font-weight: 700; cursor: pointer; }
+.intro-bar[hidden] { display: none; }
+.intro-tri { color: var(--gold); font-size: 12px; transition: transform .3s ease; }
+.intro-bar.open .intro-tri { transform: rotate(180deg); }
+.tool-intro.locked { transition: max-height .35s ease, opacity .3s ease, margin-bottom .35s ease; }

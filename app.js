@@ -4782,7 +4782,13 @@ function switchTab(name) {
   var mn = document.querySelector('main');
   if (mn) mn.scrollTop = 0;
   var ti = document.querySelector('.tool-intro');
-  if (ti) { ti.style.maxHeight = ''; ti.style.opacity = ''; ti.style.marginBottom = ''; }
+  if (ti) {
+    if (ti.classList.contains('locked')) {
+      ti.style.maxHeight = '0px'; ti.style.opacity = '0'; ti.style.marginBottom = '0px';
+      var ib = $('intro-bar');
+      if (ib) { ib.classList.remove('open'); ib.setAttribute('aria-expanded', 'false'); }
+    } else { ti.style.maxHeight = ''; ti.style.opacity = ''; ti.style.marginBottom = ''; }
+  }
   /* The glossary renders at init while its tab is hidden (getBBox is 0
    * there), so re-run the label fit once the tab is actually visible. */
   if (name === 'glossary' && typeof fitGlossText === 'function') fitGlossText();
@@ -4978,7 +4984,32 @@ function initApp() {
   var navEl = document.querySelector('.tabbar');
   var mainEl = document.querySelector('main');
   var introEl = document.querySelector('.tool-intro');
+  var introBar = $('intro-bar');
   var introH = 0;
+  var introLocked = false, introOpen = false;
+  function introCollapse() {
+    introEl.style.maxHeight = '0px';
+    introEl.style.opacity = '0';
+    introEl.style.marginBottom = '0px';
+  }
+  function lockIntro() {
+    introLocked = true;
+    introOpen = false;
+    introEl.classList.add('locked');
+    introCollapse();
+    if (introBar) { introBar.hidden = false; introBar.classList.remove('open'); introBar.setAttribute('aria-expanded', 'false'); }
+  }
+  if (introBar && introEl) introBar.addEventListener('click', function () {
+    introOpen = !introOpen;
+    introBar.classList.toggle('open', introOpen);
+    introBar.setAttribute('aria-expanded', String(introOpen));
+    if (introOpen) {
+      introH = introEl.scrollHeight || introH;
+      introEl.style.maxHeight = introH + 'px';
+      introEl.style.opacity = '1';
+      introEl.style.marginBottom = '12px';
+    } else introCollapse();
+  });
   if (navEl && mainEl) {
     var lastSt = 0;
     mainEl.addEventListener('scroll', function () {
@@ -4992,17 +5023,30 @@ function initApp() {
        * 2026-10-29). Height is re-measured at the top, where the
        * inline styles are cleared and the text sits natural. */
       if (introEl) {
-        if (st < 2) introH = introEl.scrollHeight;
-        if (introH) {
-          var p = Math.max(0, Math.min(1, st / 150));
-          if (p <= 0) {
-            introEl.style.maxHeight = '';
-            introEl.style.opacity = '';
-            introEl.style.marginBottom = '';
-          } else {
-            introEl.style.maxHeight = (introH * (1 - p)) + 'px';
-            introEl.style.opacity = String(1 - p);
-            introEl.style.marginBottom = (12 * (1 - p)) + 'px';
+        if (introLocked) {
+          /* Locked away (Justin's refinement, 2026-10-30): scrolling
+           * back up no longer unfolds it; only the dropdown bar's
+           * triangle reopens it. Scrolling down closes an open one. */
+          if (introOpen && st > 60) {
+            introOpen = false;
+            introBar.classList.remove('open');
+            introBar.setAttribute('aria-expanded', 'false');
+            introCollapse();
+          }
+        } else {
+          if (st < 2) introH = introEl.scrollHeight;
+          if (introH) {
+            var p = Math.max(0, Math.min(1, st / 150));
+            if (p >= 1) lockIntro();
+            else if (p <= 0) {
+              introEl.style.maxHeight = '';
+              introEl.style.opacity = '';
+              introEl.style.marginBottom = '';
+            } else {
+              introEl.style.maxHeight = (introH * (1 - p)) + 'px';
+              introEl.style.opacity = String(1 - p);
+              introEl.style.marginBottom = (12 * (1 - p)) + 'px';
+            }
           }
         }
       }
