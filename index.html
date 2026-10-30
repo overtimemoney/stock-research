@@ -57,6 +57,13 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
   <!-- TOOLS -->
   <section id="tab-tools" class="tab">
     <button id="tool-back" class="back-chip" type="button" hidden></button>
+    <div class="toolseg" role="tablist" aria-label="Choose a tool">
+      <span class="toolseg-pill" id="toolseg-pill"></span>
+      <button type="button" data-tool="pj" class="active">Projection</button>
+      <button type="button" data-tool="charts">Charts</button>
+      <button type="button" data-tool="cc">Calculator</button>
+    </div>
+    <div class="tool-page active" id="tool-pj">
     <h2 class="tab-title">Projection <span class="gold-text">Builder</span></h2>
     <button type="button" class="intro-bar" id="intro-bar" hidden>About this tool <span class="intro-tri" aria-hidden="true">▾</span></button>
     <p class="tool-intro">Load a stock and this maps out how its earnings (EPS) could grow over the next few years, then estimates what one share might be worth at the end — three ways: Bear (worse than expected), Base (as expected), and Bull (better). Change any number you disagree with, then tap Build projections.</p>
@@ -82,6 +89,8 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
       Projections are only as good as the assumptions — they're yours, not a forecast.</p>
     </div>
 
+    </div>
+    <div class="tool-page" id="tool-charts">
     <h2 class="tab-title">Stock <span class="gold-text">Charts</span></h2>
     <div class="card">
       <form id="qm-load-form" class="search-row" autocomplete="off" style="margin-bottom:12px">
@@ -108,6 +117,8 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
       </div>
     </div>
 
+    </div>
+    <div class="tool-page" id="tool-cc">
     <h2 class="tab-title">Compound <span class="gold-text">Calculator</span></h2>
     <div class="card">
       <div class="grid2">
@@ -120,6 +131,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
       <div id="cc-result" class="tool-result"></div>
       <p class="fineprint">For scale: the S&amp;P 500's long-run average is roughly 10%/yr before inflation.
       The gap between average and a few points better is what compounding does over decades.</p>
+    </div>
     </div>
   </section>
 

@@ -606,3 +606,13 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .intro-tri { color: var(--gold); font-size: 12px; transition: transform .3s ease; }
 .intro-bar.open .intro-tri { transform: rotate(180deg); }
 .tool-intro.locked { transition: max-height .35s ease, opacity .3s ease, margin-bottom .35s ease; }
+
+/* Tools sub-page bar: a sliding gold pill moves between the three
+ * tools; each tool gets its own page. */
+.toolseg { position: relative; display: flex; background: var(--field); border: 1px solid var(--line); border-radius: 999px; padding: 4px; margin-bottom: 14px; }
+.toolseg-pill { position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc((100% - 8px) / 3); background: var(--gold-grad); border-radius: 999px; transition: transform .28s cubic-bezier(.3,.7,.3,1); }
+.toolseg button { flex: 1; position: relative; background: none; border: none; padding: 9px 0; font-size: 13.5px; font-weight: 700; color: var(--muted); cursor: pointer; transition: color .2s ease; }
+.toolseg button.active { color: #1a1405; }
+.tool-page { display: none; }
+.tool-page.active { display: block; animation: toolpage-in .25s ease; }
+@keyframes toolpage-in { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }

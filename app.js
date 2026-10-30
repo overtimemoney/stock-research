@@ -1570,6 +1570,7 @@ function renderScorecard(d) {
   });
   $('sc-project').addEventListener('click', function () {
     switchTab('tools');
+    setTool('pj');
     $('pj-ticker').value = d.ticker;
     fillProjection(d);
     runProjection();
@@ -3247,6 +3248,7 @@ function wireOverviewActions(d) {
     ovReturnTicker = d.ticker; showBackChips();
     closeOverview();
     switchTab('tools');
+    setTool('pj');
     // Same behavior the row's Projection button had: a saved
     // projection restores; otherwise the builder loads fresh data.
     if (getProjections()[d.ticker]) {
@@ -4566,6 +4568,26 @@ function switchTab(name) {
    * there), so re-run the label fit once the tab is actually visible. */
   if (name === 'glossary' && typeof fitGlossText === 'function') fitGlossText();
 }
+/* Tools tab sub-pages (Justin's ask, 2026-10-30): the three tools
+ * live behind a sliding segmented bar, one tool per page. The last
+ * tool used is remembered; jumps into the builder land on its page. */
+var TOOL_KEY = 'sr_tool_v1';
+function setTool(name) {
+  var names = ['pj', 'charts', 'cc'];
+  if (names.indexOf(name) === -1) name = 'pj';
+  try { localStorage.setItem(TOOL_KEY, name); } catch (e) {}
+  document.querySelectorAll('.toolseg button').forEach(function (b, i) {
+    var on = b.getAttribute('data-tool') === name;
+    b.classList.toggle('active', on);
+    if (on) { var pill = $('toolseg-pill'); if (pill) pill.style.transform = 'translateX(' + (i * 100) + '%)'; }
+  });
+  names.forEach(function (n) {
+    var pg = $('tool-' + n);
+    if (pg) pg.classList.toggle('active', n === name);
+  });
+  var mn = document.querySelector('main');
+  if (mn && document.querySelector('#tab-tools.active')) mn.scrollTop = 0;
+}
 /* iOS standalone quirk: 100dvh intermittently resolves SHORT at
  * launch/resume, leaving the tab bar floating above a dead black
  * strip (Justin, 2026-10-26). Pin the shell height to the measured
@@ -4653,6 +4675,10 @@ function initApp() {
   if (pfBtn) pfBtn.addEventListener('click', function () { renderPortfolio(!pfFetchedOnce); });
   renderPortfolio(false);
   $('compare-form').addEventListener('submit', function (e) { e.preventDefault(); runCompare(); });
+  document.querySelectorAll('.toolseg button').forEach(function (b) {
+    b.addEventListener('click', function () { setTool(b.getAttribute('data-tool')); });
+  });
+  setTool(localStorage.getItem(TOOL_KEY) || 'pj');
   $('pj-run').addEventListener('click', runProjection);
   $('pj-path').addEventListener('change', onPjPathEdit);
   /* Years edits sync the year-by-year rows only (Justin's refined
