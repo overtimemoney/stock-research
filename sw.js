@@ -2,7 +2,7 @@
  * like a native app. Live data requests (cross-origin) always go to
  * the network; only same-origin shell files are cached.
  * Bump CACHE when shipping changes so clients fetch the new version. */
-var CACHE = 'stock-research-20261030233846';
+var CACHE = 'stock-research-20261030234019';
 var FILES = [
   './',
   './index.html',
