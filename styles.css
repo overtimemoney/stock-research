@@ -42,6 +42,11 @@
   --chart-actual: #141414; --chart-val: #141414;
   --val-l: 38%;
   --nav-bg: #ffffff; --nav-active: rgba(20,20,20,.09); --nav-shadow: rgba(20,20,20,.18);
+  /* Emil review 2026-10-30: strong custom easing curves (Kowalski's
+   * standards) replace weak built-in ease/ease-in-out app-wide. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }
 :root[data-theme="dark"] {
   --ink: #f4efe3;
@@ -135,6 +140,9 @@ label input, label textarea { margin-top: 5px; font-weight: 500; }
   background: var(--gold-grad); color: #141414; border: none; cursor: pointer;
   font-weight: 900; letter-spacing: .03em; text-transform: uppercase; font-size: 14px;
   border-radius: 12px; padding: 12px 20px; box-shadow: 0 3px 10px rgba(212,141,21,.3);
+  /* Emil review 2026-10-30: press feedback gets his 160ms ease-out
+   * transition instead of snapping in and out instantly. */
+  transition: transform .16s var(--ease-out);
 }
 .btn-gold:active { transform: translateY(1px); }
 .btn-gold.wide { width: 100%; margin-top: 4px; }
@@ -248,16 +256,16 @@ table.scen td { padding: 8px 6px; }
   background: var(--nav-bg);
   border: 1px solid var(--line); border-radius: 999px;
   box-shadow: 0 10px 28px var(--nav-shadow);
-  transition: padding .22s ease;
+  transition: padding .22s var(--ease-out);
 }
 .tabbar button {
   flex: 1; background: none; border: none; color: var(--muted); cursor: pointer;
   height: 46px; border-radius: 999px;
   display: flex; align-items: center; justify-content: center;
-  transition: background .18s ease, color .18s ease, height .22s ease;
+  transition: background .18s var(--ease-out), color .18s var(--ease-out), height .22s var(--ease-out);
 }
 .tabbar button .tab-ico { line-height: 1; display: flex; }
-.tabbar button .tab-ico .ico { width: 24px; height: 24px; transition: width .22s ease, height .22s ease; }
+.tabbar button .tab-ico .ico { width: 24px; height: 24px; transition: width .22s var(--ease-out), height .22s var(--ease-out); }
 .tabbar button.active { background: var(--nav-active); color: var(--gold); }
 .spinner {
   display: inline-block; width: 14px; height: 14px; border-radius: 50%;
@@ -384,7 +392,7 @@ table.scen td { padding: 8px 6px; }
 .pf-head .wl-left { flex: 1 1 0%; min-width: 0; overflow: hidden; }
 .pf-head .wl-right { margin-left: auto; flex: 0 0 auto; max-width: none; }
 .pf-head .wl-price, .pf-head .wl-meta { display: block; }
-.pf-chev { color: var(--muted); font-size: 13px; flex: 0 0 auto; transition: transform .15s ease; }
+.pf-chev { color: var(--muted); font-size: 13px; flex: 0 0 auto; transition: transform .15s var(--ease-out); }
 .pf-row.open .pf-chev { transform: rotate(180deg); }
 .pf-detail { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
 .pf-kv { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 13.5px; }
@@ -528,7 +536,7 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .ob-chart-note { font-size: 11px; color: var(--muted); margin: 4px 2px 2px; font-weight: 600; }
 .ob-q { font-size: 16.5px; font-weight: 700; line-height: 1.45; margin: 0 0 12px; }
 .ob-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.ob-opt { font: inherit; font-size: 17px; font-weight: 800; text-align: center; padding: 15px 10px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.ob-opt { font: inherit; font-size: 17px; font-weight: 800; text-align: center; padding: 15px 10px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform .16s var(--ease-out); }
 .ob-opt:active { transform: scale(.98); }
 .ob-opts.locked .ob-opt { pointer-events: none; cursor: default; }
 .ob-opt.dim { opacity: .4; }
@@ -543,7 +551,7 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
  * over the watchlist and slides back out to the right on close
  * (Justin's ask, 2026-10-29). Lives outside the tab system so the
  * watchlist underneath never unloads. */
-.ov-panel { position: fixed; inset: 0; z-index: 85; background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; padding: calc(12px + env(safe-area-inset-top)) 14px calc(18px + env(safe-area-inset-bottom)); transform: translateX(103%); transition: transform .28s cubic-bezier(.32,.72,.24,1); pointer-events: none; }
+.ov-panel { position: fixed; inset: 0; z-index: 85; background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; padding: calc(12px + env(safe-area-inset-top)) 14px calc(18px + env(safe-area-inset-bottom)); transform: translateX(103%); transition: transform .28s var(--ease-drawer); pointer-events: none; }
 .ov-panel.open { transform: translateX(0); pointer-events: auto; }
 
 /* Compact state while scrolling down (Instagram-style shrink). */
@@ -553,9 +561,9 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 
 /* Beginner info dots: small i buttons that smoothly unfold a
  * plain-English explainer under the label (Justin, 2026-10-29). */
-.info-dot { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%; border: 1.5px solid var(--muted); color: var(--muted); background: none; font-size: 11px; font-weight: 800; font-style: italic; font-family: Georgia, 'Times New Roman', serif; line-height: 1; cursor: pointer; vertical-align: 2px; margin-left: 5px; padding: 0; }
+.info-dot { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%; border: 1.5px solid var(--muted); color: var(--muted); background: none; font-size: 11px; font-weight: 800; font-style: italic; font-family: Georgia, 'Times New Roman', serif; line-height: 1; cursor: pointer; vertical-align: 2px; margin-left: 5px; padding: 0; transition: transform .16s var(--ease-out); }
 .info-dot:active { transform: scale(.9); }
-.info-text { display: block; max-height: 0; opacity: 0; overflow: hidden; transition: max-height .35s ease, opacity .3s ease, margin .3s ease; font-size: 12.5px; line-height: 1.5; color: var(--muted); font-weight: 500; }
+.info-text { display: block; max-height: 0; opacity: 0; overflow: hidden; transition: max-height .35s var(--ease-out), opacity .3s var(--ease-out), margin .3s var(--ease-out); font-size: 12.5px; line-height: 1.5; color: var(--muted); font-weight: 500; }
 .info-text.open { max-height: 200px; opacity: 1; margin-top: 5px; }
 
 /* Return chip shown on Scorecard/Tools after jumping there from a
@@ -603,16 +611,28 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
  * scrolled fully past; only its triangle reopens the text. */
 .intro-bar { display: flex; align-items: center; justify-content: space-between; width: 100%; background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; color: var(--ink2); font-size: 13.5px; font-weight: 700; cursor: pointer; }
 .intro-bar[hidden] { display: none; }
-.intro-tri { color: var(--gold); font-size: 12px; transition: transform .3s ease; }
+.intro-tri { color: var(--gold); font-size: 12px; transition: transform .2s var(--ease-out); }
 .intro-bar.open .intro-tri { transform: rotate(180deg); }
 .tool-intro.locked { transition: max-height .35s ease, opacity .3s ease, margin-bottom .35s ease; }
 
 /* Tools sub-page bar: a sliding gold pill moves between the three
  * tools; each tool gets its own page. */
 .toolseg { position: relative; display: flex; background: var(--field); border: 1px solid var(--line); border-radius: 999px; padding: 4px; margin-bottom: 14px; }
-.toolseg-pill { position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc((100% - 8px) / 3); background: var(--gold-grad); border-radius: 999px; transition: transform .28s cubic-bezier(.3,.7,.3,1); }
+.toolseg-pill { position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc((100% - 8px) / 3); background: var(--gold-grad); border-radius: 999px; transition: transform .28s var(--ease-in-out); }
 .toolseg button { flex: 1; position: relative; background: none; border: none; padding: 9px 0; font-size: 13.5px; font-weight: 700; color: var(--muted); cursor: pointer; transition: color .2s ease; }
 .toolseg button.active { color: #1a1405; }
 .tool-page { display: none; }
-.tool-page.active { display: block; animation: toolpage-in .25s ease; }
+.tool-page.active { display: block; animation: toolpage-in .25s var(--ease-out); }
 @keyframes toolpage-in { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
+
+/* Reduced motion (Emil review 2026-10-30 — the app had none): gentler,
+ * not zero. Opacity/color fades that aid comprehension stay; slides,
+ * travels and unfolds become effectively instant. Color-only effects
+ * (the glossary gold flash, the spinner) are intentionally untouched. */
+@media (prefers-reduced-motion: reduce) {
+  .ov-panel { transition: none; }
+  .toolseg-pill, .tabbar, .tabbar button, .tabbar button .tab-ico .ico,
+  .info-text, .tool-intro.locked, .intro-tri, .pf-chev, .scan-bar i { transition-duration: .01s; }
+  .toast-bubble { transition: opacity .2s ease; }
+  .tool-page.active { animation: none; }
+}

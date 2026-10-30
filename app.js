@@ -5370,7 +5370,8 @@ if (typeof document !== 'undefined' && document.getElementById) {
         path.style.transition = 'none';
         path.style.strokeDasharray = 'none';
         path.style.strokeDashoffset = '0';
-        if (animateKey === s.key) {
+        /* Emil review 2026-10-30: skip the line-draw under reduced motion. */
+        if (animateKey === s.key && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
           try {
             var len = path.getTotalLength();
             path.style.strokeDasharray = String(len);
