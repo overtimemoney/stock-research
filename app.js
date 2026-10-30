@@ -3684,10 +3684,11 @@ async function renderPortfolio(doFetch) {
   ranked.forEach(function (r, i) { colorOf[r.p.ticker] = sliceColors[i]; });
   // Holdings list: biggest first, like the reference.
   var ordered = rows.slice().sort(function (a, b) { return (b.val || 0) - (a.val || 0); });
-  var html = '', htmlClosed = '';
+  var html = '';
   ordered.forEach(function (r) {
     var p = r.p, qt = r.qt;
     var isClosed = r.closed;
+    if (isClosed || (p.shares === 0 && pfSoldShares(p) > 0)) return;
     var rzH = isClosed ? pfRealized(p, pfHistAll()[p.ticker]) : null;
     var frac = (isNum(r.val) && totVal > 0) ? r.val / totVal * 100 : null;
     var open = !!pfOpen[p.ticker];
@@ -3705,50 +3706,8 @@ async function renderPortfolio(doFetch) {
     if (open) {
       rowH += '<div class="pf-detail">' +
         pfKv('Shares', fmtShares(p.shares)) +
-        (isNum(p.cost) ? pfKv('Average cost', fmtMoney(p.cost) + '/share') : '') +
         (isNum(qt.dayChg) ? pfKv('Today', '<span class="' + (qt.dayChg >= 0 ? 'up' : 'down') + '">' + fmtPct(qt.dayChg) + '</span>') : '') +
-        (isNum(r.gain) ? pfKv('Gain/loss', '<span class="' + (r.gain >= 0 ? 'up' : 'down') + '">' + (r.gain >= 0 ? '+' : '') + fmtMoney(r.gain, 0) + (isNum(r.gainPct) ? ' (' + fmtPct(r.gainPct) + ')' : '') + '</span>') : '') +
         pfKv('Dividends', p.drip ? 'Reinvested (DRIP)' : 'Paid as cash') +
-        (function () {
-          var hh = pfHistAll()[p.ticker];
-          var buysHtml = '', headExtra = '';
-          if (p.buys && p.buys.length) {
-            var logged2 = 0;
-            buysHtml = p.buys.map(function (b, bi) {
-              logged2 += b.sh;
-              var bk = pfDkey(new Date(b.d + 'T12:00:00'));
-              var pxTxt = '';
-              if (isNum(b.px)) pxTxt = ' @ ' + fmtMoney(b.px);
-              else if (hh) { for (var z = 0; z < hh.pts.length; z++) { if (hh.pts[z][0] <= bk) pxTxt = ' @ ' + fmtMoney(hh.pts[z][1]); else break; } }
-              return '<div class="pf-buy-row"><button class="pf-buy-txt" data-pf-buyedit="' + esc(p.ticker) + '|' + bi + '"><span>' + esc(b.d) + '</span><span>' + fmtShares(b.sh) + ' shares' + pxTxt + '</span></button><button class="link-btn danger pf-buy-del" data-pf-buydel="' + esc(p.ticker) + '|' + bi + '">\u2715</button></div>';
-            }).join('');
-            var grossD = p.shares + pfSoldShares(p);
-            headExtra = ' <span class="pf-buys-n">' + fmtShares(Math.min(logged2, grossD)) + ' / ' + fmtShares(grossD) + ' shares logged</span>';
-            var rem2 = grossD - logged2;
-            if (rem2 > 0.0001) {
-              var ek3 = hh ? pfEstKeyFor(p, hh) : null;
-              buysHtml += '<div class="pf-buy-row"><span>Remaining</span><span>' + fmtShares(rem2) + ' shares \u2014 ' + (ek3 ? (p.estOverride ? 'set to ' + pfFmtDate(ek3) + ' (edited)' : 'est. ' + pfFmtDate(ek3) + ' (from avg cost)') : 'dated with your earliest purchase') + '</span>' +
-                (hh ? '<button class="link-btn pf-buy-del" data-pf-estedit="' + esc(p.ticker) + '">Edit date</button>' : '') + '</div>';
-            }
-          } else if (hh && (isNum(p.cost) || p.estOverride)) {
-            var ekA = pfEstKeyFor(p, hh);
-            if (ekA) buysHtml = '<div class="pf-buy-row"><span>' + (p.estOverride ? 'Purchase date' : 'Est. purchase') + '</span><span>' + pfFmtDate(ekA) + (p.estOverride ? ' (edited)' : ' (from your avg cost)') + '</span>' +
-              '<button class="link-btn pf-buy-del" data-pf-estedit="' + esc(p.ticker) + '">Edit date</button>' +
-              (p.estOverride ? '<button class="link-btn danger" data-pf-estreset="' + esc(p.ticker) + '">Reset</button>' : '') + '</div>';
-          }
-          return '<div class="pf-buys"><div class="pf-buys-h"><span>Purchases' + headExtra + '</span><button class="link-btn" data-pf-buyadd="' + esc(p.ticker) + '">\uff0b Add purchase</button></div>' + buysHtml + '</div>';
-        })() +
-        (function () {
-          var hh2 = pfHistAll()[p.ticker];
-          var sl = p.sells || [];
-          var rowsH = sl.map(function (s, si) {
-            var sp2 = isNum(s.px) ? s.px : (hh2 ? pfPriceAt(hh2.pts, pfDkey(new Date(s.d + 'T12:00:00'))) : null);
-            return '<div class="pf-buy-row"><button class="pf-buy-txt" data-pf-selledit="' + esc(p.ticker) + '|' + si + '"><span>' + esc(s.d) + '</span><span>Sold ' + fmtShares(s.sh) + (isNum(sp2) ? ' @ ' + fmtMoney(sp2) : '') + '</span></button><button class="link-btn danger pf-buy-del" data-pf-selldel="' + esc(p.ticker) + '|' + si + '">\u2715</button></div>';
-          }).join('');
-          var rz = pfRealized(p, hh2);
-          var foot = (rz && isNum(rz.gain)) ? '<div class="pf-buy-row"><span>Realized</span><span class="' + (rz.gain >= 0 ? 'up' : 'down') + '">' + (rz.gain >= 0 ? '+' : '') + fmtMoney(rz.gain, 0) + (isNum(rz.pct) ? ' (' + fmtPct(rz.pct) + ')' : '') + '</span></div>' : '';
-          return '<div class="pf-buys"><div class="pf-buys-h"><span>Sales</span><button class="link-btn" data-pf-selladd="' + esc(p.ticker) + '">\uff0b Add sale</button></div>' + rowsH + foot + '</div>';
-        })() +
         (isNum(r.inc) ? pfKv('Est. dividend income', '\u2248 ' + fmtMoney(r.inc, 0) + '/yr') : '') +
         (p.drip && isNum(r.inc) && isNum(r.px) && r.px > 0 ? pfKv('DRIP buys', '\u2248 ' + fmtShares(r.inc / r.px) + ' shares/yr') : '') +
         '<div class="wl-actions"><button class="link-btn" data-pf-research="' + esc(p.ticker) + '">Research</button>' +
@@ -3757,11 +3716,9 @@ async function renderPortfolio(doFetch) {
       '</div>';
     }
     rowH += '</div>';
-    if (isClosed) htmlClosed += rowH; else html += rowH;
+    html += rowH;
   });
   listBox.innerHTML = html;
-  var closedBox = $('pf-closed');
-  if (closedBox) closedBox.innerHTML = htmlClosed ? '<h3 class="pf-closed-h">Closed positions</h3>' + htmlClosed : '';
   // Donut with label pills around it, Blossom-style. Slices group into
   // "Other" only when there are more than 8 holdings.
   var chartHtml = '';
@@ -3828,7 +3785,6 @@ async function renderPortfolio(doFetch) {
   sumBox.innerHTML = '<div class="card"><div class="pf-sum-v">' + (anyPx ? fmtMoney(totVal, 0) : '\u2014') + '</div>' +
     '<div class="wl-meta">Total value \u00b7 ' + rows.filter(function (r) { return !r.closed; }).length + ' holding' + (rows.filter(function (r) { return !r.closed; }).length === 1 ? '' : 's') + '</div>' +
     '<div class="pf-sum-row"><span>Est. dividends <b>' + fmtMoney(totInc, 0) + '/yr</b>' + (isNum(yld) ? ' \u00b7 ' + fmtNum(yld, 2) + '% yield' : '') + '</span>' +
-    (anyCost && totCost > 0 ? '<span>Total gain/loss <b class="' + (totGain >= 0 ? 'up' : 'down') + '">' + (totGain >= 0 ? '+' : '') + fmtMoney(totGain, 0) + ' (' + fmtPct(totGain / totCost * 100) + ')</b></span>' : '') +
     '</div>' + chartHtml + '</div>';
   var popEl = sumBox.querySelector('.pf-pop');
   var circEls = sumBox.querySelectorAll('[data-slice]');
@@ -3872,7 +3828,6 @@ async function renderPortfolio(doFetch) {
       renderPortfolio(false);
     });
   });
-  renderBench(doFetch);
   document.querySelectorAll('[data-pf-research]').forEach(function (b) {
     b.addEventListener('click', function () { switchTab('scorecard'); $('search-input').value = b.getAttribute('data-pf-research'); runSearch(b.getAttribute('data-pf-research')); });
   });
@@ -4068,15 +4023,8 @@ async function renderPortfolio(doFetch) {
       if (s === null) return;
       var ns = parseFloat(s);
       if (isNum(ns) && ns >= 0) pos.shares = ns;
-      var c = window.prompt('Average cost per share for ' + T + ' ($, leave blank for none):', isNum(pos.cost) ? pos.cost : '');
-      if (c !== null) { var nc = parseFloat(c); pos.cost = isNum(nc) ? nc : null; }
       var dr = window.prompt('Are dividends reinvested for ' + T + '? Type yes or no:', pos.drip ? 'yes' : 'no');
       if (dr !== null) pos.drip = /^y/i.test(String(dr).trim());
-      var bt = (pos.buys || []).reduce(function (a3, b3) { return a3 + b3.sh; }, 0);
-      if (bt > pos.shares + pfSoldShares(pos) + 1e-9) {
-        window.alert('Your logged purchases for ' + T + ' add up to ' + fmtShares(bt) + ' shares, more than the ' + fmtShares(pos.shares) + ' you entered here. Remove some purchases first, or enter a higher share count. Nothing was changed.');
-        return;
-      }
       setPortfolio(pf);
       renderPortfolio(false);
     });
@@ -4866,12 +4814,11 @@ function initApp() {
     var shares = parseFloat($('pf-shares').value);
     var status = $('pf-status');
     if (!T) { status.className = 'status err'; status.textContent = 'Enter a ticker first.'; return; }
-    if (!isNum(shares) || shares < 0) { status.className = 'status err'; status.textContent = 'Enter how many shares you own (0 for a stock you already sold).'; return; }
-    var cost = parseFloat($('pf-cost').value);
+    if (!isNum(shares) || shares < 0) { status.className = 'status err'; status.textContent = 'Enter how many shares you own.'; return; }
     var pf = getPortfolio().filter(function (x) { return x.ticker !== T; });
-    pf.push({ ticker: T, shares: shares, drip: $('pf-drip').value === 'yes', cost: isNum(cost) && cost > 0 ? cost : null, addedAt: Date.now() });
+    pf.push({ ticker: T, shares: shares, drip: $('pf-drip').value === 'yes', addedAt: Date.now() });
     setPortfolio(pf);
-    $('pf-ticker').value = ''; $('pf-shares').value = ''; $('pf-cost').value = '';
+    $('pf-ticker').value = ''; $('pf-shares').value = '';
     status.className = 'status'; status.textContent = '';
     pfSetForm(false);
     renderPortfolio(true);

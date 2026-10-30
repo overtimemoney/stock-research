@@ -225,7 +225,6 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
     </div>
     <div id="pf-news" hidden></div>
     <div id="pf-summary" class="pf-ov"></div>
-    <div id="pf-bench" class="pf-ov"></div>
     <div class="card pf-add-card pf-ov">
       <button id="pf-add-toggle" class="pf-add-head" type="button" aria-expanded="false"><span>Add a holding</span><span class="pf-chev">▾</span></button>
       <div id="pf-add-body" hidden>
@@ -236,7 +235,6 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
         </div>
         <div class="grid2">
           <label>Are dividends reinvested?<select id="pf-drip"><option value="yes">Yes — reinvested (DRIP)</option><option value="no">No — paid out as cash</option></select></label>
-          <label>Average cost per share $ (optional)<input id="pf-cost" type="number" step="any" min="0" placeholder="What you paid, on average"></label>
         </div>
         <button type="submit" class="btn-gold wide">Add to portfolio</button>
       </form>
@@ -247,7 +245,6 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
       <span class="wl-tools-r"><button id="pf-refresh" class="btn-mini" type="button"><svg class="ico" style="width:14px;height:14px;vertical-align:-2px" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh prices</button></span>
     </div>
     <div id="pf-list" class="pf-ov"></div>
-    <div id="pf-closed" class="pf-ov"></div>
     <p class="fineprint pf-ov">Your portfolio lives only on this device — back it up from the settings menu in the Profile tab (tap the ☰ at its top). Prices and dividend figures are estimates from the latest data the app could fetch; your brokerage statement is the official record.</p>
   </section>
 
