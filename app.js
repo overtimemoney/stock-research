@@ -3102,6 +3102,20 @@ function clearBackChips() {
   ovReturnTicker = null;
   ['sc-back', 'tool-back'].forEach(function (id) { var b = $(id); if (b) b.hidden = true; });
 }
+var toastTimer = null;
+function showToast(msg) {
+  var t = $('toast-bubble');
+  if (!t) return;
+  t.textContent = msg;
+  t.hidden = false;
+  void t.offsetWidth;
+  t.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () {
+    t.classList.remove('show');
+    setTimeout(function () { t.hidden = true; }, 280);
+  }, 2600);
+}
 function goBackToOverview() {
   var T = ovReturnTicker;
   clearBackChips();
@@ -4871,7 +4885,15 @@ function initApp() {
   $('journal-form').addEventListener('submit', function (e) {
     e.preventDefault();
     var T = ($('j-ticker').value || '').trim().toUpperCase();
-    if (!T) return;
+    if (!T) {
+      showToast('This won\u2019t save yet \u2014 type a stock ticker in the Ticker box first.');
+      var jt = $('j-ticker');
+      jt.classList.add('field-warn');
+      if (jt.scrollIntoView) jt.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      try { jt.focus({ preventScroll: true }); } catch (e2) { jt.focus(); }
+      setTimeout(function () { jt.classList.remove('field-warn'); }, 2400);
+      return;
+    }
     var j = getJournal();
     j[T] = {
       thesis: $('j-thesis').value.trim(), catalysts: $('j-catalysts').value.trim(),
