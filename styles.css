@@ -550,3 +550,10 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .tabbar.mini { padding: 4px; }
 .tabbar.mini button { height: 36px; }
 .tabbar.mini button .tab-ico .ico { width: 20px; height: 20px; }
+
+/* Beginner info dots: small i buttons that smoothly unfold a
+ * plain-English explainer under the label (Justin, 2026-10-29). */
+.info-dot { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%; border: 1.5px solid var(--muted); color: var(--muted); background: none; font-size: 11px; font-weight: 800; font-style: italic; font-family: Georgia, 'Times New Roman', serif; line-height: 1; cursor: pointer; vertical-align: 2px; margin-left: 5px; padding: 0; }
+.info-dot:active { transform: scale(.9); }
+.info-text { display: block; max-height: 0; opacity: 0; overflow: hidden; transition: max-height .35s ease, opacity .3s ease, margin .3s ease; font-size: 12.5px; line-height: 1.5; color: var(--muted); font-weight: 500; }
+.info-text.open { max-height: 200px; opacity: 1; margin-top: 5px; }

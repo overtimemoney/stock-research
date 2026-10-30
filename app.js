@@ -1177,7 +1177,51 @@ function bindPriceScrub(d, range) {
 
 /* ============================== scorecard UI ============================== */
 var lastStock = null;
-function kvItem(k, v) { return '<div class="kv-item"><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + '</div></div>'; }
+/* Beginner info dots (Justin's ask, 2026-10-29): tap the small i
+ * next to a label and a plain-English explainer smoothly unfolds
+ * under it. One delegated listener handles every dot. */
+var INFO_TEXT = {
+  fwpe: 'Forward P/E = today\'s price divided by next year\'s expected earnings per share. It prices the stock against where earnings are heading, not where they have been. Rough guide: under 15 is cheap for most stocks, over 30 is expensive.',
+  pe: 'P/E (trailing) = today\'s price divided by the last twelve months\' actual earnings per share. Higher means investors pay more for each $1 of profit the company already makes.',
+  peg: 'PEG = the forward P/E divided by the expected earnings growth rate. It checks whether the price is fair for the growth you are getting. Under 1 is the classic \u201cgrowth at a reasonable price\u201d zone; under 0.5 is rare.',
+  epsttm: 'Earnings per share over the last twelve months (TTM = trailing twelve months) \u2014 the profit already reported, per share.',
+  epsgrowth: 'How much analysts expect earnings per share to grow next fiscal year versus this one. Growing earnings are what ultimately pull a stock\'s price upward.',
+  epstrend: 'Whether analysts expect earnings per share to grow or shrink next year. Shrinking earnings are a risk because prices tend to follow earnings down.',
+  epsmiss: 'In how many of the last few quarters the company reported EPS below what analysts expected. Frequent misses can mean a business that is hard to predict.',
+  epsbeat: 'In how many of the last few quarters reported EPS beat what analysts expected. Companies that regularly beat tend to be conservatively forecast \u2014 or genuinely executing well.',
+  revttm: 'How fast total sales grew over the last twelve months versus the year before. Revenue growth is the engine behind future earnings growth.',
+  revqtr: 'Sales growth in the most recent reported quarter versus the same quarter a year earlier \u2014 the freshest read on whether growth is speeding up or slowing down.',
+  gmargin: 'Gross margin = what is left of each $1 of sales after the direct cost of the product or service, as a %. High margins (50%+) suggest pricing power; thin ones leave little cushion.',
+  omargin: 'Operating margin = profit from the core business (before interest and taxes) per $1 of sales, as a %. It shows how well the day-to-day business itself earns, ignoring financing.',
+  pmargin: 'Profit margin = the share of each $1 of sales the company actually keeps as profit, as a %. Higher and steadier is healthier; negative means it is losing money.',
+  debteq: 'Debt / Equity compares everything the company owes to what belongs to shareholders. Under 1 is comfortable. At 3 or more, interest bills eat a big share of earnings and trouble comes faster in a downturn. (Some industries, like banks, normally run high.)',
+  roe: 'ROE = return on equity: profit earned per $1 of shareholders\' money, as a %. Above ~15% suggests an efficient business; very high ROE can also just mean lots of debt, so read it together with Debt / Equity.',
+  beta: 'Beta measures how jumpy the stock is versus the whole market. 1.0 moves with the market, 2.0 swings about twice as much, 0.5 about half. High beta = bigger ups AND bigger downs.',
+  range52: 'The lowest and highest prices of the last 52 weeks (one year) \u2014 the range the stock has actually traded in recently.',
+  belowhigh: 'How far below its one-year high the price sits, as a %. A big gap can be a bargain \u2014 or a warning that something is wrong. It is a starting clue, never proof.',
+  divyield: 'Dividend yield = the yearly dividend per share as a % of the price. 2% on a $100 stock means about $2 a year in cash payments while you hold it. 0% means no dividend.',
+  target: 'The average price analysts who cover the stock expect within about a year. It is opinion, not a promise \u2014 treat it as a sentiment check, not a forecast to bank on.',
+  mktcap: 'Market cap = share price \u00d7 total shares \u2014 what the whole company is worth at today\'s price. Big (over $200B) usually means steadier; small (under $2B) usually means swingier.',
+  size: 'Company size by market cap (price \u00d7 shares). Smaller companies tend to swing harder, get less analyst coverage, and can be harder to sell in a panic \u2014 so small size adds risk points here.',
+  currentratio: 'Current ratio = short-term assets \u00f7 short-term bills. Above 1 means the company can cover what it owes within the year. Below 1 can mean cash stress if business dips.',
+  boombust: 'Some businesses boom then bust in cycles (memory chips are the classic case). This flags it when the forecast shows a big earnings peak followed by a cliff, after revenue roughly doubled into the peak \u2014 peak earnings make a stock look deceptively cheap.',
+  scanscore: 'Every stock in the index gets two 0\u2013100 scores: a Value score (cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt) and a Risk score (debt, volatility, size, earnings trend, boom-bust pattern). The Score on this list = 60% Value + 40% safety, where safety = 100 \u2212 Risk. Only stocks with enough data to score fairly can appear, and it shows the Top 10 for each index. Scores refresh when a company reports earnings, and the full index is rescanned about once a week.'
+};
+var FACTOR_INFO = {
+  'Forward P/E': 'fwpe', 'PEG ratio': 'peg', 'Below 52-wk high': 'belowhigh',
+  'EPS growth, next yr': 'epsgrowth', 'Profit margin': 'pmargin', 'Gross margin': 'gmargin',
+  'Debt / Equity': 'debteq', 'Beta (volatility)': 'beta', 'Company size': 'size',
+  'EPS trend, next yr': 'epstrend', 'Current ratio': 'currentratio', 'Boom-bust pattern': 'boombust'
+};
+function infoDot(key) {
+  return INFO_TEXT[key] ? ' <button type="button" class="info-dot" data-info="' + key + '" aria-label="What does this mean?">i</button>' : '';
+}
+function infoText(key) {
+  return INFO_TEXT[key] ? '<span class="info-text" data-info-text="' + key + '">' + INFO_TEXT[key] + '</span>' : '';
+}
+function kvItem(k, v, ik) {
+  return '<div class="kv-item"><div class="k">' + esc(k) + (ik ? infoDot(ik) : '') + '</div><div class="v">' + esc(v) + '</div>' + (ik ? infoText(ik) : '') + '</div>';
+}
 
 /* ============================== SWOT (auto) ============================== */
 /* A SWOT built from the numbers already on the scorecard — every bullet
@@ -1359,7 +1403,8 @@ function renderScorecard(d) {
     html += '<div class="score-bar"><div style="width:' + sc.score + '%"></div></div>';
     html += '<table class="factors"><tr><th>Factor</th><th>Value</th><th class="num">Points</th></tr>';
     sc.factors.forEach(function (f) {
-      html += '<tr><td><strong>' + esc(f.name) + '</strong><div class="factor-note">' + esc(f.note) + '</div></td><td>' + esc(f.display) + '</td><td class="num"><strong>' + f.pts + '</strong> / ' + f.max + '</td></tr>';
+      var ik = FACTOR_INFO[f.name];
+      html += '<tr><td><strong>' + esc(f.name) + '</strong>' + (ik ? infoDot(ik) : '') + '<div class="factor-note">' + esc(f.note) + '</div>' + (ik ? infoText(ik) : '') + '</td><td>' + esc(f.display) + '</td><td class="num"><strong>' + f.pts + '</strong> / ' + f.max + '</td></tr>';
     });
     html += '</table>';
     if (sc.maxAvailable < 100) {
@@ -1378,7 +1423,8 @@ function renderScorecard(d) {
     html += '<div class="score-bar risk-bar"><div style="width:' + rk.score + '%"></div></div>';
     html += '<table class="factors"><tr><th>Risk factor</th><th>Value</th><th class="num">Risk pts</th></tr>';
     rk.factors.forEach(function (f) {
-      html += '<tr><td><strong>' + esc(f.name) + '</strong><div class="factor-note">' + esc(f.note) + '</div></td><td>' + esc(f.display) + '</td><td class="num"><strong>' + f.pts + '</strong> / ' + f.max + '</td></tr>';
+      var ik = FACTOR_INFO[f.name];
+      html += '<tr><td><strong>' + esc(f.name) + '</strong>' + (ik ? infoDot(ik) : '') + '<div class="factor-note">' + esc(f.note) + '</div>' + (ik ? infoText(ik) : '') + '</td><td>' + esc(f.display) + '</td><td class="num"><strong>' + f.pts + '</strong> / ' + f.max + '</td></tr>';
     });
     html += '</table>';
     html += '<p class="fineprint">Higher = riskier. Scaled to 100 over the ' + rk.factors.length + ' factors with available data (' + rk.maxAvailable + ' pts possible).</p>';
@@ -1406,30 +1452,30 @@ function renderScorecard(d) {
   html += '</div>';
 
   html += '<div class="section-h">Key <span class="gold-text">stats</span></div><div class="kv-grid">';
-  html += kvItem('Market cap', fmtCap(d.marketCap));
-  html += kvItem('Forward P/E', isNum(d.forwardPE) ? fmtNum(d.forwardPE, 2) + (d.forwardPECalc ? ' (calc.)' : '') : '—');
-  html += kvItem('P/E (trailing)', isNum(d.pe) ? fmtNum(d.pe, 2) : '—');
-  html += kvItem('PEG', isNum(d.peg) ? fmtNum(d.peg, 2) + (d.pegCalc ? ' (calc.)' : '') : '—');
-  html += kvItem('EPS (trailing)', isNum(d.epsTTM) ? fmtNum(d.epsTTM) : '—');
-  html += kvItem('EPS growth next yr', isNum(d.epsGrowthNextY) ? fmtPct(d.epsGrowthNextY) : '—');
+  html += kvItem('Market cap', fmtCap(d.marketCap), 'mktcap');
+  html += kvItem('Forward P/E', isNum(d.forwardPE) ? fmtNum(d.forwardPE, 2) + (d.forwardPECalc ? ' (calc.)' : '') : '—', 'fwpe');
+  html += kvItem('P/E (trailing)', isNum(d.pe) ? fmtNum(d.pe, 2) : '—', 'pe');
+  html += kvItem('PEG', isNum(d.peg) ? fmtNum(d.peg, 2) + (d.pegCalc ? ' (calc.)' : '') : '—', 'peg');
+  html += kvItem('EPS (trailing)', isNum(d.epsTTM) ? fmtNum(d.epsTTM) : '—', 'epsttm');
+  html += kvItem('EPS growth next yr', isNum(d.epsGrowthNextY) ? fmtPct(d.epsGrowthNextY) : '—', 'epsgrowth');
   if (d.epsRecord && d.epsRecord.n >= 4) {
-    html += kvItem('EPS miss rate · last ' + d.epsRecord.n + ' qtrs', d.epsRecord.missPct + '%');
-    html += kvItem('EPS beat rate · last ' + d.epsRecord.n + ' qtrs', d.epsRecord.beatPct + '%');
+    html += kvItem('EPS miss rate · last ' + d.epsRecord.n + ' qtrs', d.epsRecord.missPct + '%', 'epsmiss');
+    html += kvItem('EPS beat rate · last ' + d.epsRecord.n + ' qtrs', d.epsRecord.beatPct + '%', 'epsbeat');
   }
-  html += kvItem('Revenue growth (TTM)', isNum(d.salesGrowthTTM) ? fmtPct(d.salesGrowthTTM) : '—');
+  html += kvItem('Revenue growth (TTM)', isNum(d.salesGrowthTTM) ? fmtPct(d.salesGrowthTTM) : '—', 'revttm');
   if (isNum(d.revGrowthQtr)) {
-    html += kvItem('Revenue growth (latest qtr)', fmtPct(d.revGrowthQtr));
+    html += kvItem('Revenue growth (latest qtr)', fmtPct(d.revGrowthQtr), 'revqtr');
   }
-  html += kvItem('Gross margin', isNum(d.grossMargin) ? fmtNum(d.grossMargin, 1) + '%' : '—');
-  html += kvItem('Operating margin', isNum(d.operMargin) ? fmtNum(d.operMargin, 1) + '%' : '—');
-  html += kvItem('Profit margin', isNum(d.profitMargin) ? fmtNum(d.profitMargin, 1) + '%' : '—');
-  html += kvItem('Debt / Equity', isNum(d.debtEq) ? fmtNum(d.debtEq, 2) : '—');
-  html += kvItem('ROE', isNum(d.roe) ? fmtNum(d.roe, 1) + '%' : '—');
-  html += kvItem('Beta', isNum(d.beta) ? fmtNum(d.beta, 2) : '—');
-  html += kvItem('52-wk range', (isNum(d.low52) ? fmtNum(d.low52, 0) : '—') + ' – ' + (isNum(d.high52) ? fmtNum(d.high52, 0) : '—'));
-  html += kvItem('Below 52-wk high', isNum(d.pctBelowHigh) ? fmtNum(d.pctBelowHigh, 1) + '%' : '—');
-  html += kvItem('Dividend yield', isNum(d.divYield) ? fmtNum(d.divYield, 2) + '%' : '—');
-  html += kvItem('Analyst 1-yr target', isNum(d.target1Y) ? fmtMoney(d.target1Y) : '—');
+  html += kvItem('Gross margin', isNum(d.grossMargin) ? fmtNum(d.grossMargin, 1) + '%' : '—', 'gmargin');
+  html += kvItem('Operating margin', isNum(d.operMargin) ? fmtNum(d.operMargin, 1) + '%' : '—', 'omargin');
+  html += kvItem('Profit margin', isNum(d.profitMargin) ? fmtNum(d.profitMargin, 1) + '%' : '—', 'pmargin');
+  html += kvItem('Debt / Equity', isNum(d.debtEq) ? fmtNum(d.debtEq, 2) : '—', 'debteq');
+  html += kvItem('ROE', isNum(d.roe) ? fmtNum(d.roe, 1) + '%' : '—', 'roe');
+  html += kvItem('Beta', isNum(d.beta) ? fmtNum(d.beta, 2) : '—', 'beta');
+  html += kvItem('52-wk range', (isNum(d.low52) ? fmtNum(d.low52, 0) : '—') + ' – ' + (isNum(d.high52) ? fmtNum(d.high52, 0) : '—'), 'range52');
+  html += kvItem('Below 52-wk high', isNum(d.pctBelowHigh) ? fmtNum(d.pctBelowHigh, 1) + '%' : '—', 'belowhigh');
+  html += kvItem('Dividend yield', isNum(d.divYield) ? fmtNum(d.divYield, 2) + '%' : '—', 'divyield');
+  html += kvItem('Analyst 1-yr target', isNum(d.target1Y) ? fmtMoney(d.target1Y) : '—', 'target');
   html += '</div>';
 
   var profitWarn = epsProfitWarning(d);
@@ -2937,10 +2983,10 @@ function renderScanCard() {
   if (!box) return;
   var s = getScan();
   if (!s || s.date !== scanTodayKey()) {
-    box.innerHTML = '<div class="card scan-card"><div class="scan-h">Top value + low risk today</div><div class="status">Preparing today\'s scan\u2026</div></div>';
+    box.innerHTML = '<div class="card scan-card"><div class="scan-h">Top value + low risk today' + infoDot('scanscore') + '</div>' + infoText('scanscore') + '<div class="status">Preparing today\'s scan\u2026</div></div>';
     return;
   }
-  var html = '<div class="card scan-card"><div class="scan-h">Top value + low risk today <span class="scan-date">' + esc(s.date) + '</span></div>';
+  var html = '<div class="card scan-card"><div class="scan-h">Top value + low risk today <span class="scan-date">' + esc(s.date) + '</span>' + infoDot('scanscore') + '</div>' + infoText('scanscore');
   var listsHtml = function () {
     var out = '';
     SCAN_IDXS.forEach(function (ix) {
@@ -3102,7 +3148,7 @@ function renderOverview(d, item) {
   });
   html += '</div>';
   html += '<div class="section-h">Key <span class="gold-text">stats</span></div><div class="kv-grid">';
-  html += kvItem('Market cap', fmtCap(d.marketCap));
+  html += kvItem('Market cap', fmtCap(d.marketCap), 'mktcap');
   html += kvItem('Forward P/E', isNum(d.forwardPE) ? fmtNum(d.forwardPE, 2) : '\u2014');
   html += kvItem('P/E (trailing)', isNum(d.pe) ? fmtNum(d.pe, 2) : '\u2014');
   html += kvItem('PEG', isNum(d.peg) ? fmtNum(d.peg, 2) : '\u2014');
@@ -4779,12 +4825,23 @@ function initApp() {
       $('btn-settings').setAttribute('aria-expanded', 'false');
     }
   });
+  document.addEventListener('click', function (e) {
+    var dot = e.target && e.target.closest ? e.target.closest('.info-dot') : null;
+    if (!dot) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var host = dot.closest('td, .kv-item, label, .scan-card');
+    var txt = host ? host.querySelector('.info-text') : null;
+    if (txt) txt.classList.toggle('open');
+  });
   $('set-clear-ai').addEventListener('click', function () {
+    if (!window.confirm('Are you sure you\u2019d like to clear saved AI SWOTs?')) return;
     try { localStorage.removeItem(AI_SWOT_KEY); } catch (e) {}
     $('settings-note').textContent = 'Saved AI SWOTs cleared — regenerate any of them from a scorecard.';
     if (lastStock) renderScorecard(lastStock);
   });
   $('set-clear-cache').addEventListener('click', function () {
+    if (!window.confirm('Are you sure you\u2019d like to clear the price cache?')) return;
     try { localStorage.removeItem(CACHE_KEY); } catch (e) {}
     $('settings-note').textContent = 'Price cache cleared — the next lookups fetch fresh data.';
   });
