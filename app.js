@@ -1538,6 +1538,7 @@ function renderScorecard(d) {
     switchTab('watchlist');
   });
   $('sc-journal').addEventListener('click', function () {
+    jrReturnTab = 'scorecard';
     switchTab('journal');
     startJournalEdit(d.ticker);
   });
@@ -3092,6 +3093,7 @@ function renderScanCard() {
  * to the full scorecard and the Projection Builder. */
 var ovTicker = null;
 var ovReturnTicker = null;
+var jrReturnTab = 'portfolio';
 function showBackChips() {
   ['sc-back', 'tool-back'].forEach(function (id) {
     var b = $(id);
@@ -4708,6 +4710,8 @@ function initApp() {
     b.addEventListener('click', function () { clearBackChips(); switchTab(b.getAttribute('data-tab')); });
   });
   $('sc-back').addEventListener('click', goBackToOverview);
+  $('jr-back').addEventListener('click', function () { switchTab(jrReturnTab); });
+  $('gl-back').addEventListener('click', function () { switchTab('portfolio'); });
   $('tool-back').addEventListener('click', goBackToOverview);
   $('search-form').addEventListener('submit', function (e) {
     e.preventDefault();
@@ -4824,6 +4828,7 @@ function initApp() {
     switchTab('glossary');
   });
   $('menu-journal').addEventListener('click', function () {
+    jrReturnTab = 'portfolio';
     settingsMenu.hidden = true;
     $('btn-settings').setAttribute('aria-expanded', 'false');
     switchTab('journal');
