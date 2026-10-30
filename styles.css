@@ -287,7 +287,11 @@ table.scen td { padding: 8px 6px; }
 @media (max-width: 640px) { .swot-grid { grid-template-columns: 1fr; } }
 
 /* ---------- settings (gear + dropdown) ---------- */
-.settings-wrap { position: fixed; top: calc(env(safe-area-inset-top) + 9px); right: 12px; z-index: 40; }
+/* Settings live in the Profile (portfolio) tab now, behind the
+ * hamburger at its top (Justin, 2026-10-29): the old dropdown menu
+ * becomes a full-width inline card when it opens there. */
+.pf-head { display: flex; align-items: center; justify-content: space-between; }
+#tab-portfolio .settings-menu { position: static; width: auto; max-height: none; overflow: visible; box-shadow: none; margin-bottom: 14px; }
 .gear-btn {
   width: 34px; height: 34px; border-radius: 10px; cursor: pointer; line-height: 1;
   border: 1.5px solid var(--line); background: var(--field); color: var(--ink); font-size: 19px;
