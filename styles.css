@@ -578,3 +578,9 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .gloss-art text { font-family: inherit; }
 .gloss-art .gt { fill: var(--ink2); stroke: none; font-size: 10.5px; font-weight: 700; letter-spacing: .03em; }
 .gloss-art .gtf { fill: var(--gold); stroke: none; font-size: 11px; font-weight: 800; }
+
+/* "See in Glossary" link inside expanded info explainers, and the
+ * landing flash when a glossary jump highlights its term. */
+.info-gloss-link { display: inline-block; margin-top: 6px; background: none; border: none; padding: 0; color: var(--gold); font-size: 12.5px; font-weight: 700; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.g-item.flash { animation: gflash 1.8s ease; border-radius: 10px; }
+@keyframes gflash { 0% { background: rgba(232,178,60,.30); } 100% { background: transparent; } }

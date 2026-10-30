@@ -1208,7 +1208,7 @@ var INFO_TEXT = {
   scanscore: 'Every stock in the index gets two 0\u2013100 scores: a Value score (cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt) and a Risk score (debt, volatility, size, earnings trend, boom-bust pattern). The Score on this list = 60% Value + 40% safety, where safety = 100 \u2212 Risk. Only stocks with enough data to score fairly can appear, and it shows the Top 10 for each index. Scores refresh when a company reports earnings, and the full index is rescanned about once a week.'
 };
 var FACTOR_INFO = {
-  'Forward P/E': '<rect x="14" y="8" width="118" height="27" class="ga"/><text x="73" y="26" class="gt" text-anchor="middle">PRICE $150</text><path d="M14 42h118"/><rect x="14" y="49" width="118" height="27" stroke-dasharray="5 4"/><text x="73" y="67" class="gt" text-anchor="middle">EPS $6 EST.</text><text x="146" y="50" class="gt" font-size="15">=</text><text x="168" y="47" class="gtf" font-size="23">25\u00d7</text><text x="168" y="67" class="gt">NEXT-YEAR FORECAST</text>',
+  'Forward P/E': 'fwpe', 'PEG ratio': 'peg', 'Below 52-wk high': 'belowhigh',
   'EPS growth, next yr': 'epsgrowth', 'Profit margin': 'pmargin', 'Gross margin': 'gmargin',
   'Debt / Equity': 'debteq', 'Beta (volatility)': 'beta', 'Company size': 'size',
   'EPS trend, next yr': 'epstrend', 'Current ratio': 'currentratio', 'Boom-bust pattern': 'boombust'
@@ -1216,8 +1216,34 @@ var FACTOR_INFO = {
 function infoDot(key) {
   return INFO_TEXT[key] ? ' <button type="button" class="info-dot" data-info="' + key + '" aria-label="What does this mean?">i</button>' : '';
 }
+var INFO_GLOSS = {
+  fwpe: 'Forward P/E', pe: 'P/E ratio', peg: 'PEG ratio',
+  epsttm: 'EPS (earnings per share)', epsgrowth: 'YoY (year over year)',
+  epstrend: 'YoY (year over year)', epsmiss: 'Earnings surprise', epsbeat: 'Earnings surprise',
+  revttm: 'TTM (trailing twelve months)', gmargin: 'Gross margin', omargin: 'Operating margin',
+  pmargin: 'Profit margin', debteq: 'Debt / Equity', roe: 'ROE (return on equity)',
+  beta: 'Beta', range52: '52-week high', belowhigh: '52-week high',
+  divyield: 'Dividend yield', target: 'Analyst target', mktcap: 'Market cap', size: 'Market cap',
+  boombust: 'Earnings cliff'
+};
 function infoText(key) {
-  return INFO_TEXT[key] ? '<span class="info-text" data-info-text="' + key + '">' + INFO_TEXT[key] + '</span>' : '';
+  if (!INFO_TEXT[key]) return '';
+  var link = INFO_GLOSS[key] ? ' <button type="button" class="info-gloss-link" data-gloss="' + INFO_GLOSS[key] + '">See in Glossary \u2192</button>' : '';
+  return '<span class="info-text" data-info-text="' + key + '">' + INFO_TEXT[key] + link + '</span>';
+}
+var glossReturn = 'portfolio';
+function openGlossaryTerm(term) {
+  if (!term) return;
+  var active = document.querySelector('.tabbar button.active');
+  var from = active ? active.getAttribute('data-tab') : '';
+  if (from) glossReturn = from;
+  closeOverview();
+  var gs = $('gloss-search');
+  if (gs) gs.value = '';
+  renderGlossary('', term);
+  switchTab('glossary');
+  var item = document.querySelector('#gloss-list .g-item');
+  if (item) item.classList.add('flash');
 }
 function kvItem(k, v, ik) {
   return '<div class="kv-item"><div class="k">' + esc(k) + (ik ? infoDot(ik) : '') + '</div><div class="v">' + esc(v) + '</div>' + (ik ? infoText(ik) : '') + '</div>';
@@ -4543,11 +4569,12 @@ function fitGlossText() {
   }
 }
 
-function renderGlossary(filter) {
+function renderGlossary(filter, exactTerm) {
   var f = (filter || '').toLowerCase();
   var html = '';
   GLOSSARY.forEach(function (g) {
-    if (f && g[0].toLowerCase().indexOf(f) === -1 && g[1].toLowerCase().indexOf(f) === -1) return;
+    if (exactTerm) { if (g[0] !== exactTerm) return; }
+    else if (f && g[0].toLowerCase().indexOf(f) === -1 && g[1].toLowerCase().indexOf(f) === -1) return;
     html += '<div class="g-item"><div class="g-term">' + esc(g[0]) + '</div>' +
       (GLOSS_ART[g[0]] ? '<div class="gloss-art"><svg viewBox="0 0 300 84" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + GLOSS_ART[g[0]] + '</svg></div>' : '') +
       '<div class="g-def">' + esc(g[1]) + '</div></div>';
@@ -4795,7 +4822,7 @@ function initApp() {
   });
   $('sc-back').addEventListener('click', goBackToOverview);
   $('jr-back').addEventListener('click', function () { switchTab(jrReturnTab); });
-  $('gl-back').addEventListener('click', function () { switchTab('portfolio'); });
+  $('gl-back').addEventListener('click', function () { switchTab(glossReturn); });
   $('tool-back').addEventListener('click', goBackToOverview);
   $('search-form').addEventListener('submit', function (e) {
     e.preventDefault();
@@ -4907,6 +4934,7 @@ function initApp() {
   $('theme-light').addEventListener('click', function () { applyTheme('light'); });
   var settingsMenu = $('settings-menu');
   $('menu-glossary').addEventListener('click', function () {
+    glossReturn = 'portfolio';
     settingsMenu.hidden = true;
     $('btn-settings').setAttribute('aria-expanded', 'false');
     switchTab('glossary');
@@ -4951,6 +4979,8 @@ function initApp() {
     }
   });
   document.addEventListener('click', function (e) {
+    var gl = e.target && e.target.closest ? e.target.closest('.info-gloss-link') : null;
+    if (gl) { e.preventDefault(); e.stopPropagation(); openGlossaryTerm(gl.getAttribute('data-gloss')); return; }
     var dot = e.target && e.target.closest ? e.target.closest('.info-dot') : null;
     if (!dot) return;
     e.preventDefault();
