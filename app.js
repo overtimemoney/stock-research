@@ -3091,6 +3091,23 @@ function renderScanCard() {
  * (verdicts, both screens, key stats, EPS path) with one-tap jumps
  * to the full scorecard and the Projection Builder. */
 var ovTicker = null;
+var ovReturnTicker = null;
+function showBackChips() {
+  ['sc-back', 'tool-back'].forEach(function (id) {
+    var b = $(id);
+    if (b && ovReturnTicker) { b.textContent = '\u2190 Back to ' + ovReturnTicker + ' overview'; b.hidden = false; }
+  });
+}
+function clearBackChips() {
+  ovReturnTicker = null;
+  ['sc-back', 'tool-back'].forEach(function (id) { var b = $(id); if (b) b.hidden = true; });
+}
+function goBackToOverview() {
+  var T = ovReturnTicker;
+  clearBackChips();
+  switchTab('watchlist');
+  if (T) openOverview(T);
+}
 function renderOverview(d, item) {
   var sc = scoreStock(d);
   var rk = riskScore(d);
@@ -3182,9 +3199,10 @@ function closeOverview() {
 
 function wireOverviewActions(d) {
   var sc = $('ov-scorecard');
-  if (sc) sc.addEventListener('click', function () { closeOverview(); switchTab('scorecard'); $('search-input').value = d.ticker; runSearch(d.ticker); });
+  if (sc) sc.addEventListener('click', function () { ovReturnTicker = d.ticker; showBackChips(); closeOverview(); switchTab('scorecard'); $('search-input').value = d.ticker; runSearch(d.ticker); });
   var pj = $('ov-project');
   if (pj) pj.addEventListener('click', function () {
+    ovReturnTicker = d.ticker; showBackChips();
     closeOverview();
     switchTab('tools');
     // Same behavior the row's Projection button had: a saved
@@ -4673,10 +4691,13 @@ setTimeout(fitShell, 2500);
 
 function initApp() {
   document.querySelectorAll('.tabbar button').forEach(function (b) {
-    b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); });
+    b.addEventListener('click', function () { clearBackChips(); switchTab(b.getAttribute('data-tab')); });
   });
+  $('sc-back').addEventListener('click', goBackToOverview);
+  $('tool-back').addEventListener('click', goBackToOverview);
   $('search-form').addEventListener('submit', function (e) {
     e.preventDefault();
+    clearBackChips();
     runSearch($('search-input').value);
     $('search-input').blur();
   });
@@ -4729,6 +4750,7 @@ function initApp() {
   renderPjPath();
   $('pj-load-form').addEventListener('submit', function (e) {
     e.preventDefault();
+    clearBackChips();
     loadProjectionTicker();
     $('pj-ticker').blur();
   });

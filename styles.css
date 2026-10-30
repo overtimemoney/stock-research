@@ -557,3 +557,9 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .info-dot:active { transform: scale(.9); }
 .info-text { display: block; max-height: 0; opacity: 0; overflow: hidden; transition: max-height .35s ease, opacity .3s ease, margin .3s ease; font-size: 12.5px; line-height: 1.5; color: var(--muted); font-weight: 500; }
 .info-text.open { max-height: 200px; opacity: 1; margin-top: 5px; }
+
+/* Return chip shown on Scorecard/Tools after jumping there from a
+ * stock overview (Justin, 2026-10-29). */
+.back-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; color: var(--accent-text); background: var(--field); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; margin-bottom: 10px; cursor: pointer; }
+.back-chip[hidden] { display: none; }
+.back-chip:active { transform: translateY(1px); }

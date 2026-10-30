@@ -26,6 +26,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
 <main id="app">
   <!-- SCORECARD -->
   <section id="tab-scorecard" class="tab active">
+    <button id="sc-back" class="back-chip" type="button" hidden></button>
     <form id="search-form" class="search-row" autocomplete="off">
       <input id="search-input" type="text" inputmode="text" autocapitalize="characters"
              autocorrect="off" spellcheck="false" placeholder="Ticker — e.g. MU, AAPL, NVDA" aria-label="Ticker symbol">
@@ -55,6 +56,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
 
   <!-- TOOLS -->
   <section id="tab-tools" class="tab">
+    <button id="tool-back" class="back-chip" type="button" hidden></button>
     <h2 class="tab-title">Projection <span class="gold-text">Builder</span></h2>
     <div class="card">
       <form id="pj-load-form" class="search-row" autocomplete="off" style="margin-bottom:12px">
