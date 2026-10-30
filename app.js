@@ -4986,7 +4986,7 @@ function initApp() {
   var introEl = document.querySelector('.tool-intro');
   var introBar = $('intro-bar');
   var introH = 0;
-  var introLocked = false, introOpen = false;
+  var introLocked = false;
   function introCollapse() {
     introEl.style.maxHeight = '0px';
     introEl.style.opacity = '0';
@@ -4994,16 +4994,15 @@ function initApp() {
   }
   function lockIntro() {
     introLocked = true;
-    introOpen = false;
     introEl.classList.add('locked');
     introCollapse();
     if (introBar) { introBar.hidden = false; introBar.classList.remove('open'); introBar.setAttribute('aria-expanded', 'false'); }
   }
   if (introBar && introEl) introBar.addEventListener('click', function () {
-    introOpen = !introOpen;
-    introBar.classList.toggle('open', introOpen);
-    introBar.setAttribute('aria-expanded', String(introOpen));
-    if (introOpen) {
+    var open = !introBar.classList.contains('open');
+    introBar.classList.toggle('open', open);
+    introBar.setAttribute('aria-expanded', String(open));
+    if (open) {
       introH = introEl.scrollHeight || introH;
       introEl.style.maxHeight = introH + 'px';
       introEl.style.opacity = '1';
@@ -5027,8 +5026,7 @@ function initApp() {
           /* Locked away (Justin's refinement, 2026-10-30): scrolling
            * back up no longer unfolds it; only the dropdown bar's
            * triangle reopens it. Scrolling down closes an open one. */
-          if (introOpen && st > 60) {
-            introOpen = false;
+          if (introBar && introBar.classList.contains('open') && st > 60) {
             introBar.classList.remove('open');
             introBar.setAttribute('aria-expanded', 'false');
             introCollapse();
