@@ -209,6 +209,44 @@ var CACHE_TTL = 15 * 60 * 1000;
 
 /* Fill a stock object from a parsed Finviz snapshot. Shared by the
  * full scorecard fetch and the watchlist's light valuation pass. */
+/* Next-earnings date from the Finviz snapshot's Earnings cell
+ * ("Nov 02 AMC" / "Jan 29 BMO"): month + day + timing, no year. Year =
+ * this year, rolling to next when the date is over a week past (a
+ * just-reported date inside the week stays, so the UI can say so). */
+var EARN_MONS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+function earnDateFromFinviz(str, now) {
+  if (!str) return null;
+  var m = String(str).match(/([A-Za-z]{3})[a-z]*\s+(\d{1,2})(?:\s+(AMC|BMO))?/);
+  if (!m || !(m[1] in EARN_MONS)) return null;
+  now = now || new Date();
+  var day = parseInt(m[2], 10);
+  var dt = new Date(now.getFullYear(), EARN_MONS[m[1]], day);
+  var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if ((dt - today) / 864e5 < -7) dt = new Date(now.getFullYear() + 1, EARN_MONS[m[1]], day);
+  return { iso: dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0'), timing: m[3] || null };
+}
+/* The "next earnings" line for the stock pages (Apple-Stocks style):
+ * gold and explicit when the report lands today. */
+function earnLineHtml(d) {
+  if (!d.earnNext) return '';
+  var dt = new Date(d.earnNext + 'T12:00:00');
+  if (isNaN(dt)) return '';
+  var now = new Date();
+  var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  var diff = Math.round((new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()) - today) / 864e5);
+  var MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var md = MONS[dt.getMonth()] + ' ' + dt.getDate();
+  var full = DAYS[dt.getDay()] + ', ' + md + ', ' + dt.getFullYear();
+  var tim = d.earnTiming === 'AMC' ? ' \u00b7 after close' : d.earnTiming === 'BMO' ? ' \u00b7 before the open' : '';
+  var txt, cls = 'earn-line';
+  if (diff === 0) { txt = 'Earnings today \u00b7 ' + md + tim; cls += ' today'; }
+  else if (diff === 1) txt = 'Earnings tomorrow \u00b7 ' + md + tim;
+  else if (diff > 1) txt = 'Next earnings \u00b7 ' + full + (diff <= 21 ? ' \u00b7 in ' + diff + ' days' : '') + tim;
+  else if (diff === -1) txt = 'Earnings yesterday \u00b7 ' + md + tim;
+  else txt = 'Last earnings \u00b7 ' + full;
+  return '<div class="' + cls + '">' + esc(txt) + '</div>';
+}
 function fillFromFinviz(d, fvHtml) {
   var p = parseFinviz(fvHtml);
   if (!p['Price'] && !p['Market Cap']) throw new Error('no snapshot');
@@ -255,6 +293,8 @@ function fillFromFinviz(d, fvHtml) {
   d.targetPrice = parseNum(p['Target Price']);
   var exDiv = p['Dividend Ex-Date'];
   d.exDivDate = (exDiv && exDiv !== '-') ? exDiv : null;
+  var earn = earnDateFromFinviz(p['Earnings']);
+  if (earn) { d.earnNext = earn.iso; d.earnTiming = earn.timing; }
   // Insider transactions table: rows classed fv-insider-row follow the
   // "Insider Trading" heading; 9 cells per row (name, relationship,
   // date, transaction, cost, #shares, value $, #shares total, SEC).
@@ -1738,6 +1778,7 @@ function renderScorecard(d) {
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
   if (d.about) html += '<div class="sc-about">' + esc(d.about) + '</div>';
+  html += earnLineHtml(d);
 
   if (d.history && d.history.length >= 2) {
     html += '<div class="section-h">Price — <span class="gold-text" id="sc-range-label">1 year</span></div>' +
@@ -3773,6 +3814,7 @@ function renderOverview(d, item) {
     '<div class="sc-sub">' + esc([d.exchange, d.sector, d.industry].filter(Boolean).join(' \u00b7 ')) + '</div></div></div>' +
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
+  html += earnLineHtml(d);
   if (item && isNum(item.target) && item.target > 0 && isNum(d.price)) {
     var above = (d.price / item.target - 1) * 100;
     html += '<p class="fineprint" style="margin:2px 0 8px">Your target buy: ' + fmtMoney(item.target) + ' \u2014 ' +
