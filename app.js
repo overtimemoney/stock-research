@@ -219,6 +219,9 @@ function fillFromFinviz(d, fvHtml) {
   d.pe = parseNum(p['P/E']);
   d.forwardPE = parseNum(p['Forward P/E']);
   d.peg = parseNum(p['PEG']);
+  d.ps = parseNum(p['P/S']);
+  d.pb = parseNum(p['P/B']);
+  d.pfcf = parseNum(p['P/FCF']);
   d.epsTTM = parseNum(p['EPS (ttm)']);
   d.epsNextY = parseNum(p['EPS next Y']);
   d.epsThisY = parseNum(p['EPS this Y']);
@@ -1994,11 +1997,24 @@ async function runCompare() {
     { label: 'Price', get: function (d) { return d.price; }, fmt: function (v) { return fmtMoney(v); }, best: null },
     { label: 'Market cap', get: function (d) { return d.marketCap; }, fmt: fmtCap, best: 'max' },
     { label: 'Forward P/E ↓', get: function (d) { return d.forwardPE; }, fmt: function (v) { return fmtNum(v, 2); }, best: 'min' },
+    { label: 'P/E (trailing) ↓', get: function (d) { return d.pe; }, fmt: function (v) { return fmtNum(v, 2); }, best: 'min' },
     { label: 'PEG ↓', get: function (d) { return d.peg; }, fmt: function (v) { return fmtNum(v, 2); }, best: 'min' },
+    { label: 'P/S ↓', get: function (d) { return d.ps; }, fmt: function (v) { return fmtNum(v, 2); }, best: 'min' },
+    { label: 'P/B ↓', get: function (d) { return d.pb; }, fmt: function (v) { return fmtNum(v, 2); }, best: 'min' },
+    { label: 'P/FCF ↓', get: function (d) { return d.pfcf; }, fmt: function (v) { return fmtNum(v, 2); }, best: 'min' },
     { label: 'Below 52-wk high', get: function (d) { return d.pctBelowHigh; }, fmt: function (v) { return fmtNum(v, 1) + '%'; }, best: 'max' },
     { label: 'EPS growth next yr', get: function (d) { return d.epsGrowthNextY; }, fmt: function (v) { return fmtPct(v); }, best: 'max' },
+    { label: 'EPS growth past yr', get: function (d) { return d.epsGrowthTTM; }, fmt: function (v) { return fmtPct(v); }, best: 'max' },
+    { label: 'EPS growth 5-yr', get: function (d) { return d.epsGrowth5Y; }, fmt: function (v) { return fmtPct(v); }, best: 'max' },
+    { label: 'Revenue growth (TTM)', get: function (d) { return d.salesGrowthTTM; }, fmt: function (v) { return fmtPct(v); }, best: 'max' },
     { label: 'Profit margin', get: function (d) { return d.profitMargin; }, fmt: function (v) { return fmtNum(v, 1) + '%'; }, best: 'max' },
+    { label: 'Gross margin', get: function (d) { return d.grossMargin; }, fmt: function (v) { return isNum(v) ? fmtNum(v, 1) + '%' : '\u2014'; }, best: 'max' },
+    { label: 'Operating margin', get: function (d) { return d.operMargin; }, fmt: function (v) { return isNum(v) ? fmtNum(v, 1) + '%' : '\u2014'; }, best: 'max' },
+    { label: 'ROE', get: function (d) { return d.roe; }, fmt: function (v) { return isNum(v) ? fmtNum(v, 1) + '%' : '\u2014'; }, best: 'max' },
     { label: 'Debt / Equity ↓', get: function (d) { return d.debtEq; }, fmt: function (v) { return fmtNum(v, 2); }, best: 'min' },
+    { label: 'Current ratio', get: function (d) { return d.currentRatio; }, fmt: function (v) { return fmtNum(v, 2); }, best: 'max' },
+    { label: 'Beta ↓', get: function (d) { return d.beta; }, fmt: function (v) { return fmtNum(v, 2); }, best: 'min' },
+    { label: 'Dividend yield', get: function (d) { return d.divYield; }, fmt: function (v) { return isNum(v) ? fmtNum(v, 2) + '%' : '\u2014'; }, best: 'max' },
     { label: 'Value screen', get: function (d) { return valueScreen(d).filter(function (s) { return s.test === true; }).length; }, fmt: function (v) { return v + ' / 4'; }, best: 'max' },
     { label: 'Score', get: function (d) { return scoreStock(d).score; }, fmt: function (v) { return isNum(v) ? v + ' / 100' : '—'; }, best: 'max' }
   ];
