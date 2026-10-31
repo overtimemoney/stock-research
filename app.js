@@ -2759,6 +2759,7 @@ function scanMerge(idxs, view, rows) {
       if (isNum(n.netMargin)) rec.profitMargin = n.netMargin;
       if (isNum(n.debtEq)) rec.debtEq = n.debtEq;
       if (isNum(n.curRatio)) rec.currentRatio = n.curRatio;
+      if (isNum(n.dividendYield)) rec.divYield = n.dividendYield;
     } else if (view === '171') {
       if (isNum(n.high52w)) rec.pctBelowHigh = Math.max(0, -n.high52w);
       if (isNum(n.beta)) rec.beta = n.beta;
@@ -2778,8 +2779,8 @@ function scanFinalizeIdx(idxs) {
     var s = scoreStock(rec);
     if (!(s && isNum(s.score) && s.maxAvailable >= 60)) return;
     // The combined score's risk side needs the same grounding: the
-    // screener-fed risk factors total 90 points (beta 10 + debt/eq 25
-    // + profit margin 15 + size 15 + EPS trend 15 + current ratio 10;
+    // screener-fed risk factors total 78 points (beta 9 + debt/eq 22
+    // + profit margin 13 + size 13 + EPS trend 13 + current ratio 8;
     // the boom-bust factor needs a revenue path the screener doesn't
     // carry, so it never counts here). Require at least 60% of those
     // 90 — 54 points — mirroring the valuation side's 60-of-100 rule.
@@ -3038,7 +3039,7 @@ function scanRecordFromQuote(html, prev) {
   var d = { ticker: '', sources: [], errors: [] };
   try { fillFromFinviz(d, html); } catch (e) { return null; }
   var rec = { name: d.companyName || (prev && prev.name) || '', ix: prev && prev.ix };
-  ['forwardPE', 'peg', 'price', 'marketCap', 'grossMargin', 'profitMargin', 'debtEq', 'beta', 'currentRatio', 'pctBelowHigh'].forEach(function (k) {
+  ['forwardPE', 'peg', 'price', 'marketCap', 'grossMargin', 'profitMargin', 'debtEq', 'beta', 'currentRatio', 'pctBelowHigh', 'divYield'].forEach(function (k) {
     rec[k] = isNum(d[k]) ? d[k] : (prev ? prev[k] : null);
   });
   if (isNum(d.epsNextY) && isNum(d.epsThisY) && d.epsThisY > 0) rec.epsGrowthNextY = (d.epsNextY / d.epsThisY - 1) * 100;
@@ -3390,7 +3391,7 @@ function renderScanCard() {
  * with the app's own value screen fields, scored by the same
  * 60% value + 40% safety blend as the daily Top 10. Runs entirely
  * on-device against stored data — no new fetching. */
-var SCR_FIELDS = ['fpe', 'peg', 'mcap', 'growth', 'below', 'de', 'beta', 'pm', 'cr'];
+var SCR_FIELDS = ['fpe', 'peg', 'mcap', 'growth', 'below', 'de', 'beta', 'pm', 'cr', 'dy'];
 var SCR_SAVED_KEY = 'sr_screens_v1';
 function scanRecordScore(rec) {
   if (!(isNum(rec.forwardPE) && rec.forwardPE > 0)) return null;
@@ -3424,6 +3425,7 @@ function scrPasses(rec, f) {
   if (isNum(f.beta) && !(isNum(rec.beta) && rec.beta <= f.beta)) return false;
   if (isNum(f.pm) && !(isNum(rec.profitMargin) && rec.profitMargin >= f.pm)) return false;
   if (isNum(f.cr) && !(isNum(rec.currentRatio) && rec.currentRatio >= f.cr)) return false;
+  if (isNum(f.dy) && !(isNum(rec.divYield) && rec.divYield >= f.dy)) return false;
   return true;
 }
 function runScreener() {
@@ -3434,7 +3436,7 @@ function runScreener() {
     box.innerHTML = '<div class="status">No stored scan data yet \u2014 the daily scan builds it.</div>' +
       '<button type="button" class="btn-ghost" id="scr-close2" style="margin-top:8px">Back to the scan card</button>';
     var c = $('scr-close2');
-    if (c) c.addEventListener('click', closeScreener);
+    if (c) c.addEventListener('click', function () { switchTab('watchlist'); });
     return;
   }
   var f = scrReadControls();
@@ -3467,7 +3469,6 @@ function runScreener() {
   box.querySelectorAll('[data-scr-research]').forEach(function (b) {
     b.addEventListener('click', function () {
       var T = b.getAttribute('data-scr-research');
-      closeScreener();
       switchTab('scorecard');
       $('search-input').value = T;
       runSearch(T);
@@ -3504,15 +3505,11 @@ function renderSavedScreens() {
     });
   });
 }
-function openScreener() {
-  var p = $('scr-panel');
-  if (p) { p.scrollTop = 0; p.classList.add('open'); }
+/* The screener is a Tools sub-page (moved out of its watchlist
+ * slide-over, Justin's ask, 2026-10-30); setTool('scr') activates it. */
+function scrActivate() {
   renderSavedScreens();
   runScreener();
-}
-function closeScreener() {
-  var p = $('scr-panel');
-  if (p) p.classList.remove('open');
 }
 
 /* ---------- full-screen stock overview (watchlist tap) ----------
@@ -4986,7 +4983,7 @@ function switchTab(name) {
  * tool used is remembered; jumps into the builder land on its page. */
 var TOOL_KEY = 'sr_tool_v1';
 function setTool(name) {
-  var names = ['pj', 'charts', 'cc'];
+  var names = ['pj', 'charts', 'cc', 'scr'];
   if (names.indexOf(name) === -1) name = 'pj';
   try { localStorage.setItem(TOOL_KEY, name); } catch (e) {}
   document.querySelectorAll('.toolseg button').forEach(function (b, i) {
@@ -4998,6 +4995,7 @@ function setTool(name) {
     var pg = $('tool-' + n);
     if (pg) pg.classList.toggle('active', n === name);
   });
+  if (name === 'scr') scrActivate();
   var mn = document.querySelector('main');
   if (mn && document.querySelector('#tab-tools.active')) mn.scrollTop = 0;
 }
@@ -5198,8 +5196,6 @@ function initApp() {
     switchTab('disclaimer');
   });
   $('ov-back').addEventListener('click', function () { closeOverview(); });
-  $('wl-screener').addEventListener('click', function () { openScreener(); });
-  $('scr-back').addEventListener('click', function () { closeScreener(); });
   $('scr-run').addEventListener('click', function () { runScreener(); });
   $('scr-clear').addEventListener('click', function () { scrApplyControls({ ix: 'both', sort: 'combined' }); runScreener(); });
   $('scr-save').addEventListener('click', function () {

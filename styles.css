@@ -670,7 +670,7 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 /* Tools sub-page bar: a sliding gold pill moves between the three
  * tools; each tool gets its own page. */
 .toolseg { position: relative; display: flex; background: var(--field); border: 1px solid var(--line); border-radius: 999px; padding: 4px; margin-bottom: 14px; }
-.toolseg-pill { position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc((100% - 8px) / 3); background: var(--gold-grad); border-radius: 999px; transition: transform .28s var(--ease-in-out); }
+.toolseg-pill { position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc((100% - 8px) / 4); background: var(--gold-grad); border-radius: 999px; transition: transform .28s var(--ease-in-out); }
 .toolseg button { flex: 1; position: relative; background: none; border: none; padding: 9px 0; font-size: 13.5px; font-weight: 700; color: var(--muted); cursor: pointer; transition: color .2s ease; }
 .toolseg button.active { color: #1a1405; }
 .tool-page { display: none; }

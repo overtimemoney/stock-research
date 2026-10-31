@@ -61,6 +61,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
       <button type="button" data-tool="pj" class="active">Projection</button>
       <button type="button" data-tool="charts">Charts</button>
       <button type="button" data-tool="cc">Calculator</button>
+      <button type="button" data-tool="scr">Screener</button>
     </div>
     <div class="tool-page active" id="tool-pj">
     <h2 class="tab-title">Projection <span class="gold-text">Builder</span></h2>
@@ -130,13 +131,35 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
       <div id="cc-result" class="tool-result"></div>
     </div>
     </div>
+    <div class="tool-page" id="tool-scr">
+    <div id="scr-saved" class="scr-saved"></div>
+    <div class="card scr-controls">
+      <label class="scr-row"><span>Index</span><select id="scr-ix"><option value="both">Both indexes</option><option value="spx">S&amp;P 500</option><option value="rut">Russell 2000</option></select></label>
+      <label class="scr-row"><span>Forward P/E, max</span><input id="scr-fpe" type="number" step="any" min="0" inputmode="decimal"></label>
+      <label class="scr-row"><span>PEG, max</span><input id="scr-peg" type="number" step="any" min="0" inputmode="decimal"></label>
+      <label class="scr-row"><span>Market cap, min ($B)</span><input id="scr-mcap" type="number" step="any" min="0" inputmode="decimal"></label>
+      <label class="scr-row"><span>EPS growth next yr, min %</span><input id="scr-growth" type="number" step="any" inputmode="decimal"></label>
+      <label class="scr-row"><span>Below 52-wk high, min %</span><input id="scr-below" type="number" step="any" min="0" inputmode="decimal"></label>
+      <label class="scr-row"><span>Debt / Equity, max</span><input id="scr-de" type="number" step="any" min="0" inputmode="decimal"></label>
+      <label class="scr-row"><span>Beta, max</span><input id="scr-beta" type="number" step="any" min="0" inputmode="decimal"></label>
+      <label class="scr-row"><span>Profit margin, min %</span><input id="scr-pm" type="number" step="any" inputmode="decimal"></label>
+      <label class="scr-row"><span>Current ratio, min</span><input id="scr-cr" type="number" step="any" min="0" inputmode="decimal"></label>
+      <label class="scr-row"><span>Dividend yield, min %</span><input id="scr-dy" type="number" step="any" min="0" inputmode="decimal"></label>
+      <label class="scr-row"><span>Sort by</span><select id="scr-sort"><option value="combined">Combined score</option><option value="fpe">Forward P/E (low)</option><option value="growth">EPS growth</option><option value="below">Below 52-wk high</option><option value="mcap">Market cap</option></select></label>
+      <div class="scr-actions">
+        <button type="button" class="btn-gold" id="scr-run">Run screen</button>
+        <button type="button" class="btn-ghost" id="scr-save">Save screen</button>
+        <button type="button" class="btn-ghost" id="scr-clear">Clear</button>
+      </div>
+    </div>
+    <div id="scr-results"></div>
+    </div>
   </section>
 
   <!-- WATCHLIST -->
   <section id="tab-watchlist" class="tab">
     <h2 class="tab-title">Watch<span class="gold-text">list</span></h2>
     <div id="scan-card"></div>
-    <button id="wl-screener" class="btn-ghost wide" type="button" style="margin-bottom:12px">Custom screener</button>
     <form id="wl-form" class="wl-inputs" autocomplete="off">
       <input id="wl-ticker" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="Ticker" aria-label="Watchlist ticker">
       <input id="wl-target" type="number" step="any" min="0" placeholder="Target buy $" aria-label="Target buy price">
@@ -414,33 +437,6 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
     <button id="ov-back" class="btn-ghost" type="button" style="margin-bottom:10px">&#8592; Back to watchlist</button>
     <div id="ov-body"></div>
   </section>
-
-<!-- CUSTOM SCREENER (over the stored scan dataset) -->
-  <section id="scr-panel" class="ov-panel">
-    <button id="scr-back" class="btn-ghost" type="button" style="margin-bottom:10px">&#8592; Back to watchlist</button>
-    <h2 class="tab-title">Custom <span class="gold-text">screener</span></h2>
-    <div id="scr-saved" class="scr-saved"></div>
-    <div class="card scr-controls">
-      <label class="scr-row"><span>Index</span><select id="scr-ix"><option value="both">Both indexes</option><option value="spx">S&amp;P 500</option><option value="rut">Russell 2000</option></select></label>
-      <label class="scr-row"><span>Forward P/E, max</span><input id="scr-fpe" type="number" step="any" min="0" inputmode="decimal"></label>
-      <label class="scr-row"><span>PEG, max</span><input id="scr-peg" type="number" step="any" min="0" inputmode="decimal"></label>
-      <label class="scr-row"><span>Market cap, min ($B)</span><input id="scr-mcap" type="number" step="any" min="0" inputmode="decimal"></label>
-      <label class="scr-row"><span>EPS growth next yr, min %</span><input id="scr-growth" type="number" step="any" inputmode="decimal"></label>
-      <label class="scr-row"><span>Below 52-wk high, min %</span><input id="scr-below" type="number" step="any" min="0" inputmode="decimal"></label>
-      <label class="scr-row"><span>Debt / Equity, max</span><input id="scr-de" type="number" step="any" min="0" inputmode="decimal"></label>
-      <label class="scr-row"><span>Beta, max</span><input id="scr-beta" type="number" step="any" min="0" inputmode="decimal"></label>
-      <label class="scr-row"><span>Profit margin, min %</span><input id="scr-pm" type="number" step="any" inputmode="decimal"></label>
-      <label class="scr-row"><span>Current ratio, min</span><input id="scr-cr" type="number" step="any" min="0" inputmode="decimal"></label>
-      <label class="scr-row"><span>Sort by</span><select id="scr-sort"><option value="combined">Combined score</option><option value="fpe">Forward P/E (low)</option><option value="growth">EPS growth</option><option value="below">Below 52-wk high</option><option value="mcap">Market cap</option></select></label>
-      <div class="scr-actions">
-        <button type="button" class="btn-gold" id="scr-run">Run screen</button>
-        <button type="button" class="btn-ghost" id="scr-save">Save screen</button>
-        <button type="button" class="btn-ghost" id="scr-clear">Clear</button>
-      </div>
-    </div>
-    <div id="scr-results"></div>
-  </section>
-
 
 <div id="toast-bubble" class="toast-bubble" role="status" hidden></div>
 
