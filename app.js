@@ -1264,11 +1264,14 @@ function infoText(key) {
   return '<span class="info-text" data-info-text="' + key + '">' + INFO_TEXT[key] + link + '</span>';
 }
 var glossReturn = 'portfolio';
+var glossReturnState = null; /* {tab, scroll, ov} captured at the 'See in Glossary' tap */
 function openGlossaryTerm(term) {
   if (!term) return;
   var active = document.querySelector('.tabbar button.active');
   var from = active ? active.getAttribute('data-tab') : '';
   if (from) glossReturn = from;
+  var mn0 = document.querySelector('main');
+  glossReturnState = { tab: from || glossReturn, scroll: mn0 ? mn0.scrollTop : 0, ov: ovTicker || null };
   closeOverview();
   var gs = $('gloss-search');
   if (gs) gs.value = '';
@@ -4733,7 +4736,7 @@ var GLOSS_ART = {
 'Beta': '<path d="M14 56 88 48 162 52 236 42 286 46"/><path d="M14 64 60 28 106 68 152 20 198 64 244 26 286 54" class="ga"/><text x="14" y="14" class="gt">MARKET</text><text x="196" y="14" class="gtf">STOCK, BETA 2</text>',
 'Moat': '<path d="M116 72V38h10V27h12v11h24V27h12v11h10v34"/><path d="M138 72V56a12 12 0 0 1 24 0v16"/><ellipse cx="150" cy="76" rx="88" ry="6" class="ga"/><text x="196" y="34" class="gt">HARD TO</text><text x="196" y="49" class="gt">ATTACK</text>',
 'CAGR': '<path d="M18 70C90 66 150 40 282 13" class="ga"/><path d="M18 70 282 13" stroke-dasharray="4 5"/><circle cx="18" cy="70" r="3.5" class="gaf"/><circle cx="150" cy="46" r="3.5" class="gaf"/><circle cx="282" cy="13" r="3.5" class="gaf"/><text x="92" y="24" class="gt">SAME % EVERY YEAR, ON AVERAGE</text>',
-'Dividend yield': '<circle cx="100" cy="34" r="20" class="ga"/><text x="100" y="39" class="gtf" text-anchor="middle">$</text><path d="M100 58v12M93 64l7 7 7-7" class="ga"/><text x="146" y="30" class="gt">CASH PAID TO YOU</text><text x="146" y="48" class="gt">EVERY YEAR</text><text x="146" y="66" class="gtf">YIELD 3%</text>',
+'Dividend yield': '<circle cx="100" cy="34" r="20" class="gab"/><path d="M100 34L100 14A20 20 0 0 1 103.7 14.4Z" class="gaf"/><circle cx="100" cy="34" r="20" class="ga"/><path d="M100 58v12M93 64l7 7 7-7" class="ga"/><text x="146" y="30" class="gt">CASH PAID TO YOU</text><text x="146" y="48" class="gt">EVERY YEAR</text><text x="146" y="66" class="gtf">YIELD 3%</text>',
 'Analyst target': '<circle cx="126" cy="42" r="30"/><circle cx="126" cy="42" r="18" class="ga"/><circle cx="126" cy="42" r="5" class="gaf"/><path d="M218 68 144 49" class="ga"/><path d="M206 68h13M209 56l3 12" class="ga"/><text x="188" y="22" class="gt">WHERE ANALYSTS AIM</text>',
 'TTM (trailing twelve months)': '<path d="M28 28h224v24H28Z"/><path d="M47 28v24M65 28v24M84 28v24M102 28v24M121 28v24M140 28v24M158 28v24M177 28v24M196 28v24M214 28v24M233 28v24"/><path d="M28 64h224" class="ga"/><text x="140" y="79" class="gt" text-anchor="middle">THE LAST 12 MONTHS</text>',
 'YoY (year over year)': '<path d="M22 74h256"/><rect x="82" y="36" width="36" height="38"/><rect x="178" y="18" width="36" height="56" class="ga"/><text x="64" y="26" class="gt">LAST YEAR</text><text x="164" y="10" class="gt">THIS YEAR</text><path d="M130 46 166 28" class="ga"/><path d="M154 26h13v13" class="ga"/>',
@@ -5067,7 +5070,14 @@ function initApp() {
   });
   $('sc-back').addEventListener('click', goBackToOverview);
   $('jr-back').addEventListener('click', function () { switchTab(jrReturnTab); });
-  $('gl-back').addEventListener('click', function () { switchTab(glossReturn); });
+  $('gl-back').addEventListener('click', function () {
+    var st = glossReturnState; glossReturnState = null;
+    if (!st) { switchTab(glossReturn); return; }
+    switchTab(st.tab);
+    if (st.ov) { openOverview(st.ov); return; }
+    var mn = document.querySelector('main');
+    if (mn) { var y = st.scroll; requestAnimationFrame(function () { mn.scrollTop = y; }); }
+  });
   $('privacy-back').addEventListener('click', function () { switchTab('portfolio'); });
   $('terms-back').addEventListener('click', function () { switchTab('portfolio'); });
   $('disclaimer-back').addEventListener('click', function () { switchTab('portfolio'); });
@@ -5193,6 +5203,7 @@ function initApp() {
   var settingsMenu = $('settings-menu');
   $('menu-glossary').addEventListener('click', function () {
     glossReturn = 'portfolio';
+    glossReturnState = null;
     settingsMenu.hidden = true;
     $('btn-settings').setAttribute('aria-expanded', 'false');
     switchTab('glossary');
