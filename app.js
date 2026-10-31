@@ -3530,6 +3530,7 @@ function scrReadControls() {
     var v = parseFloat($('scr-' + k).value);
     f[k] = isNum(v) ? v : null;
   });
+  if (isNum(f.dy) && f.dy <= 0) f.dy = null;
   return f;
 }
 function scrApplyControls(f) {
@@ -3564,8 +3565,10 @@ function runScreener() {
   }
   var f = scrReadControls();
   var out = [];
+  var anyYield = false;
   Object.keys(ds.recs).forEach(function (t) {
     var rec = ds.recs[t];
+    if (isNum(rec.divYield)) anyYield = true;
     if (!scrPasses(rec, f)) return;
     var sc = scanRecordScore(rec);
     if (!sc) return;
@@ -3587,7 +3590,8 @@ function runScreener() {
       '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
       '<span class="scan-score ' + scanScoreClass(row.score) + '">Score ' + row.score + '</span></button>';
   });
-  if (!out.length) html += '<div class="status">No stored stocks match those filters.</div>';
+  if (!out.length && isNum(f.dy) && !anyYield) html += '<div class="status">Dividend yield isn\'t in the stored data yet \u2014 it arrives with the next daily scan, or tap Rescan on the Watchlist scan card to get it now.</div>';
+  else if (!out.length) html += '<div class="status">No stored stocks match those filters.</div>';
   box.innerHTML = html;
   box.querySelectorAll('[data-scr-research]').forEach(function (b) {
     b.addEventListener('click', function () {
