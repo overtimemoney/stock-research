@@ -1736,6 +1736,12 @@ function renderScorecard(d) {
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
   if (d.about) html += '<div class="sc-about">' + esc(d.about) + '</div>';
 
+  if (d.history && d.history.length >= 2) {
+    html += '<div class="section-h">Price — <span class="gold-text" id="sc-range-label">1 year</span></div>' +
+      '<div class="sc-range-chips"><button type="button" data-scrange="1y" class="on">1Y</button><button type="button" data-scrange="5y">5Y</button><button type="button" data-scrange="10y">10Y</button></div>' +
+      '<div id="sc-chart-box"></div>';
+  }
+
   if (sc.score != null) {
     html += '<div class="verdict ' + vClass + '"><div><div class="v-label">Valuation verdict</div>' +
       '<div class="v-word">' + esc(sc.verdict) + '</div></div>' +
@@ -1853,12 +1859,6 @@ function renderScorecard(d) {
     swotBox('S', 'Strengths', swot.S, 'sw-s') + swotBox('W', 'Weaknesses', swot.W, 'sw-w') +
     swotBox('O', 'Opportunities', swot.O, 'sw-o') + swotBox('T', 'Threats', swot.T, 'sw-t') + '</div>';
   html += '<p class="fineprint">Auto-generated from the figures on this page — numbers only, no news.</p>';
-
-  if (d.history && d.history.length >= 2) {
-    html += '<div class="section-h">Price — <span class="gold-text" id="sc-range-label">1 year</span></div>' +
-      '<div class="sc-range-chips"><button type="button" data-scrange="1y" class="on">1Y</button><button type="button" data-scrange="5y">5Y</button><button type="button" data-scrange="10y">10Y</button></div>' +
-      '<div id="sc-chart-box"></div>';
-  }
 
   html += '<div class="sc-actions">' +
     '<button class="btn-ghost" id="sc-watch" type="button">◎ Add to watchlist</button>' +
