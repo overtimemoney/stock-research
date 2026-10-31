@@ -605,12 +605,12 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .ob-skip { background: none; border: none; font: inherit; font-size: 14px; font-weight: 700; color: var(--muted); padding: 4px 2px; cursor: pointer; }
 .ob-overlay.ob-locked .ob-skip { display: none; }
 #ob-intro, .ob-panel { flex: 0 0 auto; }
-.ob-h { font-size: 23px; line-height: 1.22; margin: 2px 0 8px; }
-.ob-context { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin: 0 0 10px; box-shadow: 0 2px 14px var(--shadow); }
+.ob-h { font-size: 23px; line-height: 1.22; margin: 2px 0 6px; }
+.ob-context { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin: 0 0 8px; box-shadow: 0 2px 14px var(--shadow); }
 .ob-context p { margin: 0; font-size: 13.5px; line-height: 1.42; color: var(--ink2); }
-.ob-big { font-size: 28px; font-weight: 900; letter-spacing: -.01em; line-height: 1.08; margin: 4px 0; }
+.ob-big { font-size: 28px; font-weight: 900; letter-spacing: -.01em; line-height: 1.08; margin: 3px 0; }
 .ob-context .ob-small { font-size: 12px; color: var(--muted); }
-.ob-chart-card { flex: 1 1 auto; min-height: 110px; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px 6px; margin: 0 0 10px; box-shadow: 0 2px 14px var(--shadow); }
+.ob-chart-card { flex: 1 1 auto; min-height: 110px; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px 6px; margin: 0 0 8px; box-shadow: 0 2px 14px var(--shadow); }
 #ob-chart { display: block; flex: 1 1 auto; min-height: 0; width: 100%; }
 #ob-axis { stroke: var(--line); }
 .ob-axis-txt { font-size: 9.5px; font-weight: 600; fill: var(--muted); }
@@ -624,20 +624,21 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .ob-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .ob-opt { font: inherit; font-size: 16px; font-weight: 800; text-align: center; display: flex; align-items: center; justify-content: center; min-height: 46px; padding: 8px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform .16s var(--ease-out), min-height .2s var(--ease-out); }
 .ob-opt:active { transform: scale(.98); }
-.ob-opts.locked .ob-opt { pointer-events: none; cursor: default; min-height: 40px; font-size: 15px; }
+.ob-opts.locked .ob-opt { pointer-events: none; cursor: default; min-height: 38px; font-size: 15px; }
 .ob-opt.dim { opacity: .4; }
 .ob-opt.right { border-color: var(--good); background: var(--chip-pass-bg); color: var(--good); opacity: 1; }
 .ob-opt.wrong { border-color: var(--bad); background: var(--chip-fail-bg); color: var(--bad); opacity: 1; }
-.ob-reveal { margin-top: 10px; }
-.ob-callout { font-size: 14px; font-weight: 700; line-height: 1.4; background: var(--chip-bg); border: 1px solid var(--line); border-left: 4px solid var(--gold); border-radius: 12px; padding: 9px 11px; margin: 0 0 10px; }
+.ob-reveal { margin-top: 8px; }
+.ob-reveal .btn-gold.wide { margin-top: 0; }
+.ob-callout { font-size: 14px; font-weight: 700; line-height: 1.4; background: var(--chip-bg); border: 1px solid var(--line); border-left: 4px solid var(--gold); border-radius: 12px; padding: 8px 11px; margin: 0 0 8px; }
 .ob-punch { font-size: 13.5px; line-height: 1.36; color: var(--ink2); margin: 0 0 8px; }
 .ob-disclaimer { font-size: 11px; line-height: 1.4; color: var(--muted); margin: 0 0 8px; }
-.ob-progress { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; margin: 2px 0 8px; }
+.ob-progress { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; margin: 2px 0 6px; }
 .ob-segs { display: flex; gap: 6px; flex: 1; }
 .ob-seg { flex: 1; height: 5px; border-radius: 99px; background: var(--line); transition: background .3s ease; }
 .ob-seg.on { background: var(--gold); }
 .ob-step-label { font-size: 12px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
-.ob-guide { font-size: 14px; font-weight: 800; line-height: 1.38; color: var(--gold); margin: 0 0 8px; }
+.ob-guide { font-size: 14px; font-weight: 800; line-height: 1.38; color: var(--gold); margin: 0 0 6px; }
 .ob-hint { font-size: 12.5px; font-weight: 700; color: var(--muted); text-align: center; margin: 8px 0 0; }
 .ob-hint[hidden] { display: none; }
 .ob-signpost { font-size: 14px; font-weight: 800; line-height: 1.4; color: var(--ink); text-align: center; margin: 0 0 8px; }
@@ -647,10 +648,11 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
  * screen with the chart still at a readable height. All copy strings
  * are unchanged; only sizes/timing of the guidance line differ. */
 .ob-overlay.ob-q1-done .ob-guide { display: none; }
-.ob-overlay.ob-q1-done .ob-h { font-size: 19px; line-height: 1.18; margin-bottom: 6px; }
-.ob-overlay.ob-q1-done .ob-context { padding: 7px 10px; margin-bottom: 8px; }
-.ob-overlay.ob-q1-done .ob-context p { font-size: 12.5px; line-height: 1.35; }
-.ob-overlay.ob-q1-done .ob-big { font-size: 23px; margin: 2px 0; }
+.ob-overlay.ob-q1-done .ob-h { font-size: 19px; line-height: 1.18; margin-bottom: 4px; }
+.ob-overlay.ob-q1-done .ob-q { font-size: 15px; margin-bottom: 6px; }
+.ob-overlay.ob-q1-done .ob-context { padding: 6px 10px; margin-bottom: 6px; }
+.ob-overlay.ob-q1-done .ob-context p { font-size: 12.5px; line-height: 1.32; }
+.ob-overlay.ob-q1-done .ob-big { font-size: 23px; margin: 1px 0; }
 .ob-overlay.ob-q1-done .ob-context .ob-small { font-size: 11px; }
 
 /* Full-screen stock overview: a panel that pans in from the right
