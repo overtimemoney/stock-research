@@ -6563,6 +6563,19 @@ if (typeof document !== 'undefined' && document.getElementById) {
     function finishQuiz() {
       overlay.hidden = true;
       try { localStorage.setItem(FLAG, '1'); } catch (e) {}
+      /* Broadcast the finish (with the mode) so other modules can
+       * react — the install prompt keys off the FIRST-run finish,
+       * mode 'auto'; replay finishes carry mode 'replay'. */
+      try {
+        var ev;
+        try { ev = new CustomEvent('sr-quiz-finished', { detail: { mode: quizMode } }); }
+        catch (e2) {
+          ev = document.createEvent('Event');
+          ev.initEvent('sr-quiz-finished', true, false);
+          ev.detail = { mode: quizMode };
+        }
+        window.dispatchEvent(ev);
+      } catch (e) {}
     }
     function reveal(id) {
       var el = document.getElementById(id);
@@ -6844,6 +6857,241 @@ if (typeof document !== 'undefined' && document.getElementById) {
       };
       wrappedSetItem.__srAcctPrompt = true;
       Storage.prototype.setItem = wrappedSetItem;
+    }
+  } catch (e) {}
+})();
+
+/* ==================== Smart install prompt ====================
+ * The app is distributed by link and runs fine in a browser, but the
+ * full-screen Home Screen install is the experience we want people
+ * living in. Installing differs by where the visitor opened the
+ * link, so this sheet teaches the right move for THEIR situation:
+ * a real one-tap Install on Android Chrome (captured
+ * beforeinstallprompt), numbered Share-sheet steps in iOS Safari,
+ * and "open in Safari first" guidance inside in-app browsers and
+ * other iOS browsers, which cannot install at all.
+ *
+ * Timing follows the same value-first rule as the account prompt:
+ * the automatic showing happens ONCE per device (flag
+ * sr_installprompt_v1, LOCAL-ONLY, deliberately NOT a synced key),
+ * shortly after the FIRST-run quiz is finished — the onboarding
+ * block broadcasts 'sr-quiz-finished' with its mode, and only mode
+ * 'auto' counts; replay finishes never re-trigger it. A permanent
+ * manual route lives in Settings -> "Add to Home Screen". The sheet
+ * never appears when the app is already installed (standalone) or
+ * on desktop, and if another sheet (e.g. the account prompt) is up
+ * when the moment comes it retries once, then stays silent.
+ * Everything is guarded: a failure here must never affect the app. */
+(function srInstallPrompt() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  if (typeof localStorage === 'undefined') return;
+
+  var FLAG_KEY = 'sr_installprompt_v1';
+  var sheetEl = null;
+  var timer = null;
+  var retries = 0;
+  var deferredBIP = null;
+
+  /* Chromium fires beforeinstallprompt once when the page becomes
+   * installable; stash the event so the sheet's Install button can
+   * trigger the real browser prompt later. */
+  try {
+    window.addEventListener('beforeinstallprompt', function (e) {
+      try { e.preventDefault(); } catch (err) {}
+      deferredBIP = e;
+    });
+    window.addEventListener('appinstalled', function () {
+      deferredBIP = null;
+      markShown();
+      closeSheet();
+    });
+  } catch (e) {}
+
+  function markShown() {
+    try { localStorage.setItem(FLAG_KEY, '1'); } catch (e) {}
+  }
+  function alreadyShown() {
+    try { return !!localStorage.getItem(FLAG_KEY); } catch (e) { return true; }
+  }
+
+  function isStandalone() {
+    try {
+      if (window.navigator && window.navigator.standalone === true) return true;
+      if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
+    } catch (e) {}
+    return false;
+  }
+
+  function ua() { try { return String(window.navigator.userAgent || ''); } catch (e) { return ''; } }
+  function isIOS() {
+    var u = ua();
+    if (/iPhone|iPad|iPod/i.test(u)) return true;
+    /* iPadOS 13+ sends a Macintosh UA; touch points give it away. */
+    try { return /Macintosh/.test(u) && window.navigator.maxTouchPoints > 1; } catch (e) { return false; }
+  }
+  function isAndroid() { return /Android/i.test(ua()); }
+
+  /* Real iOS Safari carries BOTH the Version/ and Safari/ tokens and
+   * none of the markers other iOS browsers (CriOS, FxiOS, ...) or
+   * in-app webviews (Instagram, FBAN/FBAV, TikTok, ...) add. Anything
+   * else on iOS cannot install, so its guidance is "open in Safari"
+   * — when in doubt, that is also the safe answer. */
+  function iosVariant() {
+    var u = ua();
+    var other = /(CriOS|FxiOS|EdgiOS|OPiOS|YaBrowser|Instagram|FBAN|FBAV|FB_IAB|FBIOS|TikTok|musical_ly|Snapchat|Pinterest|LinkedInApp|MicroMessenger|Twitter)/i.test(u);
+    if (!other && /Version\//.test(u) && /Safari\//.test(u)) return 'ios-safari';
+    return 'ios-open';
+  }
+
+  function detectVariant() {
+    if (isStandalone()) return 'standalone';
+    if (isAndroid()) return deferredBIP ? 'android-install' : 'android-steps';
+    if (isIOS()) return iosVariant();
+    return 'desktop';
+  }
+
+  function otherSheetOpen() {
+    try { return !!document.querySelector('.pf-sheet-bg'); } catch (e) { return false; }
+  }
+  function quizOpen() {
+    try {
+      var ov = document.getElementById('ob-overlay');
+      return !!ov && !ov.hidden;
+    } catch (e) { return false; }
+  }
+
+  var SHARE_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>';
+
+  function stepsHtml(items) {
+    var h = '<ol class="ip-steps">';
+    for (var i = 0; i < items.length; i++) {
+      h += '<li><span class="ip-num">' + (i + 1) + '</span><span>' + items[i] + '</span></li>';
+    }
+    return h + '</ol>';
+  }
+
+  function gotItRow() {
+    return '<div class="pf-sheet-row" style="margin-top:12px"><button type="button" class="pf-sh-save" id="ip-ok" style="flex:1">Got it</button></div>';
+  }
+
+  function buildSheet(variant) {
+    var inner;
+    if (variant === 'android-install') {
+      inner = '<div class="pf-sheet-row" style="margin-top:12px">' +
+        '<button type="button" class="btn-ghost" id="ip-notnow" style="flex:1">Not now</button>' +
+        '<button type="button" class="pf-sh-save" id="ip-install" style="flex:1">Install</button></div>';
+    } else if (variant === 'android-steps') {
+      inner = stepsHtml([
+        'Tap <b>\u22ee</b> (the browser menu)',
+        'Tap <b>\u201cAdd to Home screen\u201d</b> or <b>\u201cInstall app\u201d</b>',
+        'Tap <b>Install</b> to confirm \u2014 the icon lands on your Home Screen.'
+      ]) + gotItRow();
+    } else if (variant === 'ios-safari') {
+      inner = stepsHtml([
+        'Tap the <b>Share</b> button ' + SHARE_SVG + ' in Safari\u2019s toolbar',
+        'Tap <b>\u201cAdd to Home Screen\u201d</b>',
+        'Tap <b>\u201cAdd\u201d</b> \u2014 the app icon lands on your Home Screen.'
+      ]) + gotItRow();
+    } else { /* ios-open */
+      inner = '<p class="ap-body">You\u2019re viewing this inside another app\u2019s browser, where \u201cAdd to Home Screen\u201d isn\u2019t available. Open this page in Safari first:</p>' +
+        stepsHtml([
+          'Tap <b>\u22ef</b> or the <b>Share</b> button ' + SHARE_SVG,
+          'Choose <b>\u201cOpen in Safari\u201d</b>',
+          'Then <b>Share</b> \u2192 <b>Add to Home Screen</b>'
+        ]) + gotItRow();
+    }
+    var bg = document.createElement('div');
+    bg.className = 'pf-sheet-bg';
+    bg.innerHTML = '<div class="pf-sheet" role="dialog" aria-modal="true" aria-label="Get the app on your Home Screen">' +
+      '<div class="ip-head"><img class="ip-icon" src="icon-192.png" alt="" width="54" height="54">' +
+      '<div><h4 style="margin:0">Get the app on your Home Screen</h4>' +
+      '<p class="ap-body ip-benefit">One tap from your Home Screen, full-screen \u2014 no browser bars.</p></div></div>' +
+      inner + '</div>';
+    document.body.appendChild(bg);
+    sheetEl = bg;
+    var ok = bg.querySelector('#ip-ok');
+    if (ok) ok.addEventListener('click', function () { closeSheet(); });
+    var nn = bg.querySelector('#ip-notnow');
+    if (nn) nn.addEventListener('click', function () { closeSheet(); });
+    var inst = bg.querySelector('#ip-install');
+    if (inst) inst.addEventListener('click', function () {
+      var ev = deferredBIP;
+      deferredBIP = null; /* a captured prompt can only be used once */
+      closeSheet();
+      if (!ev) return;
+      try {
+        var p = ev.prompt();
+        if (p && p.then) p.then(function () {}, function () {});
+        if (ev.userChoice && ev.userChoice.then) ev.userChoice.then(function () {}, function () {});
+      } catch (e) {}
+    });
+    bg.addEventListener('click', function (e) { if (e.target === bg) closeSheet(); });
+  }
+
+  function closeSheet() {
+    try {
+      if (sheetEl && sheetEl.parentNode) sheetEl.parentNode.removeChild(sheetEl);
+    } catch (e) {}
+    sheetEl = null;
+  }
+
+  function openSheet() {
+    if (sheetEl) return;
+    var v = detectVariant();
+    if (v === 'standalone' || v === 'desktop') return;
+    buildSheet(v);
+  }
+
+  /* Automatic showing, at most once per device. If another sheet is
+   * up when the moment comes, wait once and retry; if it is still
+   * busy, stay silent \u2014 Settings keeps the manual route. */
+  function tryAutoShow() {
+    if (sheetEl) return;
+    if (alreadyShown()) return;
+    if (isStandalone() || detectVariant() === 'desktop') { markShown(); return; }
+    if (quizOpen()) return;
+    if (otherSheetOpen()) {
+      if (retries < 1) {
+        retries++;
+        timer = setTimeout(function () { timer = null; try { tryAutoShow(); } catch (e) {} }, 3500);
+      }
+      return;
+    }
+    markShown(); /* shown once = consumed, whatever they tap */
+    openSheet();
+  }
+
+  try {
+    window.addEventListener('sr-quiz-finished', function (e) {
+      try {
+        if (!e || !e.detail || e.detail.mode !== 'auto') return;
+        if (timer || sheetEl) return;
+        retries = 0;
+        timer = setTimeout(function () {
+          timer = null;
+          try { tryAutoShow(); } catch (err) {}
+        }, 2000);
+      } catch (err) {}
+    });
+  } catch (e) {}
+
+  /* Manual route: Settings -> Add to Home Screen. Hidden entirely
+   * when the app is already installed (standalone), and on desktop
+   * where there is nothing useful to show. */
+  try {
+    var item = document.getElementById('menu-install');
+    if (item) {
+      if (isStandalone() || (!isIOS() && !isAndroid())) {
+        item.hidden = true;
+      } else {
+        item.addEventListener('click', function () {
+          var menu = document.getElementById('settings-menu');
+          if (menu) menu.hidden = true;
+          var gear = document.getElementById('btn-settings');
+          if (gear) gear.setAttribute('aria-expanded', 'false');
+          setTimeout(function () { try { openSheet(); } catch (err) {} }, 60);
+        });
+      }
     }
   } catch (e) {}
 })();

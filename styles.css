@@ -591,6 +591,13 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .pf-sheet input { flex: 1; min-width: 0; background: var(--field); border: 1.5px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 17px; font-weight: 700; padding: 11px 12px; }
 .pf-sh-save { background: var(--gold-grad); color: #141414; border: none; border-radius: 12px; font-size: 15px; font-weight: 800; padding: 11px 12px; cursor: pointer; }
 .ap-body { margin: 0; font-size: 14px; line-height: 1.5; color: var(--ink); }
+/* Smart install prompt sheet (srInstallPrompt in app.js). */
+.ip-head { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+.ip-icon { width: 54px; height: 54px; border-radius: 14px; flex: 0 0 auto; }
+.ip-benefit { margin-top: 3px; color: var(--muted); }
+.ip-steps { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.ip-steps li { display: flex; gap: 10px; align-items: flex-start; font-size: 14.5px; line-height: 1.45; color: var(--ink); }
+.ip-num { flex: 0 0 auto; width: 21px; height: 21px; border-radius: 50%; background: var(--gold-grad); color: #141414; font-size: 12.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
 
 .wl-row { cursor: pointer; }
 
