@@ -420,6 +420,16 @@ async function fetchStock(ticker, opts) {
     if (about) { d.about = about; d.sources.push('StockAnalysis'); }
   } catch (e) { d.errors.push('About: ' + e.message); } };
 
+  // --- StockAnalysis company profile page: the CEO's name ---
+  var srcCeo = async function () { try {
+    var html = await relayFetch('https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/company/', {
+      timeout: 20000,
+      validate: function (t) { return t.indexOf('>CEO</td>') !== -1; }
+    });
+    var ceo = parseSACeo(html);
+    if (ceo) d.ceo = ceo;
+  } catch (e) { d.errors.push('CEO: ' + e.message); } };
+
   var srcSurprise = async function () { try {
     var ex = String(d.exchange || '').toUpperCase();
     var segs = [];
@@ -481,7 +491,7 @@ async function fetchStock(ticker, opts) {
   }
   // Slow stage: Finviz fundamentals + MarketBeat EPS-surprise history in
   // parallel — both are big HTML pages through the relays.
-  await Promise.all([srcFinviz(), srcSurprise(), srcRevPath(), srcAbout()]);
+  await Promise.all([srcFinviz(), srcSurprise(), srcRevPath(), srcAbout(), srcCeo()]);
   deriveValues(d);
   d.partial = false;
 
@@ -676,6 +686,16 @@ function aboutTrim(text) {
     return cut.slice(0, cut.lastIndexOf(' ')) + '\u2026';
   }
   return s1;
+}
+function parseSACeo(html) {
+  if (!html) return '';
+  var m = String(html).match(/>CEO<\/td>\s*<td[^>]*>([^<]+)</);
+  if (!m) return '';
+  return m[1].replace(/&amp;/g, '&').replace(/&#0?39;|&apos;/g, "'").trim();
+}
+function ceoLineHtml(d) {
+  if (!d || !d.ceo) return '';
+  return '<p class="earn-line ceo-line">CEO \u00b7 <b>' + esc(d.ceo) + '</b></p>';
 }
 function parseSAAbout(html) {
   if (!html) return '';
@@ -1780,6 +1800,7 @@ function renderScorecard(d) {
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
   if (d.about) html += '<div class="sc-about">' + esc(d.about) + '</div>';
+  html += ceoLineHtml(d);
   html += earnLineHtml(d);
 
   if (d.history && d.history.length >= 2) {
@@ -4019,6 +4040,7 @@ function renderOverview(d, item) {
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
   html += earnLineHtml(d);
+  html += ceoLineHtml(d);
   if (item && isNum(item.target) && item.target > 0 && isNum(d.price)) {
     var above = (d.price / item.target - 1) * 100;
     html += '<p class="fineprint" style="margin:2px 0 8px">Your target buy: ' + fmtMoney(item.target) + ' \u2014 ' +
