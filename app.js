@@ -936,39 +936,39 @@ function riskScore(d) {
     factors.push({ name: name, value: value, display: display, max: max, pts: pts, note: note || '' });
   }
   if (isNum(d.beta) && d.beta > 0) {
-    add('Beta (volatility)', d.beta, fmtNum(d.beta, 2), 10,
-      band(d.beta, [[0.5, 1], [0.8, 3], [1, 4], [1.3, 6], [1.6, 8], [2, 9], [Infinity, 10]]),
+    add('Beta (volatility)', d.beta, fmtNum(d.beta, 2), 9,
+      band(d.beta, [[0.5, 1], [0.8, 3], [1, 4], [1.3, 5], [1.6, 7], [2, 8], [Infinity, 9]]),
       'How hard the stock swings vs the market');
   }
   if (isNum(d.debtEq) && d.debtEq >= 0) {
-    add('Debt / Equity', d.debtEq, fmtNum(d.debtEq, 2), 25,
-      band(d.debtEq, [[0.1, 0], [0.4, 5], [0.8, 10], [1.5, 15], [3, 20], [Infinity, 25]]),
+    add('Debt / Equity', d.debtEq, fmtNum(d.debtEq, 2), 22,
+      band(d.debtEq, [[0.1, 0], [0.4, 4], [0.8, 9], [1.5, 13], [3, 17], [Infinity, 22]]),
       'More debt = less room when things go wrong');
   }
   if (isNum(d.profitMargin)) {
-    add('Profit margin', d.profitMargin, fmtNum(d.profitMargin, 1) + '%', 15,
-      band(d.profitMargin, [[-10, 15], [0, 13], [5, 10], [10, 7], [15, 4], [25, 2], [Infinity, 0]]),
+    add('Profit margin', d.profitMargin, fmtNum(d.profitMargin, 1) + '%', 13,
+      band(d.profitMargin, [[-10, 13], [0, 11], [5, 9], [10, 6], [15, 3], [25, 2], [Infinity, 0]]),
       'Loss-making means no cushion');
   }
   if (isNum(d.marketCap) && d.marketCap > 0) {
-    add('Company size', d.marketCap, fmtCap(d.marketCap), 15,
-      band(d.marketCap, [[2e9, 15], [1e10, 11], [5e10, 7], [2e11, 3], [Infinity, 0]]),
+    add('Company size', d.marketCap, fmtCap(d.marketCap), 13,
+      band(d.marketCap, [[2e9, 13], [1e10, 10], [5e10, 6], [2e11, 3], [Infinity, 0]]),
       'Small companies fail more often than giants');
   }
   if (isNum(d.epsGrowthNextY)) {
-    add('EPS trend, next yr', d.epsGrowthNextY, fmtPct(d.epsGrowthNextY), 15,
-      band(d.epsGrowthNextY, [[-25, 15], [-10, 12], [0, 8], [10, 4], [25, 1], [Infinity, 0]]),
+    add('EPS trend, next yr', d.epsGrowthNextY, fmtPct(d.epsGrowthNextY), 13,
+      band(d.epsGrowthNextY, [[-25, 13], [-10, 10], [0, 7], [10, 3], [25, 1], [Infinity, 0]]),
       'Falling earnings are where the danger starts');
   }
   if (isNum(d.currentRatio) && d.currentRatio > 0) {
-    add('Current ratio', d.currentRatio, fmtNum(d.currentRatio, 2), 10,
-      band(d.currentRatio, [[0.8, 10], [1, 8], [1.5, 5], [2, 2], [Infinity, 0]]),
+    add('Current ratio', d.currentRatio, fmtNum(d.currentRatio, 2), 8,
+      band(d.currentRatio, [[0.8, 8], [1, 6], [1.5, 4], [2, 2], [Infinity, 0]]),
       'Can it pay its near-term bills?');
   }
   var bb = boomBust(d);
   if (bb && bb.testable) {
-    add('Boom-bust pattern', bb.ratio, isNum(bb.ratio) ? fmtNum(bb.ratio, 1) + '\u00d7 in 2 yrs' : '\u2014', 25,
-      bb.fires ? 25 : 0,
+    add('Boom-bust pattern', bb.ratio, isNum(bb.ratio) ? fmtNum(bb.ratio, 1) + '\u00d7 in 2 yrs' : '\u2014', 22,
+      bb.fires ? 22 : 0,
       bb.fires
         ? 'Revenue ' + (bb.projected ? 'is projected to top' : 'topped') + ' at ' + bb.topLabel + ' after doubling in 2 yrs, and EPS ' + (bb.cliff
             ? 'falls off a cliff after ' + bb.cliff.peakLabel
@@ -2553,7 +2553,7 @@ function wlValuationDisplay(T) {
  * normalizes over a smaller factor pool and inflates the number --
  * RH read Risk 80 here vs 52 on the scorecard (2026-10-29) because
  * its 60 raw risk points were divided by a 75-pt pool instead of
- * the full 115. Fetch both so the watchlist and the scorecard
+ * the full 100. Fetch both so the watchlist and the scorecard
  * compute risk over the same factors. */
 var WLAUX_KEY = 'sr_wlaux_v1';
 async function fetchWlValuation(T) {
@@ -2756,7 +2756,7 @@ function scanFinalizeIdx(idxs) {
     // carry, so it never counts here). Require at least 60% of those
     // 90 — 54 points — mirroring the valuation side's 60-of-100 rule.
     var rk = riskScore(rec);
-    if (!(rk && isNum(rk.score) && rk.maxAvailable >= 54)) return;
+    if (!(rk && isNum(rk.score) && rk.maxAvailable >= 47)) return;
     // One score for the daily list (Justin's ask, 2026-10-27):
     // 60% how cheap it is + 40% how safe it is.
     var combined = Math.round(0.6 * s.score + 0.4 * (100 - rk.score));
