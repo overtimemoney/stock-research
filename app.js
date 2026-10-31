@@ -1272,6 +1272,7 @@ function openGlossaryTerm(term) {
   if (from) glossReturn = from;
   var mn0 = document.querySelector('main');
   glossReturnState = { tab: from || glossReturn, scroll: mn0 ? mn0.scrollTop : 0, ov: ovTicker || null };
+  glossStack = [];
   closeOverview();
   var gs = $('gloss-search');
   if (gs) gs.value = '';
@@ -1279,6 +1280,73 @@ function openGlossaryTerm(term) {
   switchTab('glossary');
   var item = document.querySelector('#gloss-list .g-item');
   if (item) item.classList.add('flash');
+}
+
+/* Glossary cross-links (Justin's ask, 2026-10-30): any mention of another
+ * glossary term inside a definition renders as an underlined link; tapping
+ * it jumps to that term, and a stack powers the glossary Back button so
+ * the reader can return to the term they came from. */
+var GLOSS_ALIASES = {
+  'P/E ratio': ['P/E'],
+  'PEG ratio': ['PEG'],
+  'EPS (earnings per share)': ['EPS', 'earnings per share'],
+  'Outstanding shares': ['shares outstanding'],
+  'Debt / Equity': ['Debt/Equity', 'debt/equity ratio', 'debt-to-equity'],
+  'ROE (return on equity)': ['ROE', 'return on equity'],
+  'TTM (trailing twelve months)': ['TTM'],
+  'YoY (year over year)': ['YoY'],
+  'Consensus estimate': ['consensus'],
+  'SWOT analysis': ['SWOT'],
+  'Exit P/E (exit multiple)': ['exit P/E', 'exit multiple'],
+  'Bear / Base / Bull case': ['bear case', 'base case', 'bull case'],
+  'Adjusted (non-GAAP) EPS': ['adjusted EPS', 'non-GAAP'],
+  'Buyback': ['buybacks'],
+  'Free cash flow': ['FCF']
+};
+var GLOSS_LINK_RE = null, GLOSS_LINK_MAP = null;
+function glossLinkerBuild() {
+  if (GLOSS_LINK_RE) return;
+  var pairs = [];
+  GLOSSARY.forEach(function (g) {
+    pairs.push([g[0], g[0]]);
+    (GLOSS_ALIASES[g[0]] || []).forEach(function (a) { pairs.push([a, g[0]]); });
+  });
+  pairs.sort(function (a, b) { return b[0].length - a[0].length; });
+  GLOSS_LINK_MAP = {};
+  var parts = pairs.map(function (p) {
+    GLOSS_LINK_MAP[p[0].toLowerCase()] = p[1];
+    return p[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  });
+  GLOSS_LINK_RE = new RegExp('(?<![A-Za-z0-9])(' + parts.join('|') + ')(?![A-Za-z0-9])', 'gi');
+}
+function glossLinkify(def, selfTerm) {
+  glossLinkerBuild();
+  return esc(def).replace(GLOSS_LINK_RE, function (m) {
+    var t = GLOSS_LINK_MAP[m.toLowerCase()];
+    if (!t || t === selfTerm) return m;
+    return '<button type="button" class="g-link" data-gterm="' + esc(t) + '">' + m + '</button>';
+  });
+}
+var glossStack = [];
+function glossSyncBack() {
+  var b = $('gl-back');
+  if (!b) return;
+  var top = glossStack[glossStack.length - 1];
+  b.textContent = top ? '\u2190 Back to ' + top : '\u2190 Back';
+}
+function glossShowTerm(term) {
+  var gs = $('gloss-search');
+  if (gs) gs.value = '';
+  renderGlossary('', term);
+  var mn = document.querySelector('main');
+  if (mn) mn.scrollTop = 0;
+  var item = document.querySelector('#gloss-list .g-item');
+  if (item) item.classList.add('flash');
+  glossSyncBack();
+}
+function glossJumpTo(term, fromTerm) {
+  if (fromTerm && fromTerm !== term) glossStack.push(fromTerm);
+  glossShowTerm(term);
 }
 function kvItem(k, v, ik) {
   return '<div class="kv-item"><div class="k">' + esc(k) + (ik ? infoDot(ik) : '') + '</div><div class="v">' + esc(v) + '</div>' + (ik ? infoText(ik) : '') + '</div>';
@@ -4764,9 +4832,9 @@ function renderGlossary(filter, exactTerm) {
   GLOSSARY.forEach(function (g) {
     if (exactTerm) { if (g[0] !== exactTerm) return; }
     else if (f && g[0].toLowerCase().indexOf(f) === -1 && g[1].toLowerCase().indexOf(f) === -1) return;
-    html += '<div class="g-item"><div class="g-term">' + esc(g[0]) + '</div>' +
+    html += '<div class="g-item" data-term="' + esc(g[0]) + '"><div class="g-term">' + esc(g[0]) + '</div>' +
       (GLOSS_ART[g[0]] ? '<div class="gloss-art"><svg viewBox="0 0 300 84" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + GLOSS_ART[g[0]] + '</svg></div>' : '') +
-      '<div class="g-def">' + esc(g[1]) + '</div></div>';
+      '<div class="g-def">' + glossLinkify(g[1], g[0]) + '</div></div>';
   });
   $('gloss-list').innerHTML = html || '<p class="fineprint">No terms match that search.</p>';
   fitGlossText();
@@ -5041,6 +5109,15 @@ function initApp() {
   $('sc-back').addEventListener('click', goBackToOverview);
   $('jr-back').addEventListener('click', function () { switchTab(jrReturnTab); });
   $('gl-back').addEventListener('click', function () {
+    if (glossStack.length) {
+      var backTerm = glossStack.pop();
+      var gs2 = $('gloss-search'); if (gs2) gs2.value = '';
+      renderGlossary('');
+      glossSyncBack();
+      var it = document.querySelector('#gloss-list .g-item[data-term="' + backTerm + '"]');
+      if (it) { it.scrollIntoView({ block: 'start' }); it.classList.add('flash'); }
+      return;
+    }
     var st = glossReturnState; glossReturnState = null;
     if (!st) { switchTab(glossReturn); return; }
     switchTab(st.tab);
@@ -5174,6 +5251,8 @@ function initApp() {
   $('menu-glossary').addEventListener('click', function () {
     glossReturn = 'portfolio';
     glossReturnState = null;
+    glossStack = [];
+    glossSyncBack();
     settingsMenu.hidden = true;
     $('btn-settings').setAttribute('aria-expanded', 'false');
     switchTab('glossary');
@@ -5350,6 +5429,12 @@ function initApp() {
   });
   $('j-cancel').addEventListener('click', resetJournalForm);
   $('gloss-search').addEventListener('input', function (e) { renderGlossary(e.target.value); });
+  $('gloss-list').addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('[data-gterm]') : null;
+    if (!b) return;
+    var item = e.target.closest('.g-item');
+    glossJumpTo(b.getAttribute('data-gterm'), item ? item.getAttribute('data-term') : null);
+  });
   renderGlossary('');
   renderJournal();
   renderPjSaved();

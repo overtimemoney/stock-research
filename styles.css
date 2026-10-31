@@ -288,6 +288,7 @@ table.scen td { padding: 8px 6px; }
 .g-item { border-bottom: 1px solid var(--row-line); padding: 11px 2px; }
 .g-item .g-term { font-weight: 900; font-size: 15px; }
 .g-item .g-def { font-size: 13.5px; color: var(--ink2); line-height: 1.55; margin-top: 3px; }
+.g-link { background: none; border: none; padding: 0; font: inherit; color: inherit; text-decoration: underline; text-decoration-color: var(--gold); text-underline-offset: 3px; cursor: pointer; }
 
 /* ---------- tab bar ---------- */
 .tabbar {
