@@ -3151,10 +3151,46 @@ function scanPersistIdx(ixKey, merged) {
     var r = merged[t];
     ds.recs[t] = { name: r.name, ix: ixKey, forwardPE: r.forwardPE, peg: r.peg, epsGrowthNextY: r.epsGrowthNextY,
       price: r.price, marketCap: r.marketCap, grossMargin: r.grossMargin, profitMargin: r.profitMargin,
-      debtEq: r.debtEq, currentRatio: r.currentRatio, pctBelowHigh: r.pctBelowHigh, beta: r.beta };
+      debtEq: r.debtEq, currentRatio: r.currentRatio, pctBelowHigh: r.pctBelowHigh, beta: r.beta,
+      divYield: r.divYield };
   });
   if (ixKey === 'spx') ds.asOf = scanTodayKey();
   setScanData(ds);
+}
+
+/* One-time backfill (2026-10-30): scanPersistIdx dropped divYield from
+ * stored records, so datasets built before the fix carry no yields and
+ * the screener's dividend filter can only return the "not in the data
+ * yet" notice. Fill yields in from the hosted snapshot (same tickers)
+ * once, on a launch where the dataset is still missing them; scans
+ * keep the field from here on. */
+var DY_BACKFILL_KEY = 'sr_dy_backfill_v1';
+async function dyBackfill() {
+  if (lsGet(DY_BACKFILL_KEY, null)) return;
+  var ds = getScanData();
+  if (!ds || !ds.recs) return;
+  var tickers = Object.keys(ds.recs);
+  if (!tickers.length) return;
+  var have = tickers.filter(function (t) { return isNum(ds.recs[t].divYield); }).length;
+  if (have > tickers.length * 0.1) { lsSet(DY_BACKFILL_KEY, 1); return; }
+  try {
+    var resp = await fetch('scan-data.json?cb=' + Date.now(), { cache: 'no-store' });
+    if (!resp.ok) return;
+    var snap = await resp.json();
+    if (!snap || !snap.recs) return;
+    var filled = 0;
+    tickers.forEach(function (t) {
+      if (!isNum(ds.recs[t].divYield) && snap.recs[t] && isNum(snap.recs[t].divYield)) {
+        ds.recs[t].divYield = snap.recs[t].divYield;
+        filled++;
+      }
+    });
+    if (filled > 0) {
+      setScanData(ds);
+      lsSet(DY_BACKFILL_KEY, 1);
+      if (document.querySelector('#tool-scr.active')) runScreener();
+    }
+  } catch (e) {}
 }
 
 /* One Finviz quote page -> a scan-shaped record (same fields the
@@ -3591,7 +3627,7 @@ function runScreener() {
       '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
       '<span class="scan-score ' + scanScoreClass(row.score) + '">Score ' + row.score + '</span></button>';
   });
-  if (!out.length && isNum(f.dy) && !anyYield) html += '<div class="status">Dividend yield isn\'t in the stored data yet \u2014 it arrives with the next daily scan, or tap Rescan on the Watchlist scan card to get it now.</div>';
+  if (!out.length && isNum(f.dy) && !anyYield) html += '<div class="status">Dividend yield isn\'t in the stored data yet \u2014 it arrives with the next scan, or tap Rescan on the Watchlist scan card to get it now.</div>';
   else if (!out.length) html += '<div class="status">No stored stocks match those filters.</div>';
   box.innerHTML = html;
   box.querySelectorAll('[data-scr-research]').forEach(function (b) {
@@ -5491,6 +5527,7 @@ function initApp() {
     var item = e.target.closest('.g-item');
     glossJumpTo(b.getAttribute('data-gterm'), item ? item.getAttribute('data-term') : null);
   });
+  dyBackfill();
   renderGlossary('');
   renderJournal();
   renderPjSaved();
