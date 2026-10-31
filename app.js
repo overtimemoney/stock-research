@@ -1489,11 +1489,15 @@ function fvBarHtml(d) {
   var pxPos = (d.price - lo) / (hi - lo) * 100;
   var tgPos = (tgt - lo) / (hi - lo) * 100;
   var diff = (tgt / d.price - 1) * 100;
-  return '<div class="fv-wrap"><div class="fv-track">' +
-    '<div class="fv-fill" style="width:' + pxPos.toFixed(1) + '%"></div>' +
+  var gapL = Math.min(pxPos, tgPos), gapW = Math.abs(tgPos - pxPos);
+  function labCls(p) { return p < 14 ? 'fv-lab l' : p > 86 ? 'fv-lab r' : 'fv-lab'; }
+  return '<div class="fv-wrap">' +
+    '<div class="fv-labs"><span class="' + labCls(pxPos) + ' now" style="left:' + pxPos.toFixed(1) + '%">Now ' + fmtMoney(d.price) + '</span></div>' +
+    '<div class="fv-track">' +
+    (gapW > 0.5 ? '<div class="fv-gap' + (diff < 0 ? ' dn' : '') + '" style="left:' + gapL.toFixed(1) + '%;width:' + gapW.toFixed(1) + '%"></div>' : '') +
     '<span class="fv-dot target" style="left:' + tgPos.toFixed(1) + '%"></span>' +
     '<span class="fv-dot price" style="left:' + pxPos.toFixed(1) + '%"></span></div>' +
-    '<div class="fv-cap">Analyst 1-yr target ' + fmtMoney(tgt) + ' \u00b7 ' + fmtNum(Math.abs(diff), 1) + '% ' + (diff >= 0 ? 'above' : 'below') + ' the price</div></div>';
+    '<div class="fv-labs"><span class="' + labCls(tgPos) + ' tgt" style="left:' + tgPos.toFixed(1) + '%">Target ' + fmtMoney(tgt) + ' \u00b7 ' + fmtPct(diff) + '</span></div></div>';
 }
 
 /* "At a glance" measures: five 0-100 axes mapped piecewise-linearly

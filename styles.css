@@ -210,12 +210,19 @@ td.num, th.num { text-align: right !important; font-variant-numeric: tabular-num
 .chart-wrap svg { width: 100%; height: auto; display: block; }
 /* Analyst-target bar + at-a-glance rings + scan NEW pill (2026-10-30) */
 .fv-wrap { margin: 16px 0 2px; }
+.fv-labs { position: relative; height: 17px; }
+.fv-lab { position: absolute; bottom: 1px; transform: translateX(-50%); font-size: 11px; font-weight: 800; letter-spacing: .04em; white-space: nowrap; }
+.fv-labs:last-child .fv-lab { bottom: auto; top: 2px; }
+.fv-lab.l { transform: none; }
+.fv-lab.r { transform: translateX(-100%); }
+.fv-lab.now { color: var(--ink); }
+.fv-lab.tgt { color: var(--gold); }
 .fv-track { position: relative; height: 8px; border-radius: 999px; background: var(--score-track); }
-.fv-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--gold-grad); }
+.fv-gap { position: absolute; top: 0; bottom: 0; border-radius: 999px; background: var(--gold-grad); opacity: .55; }
+.fv-gap.dn { background: var(--bad); opacity: .65; }
 .fv-dot { position: absolute; top: 50%; width: 13px; height: 13px; border-radius: 50%; transform: translate(-50%, -50%); }
 .fv-dot.price { background: #fff; border: 2.5px solid var(--ink2); z-index: 2; }
 .fv-dot.target { background: var(--gold); border: 2.5px solid var(--gold-deep); z-index: 1; }
-.fv-cap { font-size: 12.5px; font-weight: 600; color: var(--muted); margin-top: 8px; }
 .rings-flex { display: flex; align-items: center; gap: 16px; }
 .rings-flex > svg { flex: 0 0 auto; }
 .rings-svg { animation: rings-in .24s var(--ease-out); transform-origin: center; }
