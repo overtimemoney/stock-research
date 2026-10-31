@@ -367,6 +367,16 @@ async function fetchStock(ticker, opts) {
     if (rp.length >= 3) { d.revPath = rp; d.sources.push('StockAnalysis'); }
   } catch (e) { d.errors.push('Revenue path: ' + e.message); } };
 
+  // --- StockAnalysis main page: the "About" company description ---
+  var srcAbout = async function () { try {
+    var html = await relayFetch('https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/', {
+      timeout: 20000,
+      validate: function (t) { return t.indexOf('About ' + T + '</h2>') !== -1; }
+    });
+    var about = parseSAAbout(html);
+    if (about) { d.about = about; d.sources.push('StockAnalysis'); }
+  } catch (e) { d.errors.push('About: ' + e.message); } };
+
   var srcSurprise = async function () { try {
     var ex = String(d.exchange || '').toUpperCase();
     var segs = [];
@@ -428,7 +438,7 @@ async function fetchStock(ticker, opts) {
   }
   // Slow stage: Finviz fundamentals + MarketBeat EPS-surprise history in
   // parallel — both are big HTML pages through the relays.
-  await Promise.all([srcFinviz(), srcSurprise(), srcRevPath()]);
+  await Promise.all([srcFinviz(), srcSurprise(), srcRevPath(), srcAbout()]);
   deriveValues(d);
   d.partial = false;
 
@@ -592,6 +602,46 @@ function parseSAForecast(html) {
   });
   out.sort(function (a, b) { return a.label.localeCompare(b.label); });
   return out;
+}
+
+/* Company description: the "About" paragraph on the StockAnalysis main
+ * page, trimmed to what a reader needs (Justin's rule, 2026-10-30):
+ * sentence 1 always (it carries the business), sentence 2 only when
+ * the pair stays under ~320 chars. Abbreviations are protected so the
+ * splitter never cuts inside "Inc." or "U.S.". */
+var ABOUT_ABBR = ['Inc.', 'Corp.', 'Co.', 'Ltd.', 'U.S.', 'No.', 'St.', 'e.g.', 'i.e.', 'Dr.'];
+function aboutGuard(t, un) {
+  ABOUT_ABBR.forEach(function (a, i) {
+    var g = a.slice(0, -1) + '\u0001' + i + '\u0002';
+    t = un ? t.split(g).join(a) : t.split(a).join(g);
+  });
+  return t;
+}
+function aboutTrim(text) {
+  var t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return '';
+  var parts = aboutGuard(t, false).split(/(?<=[.!?])\s+(?=[A-Z0-9"\u201c])/).map(function (p) {
+    return aboutGuard(p, true);
+  }).filter(Boolean);
+  if (!parts.length) return '';
+  var s1 = parts[0];
+  if (parts.length > 1 && (s1 + ' ' + parts[1]).length <= 320) return s1 + ' ' + parts[1];
+  if (s1.length > 340) {
+    var cut = s1.slice(0, 340);
+    var at = Math.max(cut.lastIndexOf('; '), cut.lastIndexOf(', '));
+    if (at > 120) return cut.slice(0, at) + ' \u2026';
+    return cut.slice(0, cut.lastIndexOf(' ')) + '\u2026';
+  }
+  return s1;
+}
+function parseSAAbout(html) {
+  if (!html) return '';
+  var m = String(html).match(/About\s+[A-Z][A-Z.\-]*<\/h2>\s*<p>([\s\S]*?)<\/p>/);
+  if (!m) return '';
+  var text = m[1].replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'").replace(/&nbsp;/g, ' ');
+  return aboutTrim(text);
 }
 
 /* Estimate columns of the StockAnalysis forecast table (annual):
@@ -1680,6 +1730,7 @@ function renderScorecard(d) {
     '<div class="sc-sub">' + esc([d.exchange, d.sector, d.industry].filter(Boolean).join(' · ')) + '</div></div></div>' +
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
+  if (d.about) html += '<div class="sc-about">' + esc(d.about) + '</div>';
 
   if (sc.score != null) {
     html += '<div class="verdict ' + vClass + '"><div><div class="v-label">Valuation verdict</div>' +

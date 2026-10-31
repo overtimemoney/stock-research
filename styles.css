@@ -164,6 +164,7 @@ label input, label textarea { margin-top: 5px; font-weight: 500; }
 .sc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
 .sc-name { font-size: 22px; font-weight: 900; line-height: 1.15; }
 .sc-sub { color: var(--muted); font-size: 13px; font-weight: 600; margin-top: 2px; }
+.sc-about { font-size: 13px; line-height: 1.5; color: var(--muted); margin-top: 8px; }
 .sc-price { text-align: right; }
 .sc-price .p { font-size: 26px; font-weight: 900; }
 .sc-price .chg { font-size: 13.5px; font-weight: 800; }
