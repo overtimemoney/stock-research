@@ -2342,7 +2342,7 @@ function renderPjSaved() {
 function pjBaseEps() { var v = parseFloat($('pj-eps').value); return isNum(v) ? v : null; }
 function pjYearsWanted() {
   var y = parseInt($('pj-years').value, 10);
-  return isNum(y) ? Math.max(1, Math.min(5, y)) : 3;
+  return isNum(y) ? Math.max(1, Math.min(10, y)) : 3;
 }
 function pjFlatGrowth() {
   var g = parseFloat($('pj-growth').value);
@@ -6450,6 +6450,7 @@ if (typeof document !== 'undefined' && document.getElementById) {
 
     function resetQuiz() {
       visible = ['10'];
+      overlay.classList.remove('ob-q1-done');
       var intro = document.getElementById('ob-intro');
       var p1 = document.getElementById('ob-panel-1');
       var p2 = document.getElementById('ob-panel-2');
@@ -6524,6 +6525,9 @@ if (typeof document !== 'undefined' && document.getElementById) {
       }
       if (q === 1) {
         visible = ['10', '15'];
+        /* No-scroll fit: compact the intro for the reveal so the
+         * callout + Next button share Q1's screen (see .ob-q1-done). */
+        overlay.classList.add('ob-q1-done');
         renderChart('15');
         reveal('ob-reveal-1');
       } else {
