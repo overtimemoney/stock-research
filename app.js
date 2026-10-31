@@ -879,6 +879,12 @@ function epsCliffInfo(d) {
   var pts = epsTrajectory(d).points;
   var peak = -Infinity, peakLabel = '';
   for (var i = 0; i < pts.length; i++) {
+    // Justin's rule (2026-10-30): a cliff must be in the FUTURE. The
+    // peak has to be a forecast year -- a fall from TTM into the first
+    // estimate is a down year already in motion, not a cliff, so the
+    // TTM point can never be the peak (and drops only count after a
+    // forecast peak exists).
+    if (pts[i].kind !== 'est') continue;
     if (pts[i].eps > peak) { peak = pts[i].eps; peakLabel = pts[i].label; }
     else if (peak > 0 && pts[i].eps < peak * 0.90) {
       return { peakLabel: peakLabel, dropLabel: pts[i].label, dropPct: (pts[i].eps / peak - 1) * 100 };
@@ -1065,6 +1071,7 @@ function epsTrajectory(d) {
   if (pts.length >= 2) {
     var peak = -Infinity, peakLabel = '';
     for (var i = 0; i < pts.length; i++) {
+      if (pts[i].kind !== 'est') continue; // future peaks only -- see epsCliffInfo
       if (pts[i].eps > peak) { peak = pts[i].eps; peakLabel = pts[i].label; }
       else if (peak > 0 && pts[i].eps < peak * 0.90) {
         warning = 'Earnings cliff in consensus: EPS peaks at ' + fmtNum(peak) + ' (' + peakLabel +
