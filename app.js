@@ -1673,7 +1673,6 @@ function renderScorecard(d) {
   html += kvItem('Below 52-wk high', isNum(d.pctBelowHigh) ? fmtNum(d.pctBelowHigh, 1) + '%' : '—', 'belowhigh');
   html += kvItem('Dividend yield', isNum(d.divYield) ? fmtNum(d.divYield, 2) + '%' : '—', 'divyield');
   html += kvItem('Analyst 1-yr target', isNum(d.target1Y) ? fmtMoney(d.target1Y) : '—', 'target');
-  if (isNum(d.insiderOwn)) html += kvItem('Insider ownership', fmtNum(d.insiderOwn, 2) + '%');
   if (isNum(d.instOwn)) html += kvItem('Institutional ownership', fmtNum(d.instOwn, 1) + '%');
   html += '</div>';
 
