@@ -103,14 +103,19 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
           <button type="button" data-qmfreq="q" class="active">Quarterly</button>
           <button type="button" data-qmfreq="y">Yearly</button>
         </div>
-        <div class="qm-chips" id="qm-chips">
-          <button type="button" data-qm="revenue" class="on">Revenue</button>
-          <button type="button" data-qm="netIncome">Net income</button>
-          <button type="button" data-qm="eps">EPS</button>
-          <button type="button" data-qm="fcf">Free cash flow</button>
-          <button type="button" data-qm="grossMargin">Gross margin</button>
-          <button type="button" data-qm="operMargin">Operating margin</button>
-          <button type="button" data-qm="netMargin">Net margin</button>
+        <button type="button" id="qm-metric-btn" class="qm-picker-btn" aria-haspopup="true" aria-expanded="false"><span id="qm-metric-name">Revenue</span><span class="qm-chev">\u25be</span></button>
+        <div id="qm-metric-list" class="qm-picker-list" hidden>
+          <div class="qm-group">Money</div>
+          <button type="button" data-qm="revenue" class="qm-opt on">Revenue</button>
+          <button type="button" data-qm="netIncome" class="qm-opt">Net income</button>
+          <button type="button" data-qm="eps" class="qm-opt">EPS</button>
+          <button type="button" data-qm="fcf" class="qm-opt">Free cash flow</button>
+          <div class="qm-group">Margins</div>
+          <button type="button" data-qm="grossMargin" class="qm-opt">Gross margin</button>
+          <button type="button" data-qm="operMargin" class="qm-opt">Operating margin</button>
+          <button type="button" data-qm="netMargin" class="qm-opt">Net margin</button>
+          <div class="qm-group">Shares</div>
+          <button type="button" data-qm="shares" class="qm-opt">Shares outstanding</button>
         </div>
         <div id="qm-chart"></div>
         <p class="fineprint" id="qm-note"></p>

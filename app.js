@@ -1300,6 +1300,7 @@ function barChartSVG(pts, w, h) {
   var max = Math.max.apply(null, pts.map(function (p) { return p.eps; }).concat([0]));
   var min = Math.min.apply(null, pts.map(function (p) { return p.eps; }).concat([0]));
   var span = (max - min) || 1;
+  if (min < 0) padB = 38;
   var bw = (w - padX * 2) / pts.length;
   var zeroY = padT + (max / span) * (h - padT - padB);
   // The TTM (actual) bar and the value labels use CSS variables
@@ -2655,6 +2656,7 @@ function parseSAQuarterly(htmlIs, htmlCf, yearly) {
     operIncome: series('Operating Income', M),
     netIncome: series('Net Income', M),
     eps: series('EPS (Diluted)', 1) || series('Earnings Per Share', 1),
+    shares: series('Shares Outstanding (Diluted)', M) || series('Shares Outstanding (Basic)', M),
     fcf: series('Free Cash Flow', M)
   };
 }
@@ -2679,7 +2681,7 @@ async function fetchQMetrics(T, freq) {
   var yearly = freq === 'y';
   var cache = lsGet(QM_KEY, {});
   var day = new Date().toDateString();
-  if (cache[T] && cache[T].day === day && cache[T][freq]) return cache[T][freq];
+  if (cache[T] && cache[T].day === day && cache[T][freq] && 'shares' in cache[T][freq]) return cache[T][freq];
   var base = 'https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/financials/';
   var suffix = yearly ? '' : '?p=quarterly';
   var needle = yearly ? 'Fiscal Year' : 'Fiscal Quarter';
@@ -2710,6 +2712,13 @@ async function fetchQMetrics(T, freq) {
   return data;
 }
 
+function fmtSharesShort(v) {
+  if (!isNum(v)) return '\u2014';
+  var sign = v < 0 ? '-' : '', a = Math.abs(v);
+  if (a >= 1e9) return sign + fmtNum(a / 1e9, 2) + 'B';
+  if (a >= 1e6) return sign + fmtNum(a / 1e6, 1) + 'M';
+  return sign + fmtNum(a, 0);
+}
 function fmtMoneyShort(v) {
   if (!isNum(v)) return '\u2014';
   var sign = v < 0 ? '-' : '';
@@ -2721,16 +2730,21 @@ function qmShortQ(label) {
 }
 
 function qmBarsSVG(pts, fmt) {
-  var w = 640, h = 224, padB = 34, padT = 32, padX = 6;
+  var w = 640, h = 224, padT = 32, padX = 6;
   var max = Math.max.apply(null, pts.map(function (p) { return p.value; }).concat([0]));
   var min = Math.min.apply(null, pts.map(function (p) { return p.value; }).concat([0]));
   var span = (max - min) || 1;
+  var vfsEarly = pts.length <= 8 ? 16.5 : pts.length <= 13 ? 14.5 : 12.5;
+  // Negative bars carry their value label BELOW the bar; reserve enough
+  // bottom room that it can never land on the axis labels (TSLA FCF
+  // screenshot, 2026-10-31).
+  var padB = min < 0 ? Math.ceil(vfsEarly * 1.25) + 24 : 34;
   var bw = (w - padX * 2) / pts.length;
   var zeroY = padT + (max / span) * (h - padT - padB);
   // Value labels scale with density: big and readable on sparse
   // charts, tighter when 17 bars share the width (Justin's ask,
   // 2026-10-26). Bars nearly touch for the same reason.
-  var vfs = pts.length <= 8 ? 16.5 : pts.length <= 13 ? 14.5 : 12.5;
+  var vfs = vfsEarly;
   var out = '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Metric chart">';
   out += '<line x1="' + padX + '" y1="' + zeroY + '" x2="' + (w - padX) + '" y2="' + zeroY + '" stroke="#3a372d" stroke-width="1"/>';
   pts.forEach(function (p, i) {
@@ -2758,6 +2772,7 @@ var QM_METRICS = {
   netIncome: { name: 'Net income', fmt: fmtMoneyShort, get: function (d, i) { return d.netIncome && d.netIncome[i]; } },
   eps: { name: 'EPS (diluted)', fmt: function (v) { return '$' + fmtNum(v, 2); }, get: function (d, i) { return d.eps && d.eps[i]; } },
   fcf: { name: 'Free cash flow', fmt: fmtMoneyShort, get: function (d, i) { return d.fcf && d.fcf[i]; } },
+  shares: { name: 'Shares outstanding', fmt: fmtSharesShort, get: function (d, i) { return d.shares && d.shares[i]; } },
   grossMargin: { name: 'Gross margin', fmt: function (v) { return fmtNum(v, 1) + '%'; }, get: function (d, i) { return (isNum(d.grossProfit && d.grossProfit[i]) && isNum(d.revenue && d.revenue[i]) && d.revenue[i] !== 0) ? d.grossProfit[i] / d.revenue[i] * 100 : null; } },
   operMargin: { name: 'Operating margin', fmt: function (v) { return fmtNum(v, 1) + '%'; }, get: function (d, i) { return (isNum(d.operIncome && d.operIncome[i]) && isNum(d.revenue && d.revenue[i]) && d.revenue[i] !== 0) ? d.operIncome[i] / d.revenue[i] * 100 : null; } },
   netMargin: { name: 'Net margin', fmt: function (v) { return fmtNum(v, 1) + '%'; }, get: function (d, i) { return (isNum(d.netIncome && d.netIncome[i]) && isNum(d.revenue && d.revenue[i]) && d.revenue[i] !== 0) ? d.netIncome[i] / d.revenue[i] * 100 : null; } }
@@ -2769,6 +2784,8 @@ function renderQm() {
   document.querySelectorAll('[data-qm]').forEach(function (b) {
     b.classList.toggle('on', b.getAttribute('data-qm') === qmMetric);
   });
+  var qmName = $('qm-metric-name'), qmActive = document.querySelector('[data-qm="' + qmMetric + '"]');
+  if (qmName && qmActive) qmName.textContent = qmActive.textContent;
   document.querySelectorAll('[data-qmfreq]').forEach(function (b) {
     b.classList.toggle('active', b.getAttribute('data-qmfreq') === qmFreq);
   });
@@ -5746,7 +5763,20 @@ function initApp() {
   attachAutocomplete($('qm-ticker'), function (sym) { $('qm-ticker').value = sym; loadQm(); });
   $('qm-load-form').addEventListener('submit', function (e) { e.preventDefault(); loadQm(); $('qm-ticker').blur(); });
   document.querySelectorAll('[data-qm]').forEach(function (b) {
-    b.addEventListener('click', function () { qmMetric = b.getAttribute('data-qm'); renderQm(); });
+    b.addEventListener('click', function () {
+      qmMetric = b.getAttribute('data-qm');
+      var list = $('qm-metric-list'), btn = $('qm-metric-btn');
+      if (list) list.hidden = true;
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+      renderQm();
+    });
+  });
+  var qmBtn = $('qm-metric-btn');
+  if (qmBtn) qmBtn.addEventListener('click', function () {
+    var list = $('qm-metric-list');
+    if (!list) return;
+    list.hidden = !list.hidden;
+    qmBtn.setAttribute('aria-expanded', list.hidden ? 'false' : 'true');
   });
   try { qmFreq = lsGet('sr_qmfreq', 'q') === 'y' ? 'y' : 'q'; } catch (e) {}
   document.querySelectorAll('[data-qmfreq]').forEach(function (b) {
