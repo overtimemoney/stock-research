@@ -3382,6 +3382,22 @@ function maybeStartScan() {
 }
 
 function scanScoreClass(score) { return score >= 70 ? 'up' : (score >= 45 ? '' : 'down'); }
+/* Pill color as a smooth ramp instead of the three hard buckets, so a
+ * 44 and a 45 look nearly identical (Justin's call, 2026-10-31): red at
+ * 30, the neutral warm white at 50, green at 70, clamped outside. */
+function scanScoreStyle(score) {
+  if (!isNum(score)) return '';
+  var stops = [[30, [255, 90, 77]], [50, [244, 239, 227]], [70, [47, 191, 107]]];
+  var c;
+  if (score <= stops[0][0]) c = stops[0][1];
+  else if (score >= stops[2][0]) c = stops[2][1];
+  else {
+    var a = score < 50 ? stops[0] : stops[1], b = score < 50 ? stops[1] : stops[2];
+    var t = (score - a[0]) / (b[0] - a[0]);
+    c = a[1].map(function (v, i) { return Math.round(v + (b[1][i] - v) * t); });
+  }
+  return ' style=' + String.fromCharCode(34) + 'color:rgb(' + c.join(',') + ');border-color:rgba(' + c.join(',') + ',.45)' + String.fromCharCode(34);
+}
 
 /* Tappable share-amount sheet for purchases/sales (Justin's ask,
  * 2026-10-26): typing ALL into a phone prompt was too easy to miss,
@@ -3443,7 +3459,7 @@ function renderScanCard() {
           '<span class="scan-rank">' + (i + 1) + '</span>' +
           logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + scanNewPill(ix.key, row.t) + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
-          '<span class="scan-score ' + scanScoreClass(row.score) + '">Score ' + row.score + '</span></button>';
+          '<span class="scan-score" + scanScoreStyle(row.score) + >Score ' + row.score + '</span></button>';
       });
     });
     return out;
@@ -3483,7 +3499,7 @@ function renderScanCard() {
           '<span class="scan-rank">' + (i + 1) + '</span>' +
           logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + scanNewPill(ix.key, row.t) + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
-          '<span class="scan-score ' + scanScoreClass(row.score) + '">Score ' + row.score + '</span></button>';
+          '<span class="scan-score" + scanScoreStyle(row.score) + >Score ' + row.score + '</span></button>';
       });
     });
     return out;
@@ -3641,7 +3657,7 @@ function runScreener() {
       '<span class="scan-rank">' + (i + 1) + '</span>' +
       logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name || row.t) + '</span></span>' +
       '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
-      '<span class="scan-score ' + scanScoreClass(row.score) + '">Score ' + row.score + '</span></button>';
+      '<span class="scan-score" + scanScoreStyle(row.score) + >Score ' + row.score + '</span></button>';
   });
   if (!out.length && isNum(f.dy) && !anyYield) html += '<div class="status">Dividend yield isn\'t in the stored data yet \u2014 it arrives with the next scan, or tap Rescan on the Watchlist scan card to get it now.</div>';
   else if (!out.length) html += '<div class="status">No stored stocks match those filters.</div>';
