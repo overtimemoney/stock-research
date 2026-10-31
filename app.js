@@ -1893,6 +1893,7 @@ async function runCompare() {
  * its growth recomputes, edit a growth % and that year's EPS recomputes. */
 var pjPath = [];            // [{label:'FY2026', eps:1.42, extrapolated:bool}]
 var pjPathFromForecast = false;
+var pjDivYield = null, pjDivYieldTicker = null; /* dividend yield (%) captured for the builder's ticker at load/restore */
 var PJ_KEY = 'sr_projections_v1';
 function getProjections() { return lsGet(PJ_KEY, {}); }
 function setProjections(p) { lsSet(PJ_KEY, p); }
@@ -1912,7 +1913,8 @@ function pjSavedCagr(T) {
   var s = getProjections()[T];
   var fp = pjSavedBase(T);
   if (!s || !isNum(fp) || !isNum(s.price) || s.price <= 0 || !isNum(s.years) || s.years < 1 || fp <= 0) return null;
-  return (Math.pow(fp / s.price, 1 / s.years) - 1) * 100;
+  var divF = isNum(s.divYield) && s.divYield > 0 ? Math.pow(1 + s.divYield / 100, s.years) : 1;
+  return (Math.pow(fp / s.price * divF, 1 / s.years) - 1) * 100;
 }
 function pjSaveCurrent() {
   var T = ($('pj-ticker').value || '').trim().toUpperCase();
@@ -1926,6 +1928,7 @@ function pjSaveCurrent() {
     price: parseFloat($('pj-price').value), baseEps: pjBaseEps(),
     flatGrowth: pjFlatGrowth(), years: pjYearsWanted(),
     mult: parseFloat($('pj-mult').value),
+    divYield: (T === pjDivYieldTicker && isNum(pjDivYield)) ? pjDivYield : null,
     path: JSON.parse(JSON.stringify(pjPath)), fromForecast: pjPathFromForecast
   };
   setProjections(all);
@@ -1937,6 +1940,7 @@ function pjRestore(T) {
   if (!s) return;
   pjLoaded = null;
   pjMultAuto = null;
+  pjDivYieldTicker = T; pjDivYield = isNum(s.divYield) ? s.divYield : null;
   $('pj-ticker').value = T;
   if (isNum(s.price)) $('pj-price').value = s.price;
   if (isNum(s.baseEps)) $('pj-eps').value = s.baseEps;
@@ -2184,6 +2188,7 @@ async function loadProjectionTicker() {
     if (fcBits.length) bits.push('analyst EPS path ' + fcBits.map(function (r) { return fmtMoney(r.eps); }).join(' → '));
     if (isNum(d.epsGrowth5Y)) bits.push('analyst 5-yr EPS growth ' + fmtNum(d.epsGrowth5Y, 1) + '%/yr');
     else if (isNum(d.epsGrowthNextY)) bits.push('next-yr EPS growth ' + fmtNum(d.epsGrowthNextY, 1) + '%');
+    pjDivYieldTicker = T; pjDivYield = isNum(d.divYield) ? d.divYield : null;
     status.textContent = 'Loaded ' + T + (bits.length ? ' — ' + bits.join(' · ') : '') + '. Adjust the assumptions below, then build.';
     runProjection();
   } catch (e) {
@@ -2210,6 +2215,9 @@ function runProjection() {
     { name: 'Base', d: 0, m: mult },
     { name: 'Bull', d: 5, m: mult * 1.2 }
   ];
+  var pjT = ($('pj-ticker').value || '').trim().toUpperCase();
+  var divY = (pjT && pjT === pjDivYieldTicker && isNum(pjDivYield) && pjDivYield > 0) ? pjDivYield : 0;
+  var divF = divY > 0 ? Math.pow(1 + divY / 100, years) : 1;
   var html = '<div class="tbl-scroll"><table class="factors scen"><tr><th>Case</th><th>EPS in ' + years + 'y</th><th>Exit P/E</th><th class="num">Implied price</th><th class="num">Return</th><th class="num">CAGR</th></tr>';
   scen.forEach(function (s) {
     var feps = pjCaseEps(base, path, s.d);
@@ -2218,14 +2226,16 @@ function runProjection() {
       return;
     }
     var fp = feps * s.m;
-    var ret = (fp / price - 1) * 100;
-    var cagr = fp > 0 ? (Math.pow(fp / price, 1 / years) - 1) * 100 : -100;
+    var tot = fp > 0 ? (fp / price) * divF : fp / price;
+    var ret = (tot - 1) * 100;
+    var cagr = fp > 0 ? (Math.pow(tot, 1 / years) - 1) * 100 : -100;
     html += '<tr><td><strong>' + s.name + '</strong></td><td>' + fmtMoney(feps) + '</td><td>' + fmtNum(s.m, 1) + '×</td>' +
       '<td class="num"><strong>' + fmtMoney(fp) + '</strong></td><td class="num ' + (ret >= 0 ? 'up' : 'down') + '">' + fmtPct(ret) + '</td><td class="num">' + fmtPct(cagr) + '</td></tr>';
   });
   var curT = ($('pj-ticker').value || '').trim().toUpperCase();
   var savedPj = curT ? getProjections()[curT] : null;
   html += '</table></div>';
+  if (divY > 0) html += '<p class="fineprint">Return and CAGR include dividends at the current ' + fmtNum(divY, 2) + '% yield, reinvested.</p>';
   html += '<div class="pj-save-row"><button class="btn-gold" id="pj-save" type="button">' + (savedPj ? 'Update saved projection' : 'Save projection') + '</button>' +
     (savedPj
       ? '<span class="factor-note">Saved for ' + esc(curT) + ' on ' + esc(String(savedPj.savedAt || '').slice(0, 10)) + '</span><button class="link-btn danger" id="pj-del" type="button">Delete saved</button>'
