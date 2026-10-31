@@ -1417,8 +1417,8 @@ function renderScorecard(d) {
   var vClass = sc.verdict === 'Undervalued' ? 'undervalued' : sc.verdict === 'Fairly valued' ? 'fair' : 'overpriced';
   var chgCls = isNum(d.dayChangePct) ? (d.dayChangePct >= 0 ? 'up' : 'down') : '';
   var html = '<div class="card">';
-  html += '<div class="sc-head"><div><div class="sc-name">' + esc(d.companyName || d.ticker) + ' <span class="gold-text">' + esc(d.ticker) + '</span></div>' +
-    '<div class="sc-sub">' + esc([d.exchange, d.sector, d.industry].filter(Boolean).join(' · ')) + '</div></div>' +
+  html += '<div class="sc-head"><div class="sc-head-l">' + logoTile(d.ticker, 'lg') + '<div><div class="sc-name">' + esc(d.companyName || d.ticker) + ' <span class="gold-text">' + esc(d.ticker) + '</span></div>' +
+    '<div class="sc-sub">' + esc([d.exchange, d.sector, d.industry].filter(Boolean).join(' · ')) + '</div></div></div>' +
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
 
@@ -1670,7 +1670,7 @@ async function runCompare() {
     { label: 'Score', get: function (d) { return scoreStock(d).score; }, fmt: function (v) { return isNum(v) ? v + ' / 100' : '—'; }, best: 'max' }
   ];
   var html = '<div class="card"><table class="cmp"><tr><th></th>';
-  ok.forEach(function (d) { html += '<th class="num">' + esc(d.ticker) + '</th>'; });
+  ok.forEach(function (d) { html += '<th class="num"><span class="cmp-th">' + logoTile(d.ticker, 'sm') + esc(d.ticker) + '</span></th>'; });
   html += '</tr>';
   rows.forEach(function (row) {
     var vals = ok.map(row.get);
@@ -3028,7 +3028,7 @@ function renderScanCard() {
       rows.forEach(function (row, i) {
         out += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
           '<span class="scan-rank">' + (i + 1) + '</span>' +
-          '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + '</span></span>' +
+          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
           '<span class="scan-score ' + scanScoreClass(row.score) + '">Score ' + row.score + '</span></button>';
       });
@@ -3067,7 +3067,7 @@ function renderScanCard() {
       rows.forEach(function (row, i) {
         out += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
           '<span class="scan-rank">' + (i + 1) + '</span>' +
-          '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + '</span></span>' +
+          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
           '<span class="scan-score ' + scanScoreClass(row.score) + '">Score ' + row.score + '</span></button>';
       });
@@ -3191,8 +3191,8 @@ function renderOverview(d, item) {
   var rk = riskScore(d);
   var chgCls = isNum(d.dayChangePct) ? (d.dayChangePct >= 0 ? 'up' : 'down') : '';
   var html = '<div class="card">';
-  html += '<div class="sc-head"><div><div class="sc-name">' + esc(d.companyName || d.ticker) + ' <span class="gold-text">' + esc(d.ticker) + '</span></div>' +
-    '<div class="sc-sub">' + esc([d.exchange, d.sector, d.industry].filter(Boolean).join(' \u00b7 ')) + '</div></div>' +
+  html += '<div class="sc-head"><div class="sc-head-l">' + logoTile(d.ticker, 'lg') + '<div><div class="sc-name">' + esc(d.companyName || d.ticker) + ' <span class="gold-text">' + esc(d.ticker) + '</span></div>' +
+    '<div class="sc-sub">' + esc([d.exchange, d.sector, d.industry].filter(Boolean).join(' \u00b7 ')) + '</div></div></div>' +
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
   if (item && isNum(item.target) && item.target > 0 && isNum(d.price)) {
@@ -3390,7 +3390,7 @@ async function renderWatchlist(refresh) {
     // and the valuation/risk line only. Target, distance-to-target,
     // projection and the action menu all live in the full-screen
     // overview a tap opens.
-    html += '<div class="wl-row" data-ticker="' + esc(item.ticker) + '"><div class="wl-left"><span class="wl-t">' + esc(item.ticker) + '</span>' +
+    html += '<div class="wl-row" data-ticker="' + esc(item.ticker) + '">' + logoTile(item.ticker) + '<div class="wl-left"><span class="wl-t">' + esc(item.ticker) + '</span>' +
       '<div class="wl-meta wl-val">' + (r.val ? wlValInner(r.val) : '') + '</div>' +
       '</div>' +
       '<div class="wl-right"><div class="wl-price">' + (isNum(price) ? fmtMoney(price) : '\u2014') + '</div>' +
@@ -3528,6 +3528,12 @@ function pfLogoErr(img) {
   var fb = img.getAttribute('data-fb');
   if (fb) { img.removeAttribute('data-fb'); img.src = fb; }
   else img.style.display = 'none';
+}
+/* Company logo tile (Justin's rollout, 2026-10-30): white rounded
+ * tile, ticker initial behind the image; pfLogoImg/p pfLogoErr give
+ * the FMP -> Parqet -> letter fallback chain the Profile tab uses. */
+function logoTile(ticker, cls) {
+  return '<span class="logo-tile ' + (cls || '') + '" aria-hidden="true">' + esc(String(ticker || '?').charAt(0).toUpperCase()) + pfLogoImg(ticker) + '</span>';
 }
 function pfLogoImg(ticker) {
   return '<img class="pf-logo" src="https://financialmodelingprep.com/image-stock/' + encodeURIComponent(ticker) + '.png" data-fb="https://assets.parqet.com/logos/symbol/' + encodeURIComponent(ticker) + '?format=png" onerror="pfLogoErr(this)" alt="">';
