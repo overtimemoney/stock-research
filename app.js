@@ -1189,7 +1189,7 @@ function lineChartSVG(closes, high52, w, h, startText) {
   out += '<text x="' + padX + '" y="' + (h - 5) + '" font-size="11" font-weight="700" fill="#77705f">' + startText + '</text>' +
     '<text x="' + (w - padX) + '" y="' + (h - 5) + '" text-anchor="end" font-size="11" font-weight="700" fill="#77705f">now · ' + fmtNum(closes[closes.length - 1]) + '</text>';
   out += '<g class="px-scrub" style="display:none"><line class="px-scrub-line" y1="' + padT + '" y2="' + (h - padB) + '" stroke-width="1" stroke-dasharray="4 4" style="stroke:var(--muted)"/>' +
-    '<circle class="px-scrub-dot" r="4.6" style="fill:var(--chart-line)" stroke="#0d0d0f" stroke-width="1.6"/></g>' +
+    '<circle class="px-scrub-halo" r="11" style="fill:var(--chart-line)" opacity=".18"/><circle class="px-scrub-dot" r="5.6" style="fill:var(--chart-line)" stroke="#0d0d0f" stroke-width="1.6"/></g>' +
     '<rect class="px-scrub-zone" x="0" y="0" width="' + w + '" height="' + (h - padB + 4) + '" fill="transparent" style="touch-action:none"/>';
   out += '</svg>';
   return out;
@@ -1252,7 +1252,7 @@ function renderScChart(d) {
   }
   var startText = range === '1y' ? '1 year ago' : (range === '5y' ? '5 years ago' : (range === '10y' ? '10 years ago' : (d.histMaxTs && isNum(d.histMaxTs[0]) ? 'since ' + new Date(d.histMaxTs[0] * 1000).getFullYear() : 'At the start')));
   box.innerHTML = '<div id="sc-chart-read" class="pf-bench-read">Drag across the chart to see the price at any point.</div>' +
-    '<div class="chart-wrap">' + lineChartSVG(series, range === '1y' ? d.high52 : null, 640, 240, startText) + '</div>';
+    '<div class="chart-wrap">' + lineChartSVG(series, range === '1y' ? d.high52 : null, 640, 264, startText) + '</div>';
   bindPriceScrub(d, range);
 }
 
@@ -1276,7 +1276,7 @@ function bindPriceScrub(d, range) {
   var span = (max - min) || 1, padT = 16, padB = 20, padX = 6, W = (vb && vb.width) || 640, H = (vb && vb.height) || 240;
   var X = function (i) { return padX + i * (W - padX * 2) / (n - 1); };
   var Y = function (v) { return padT + (max - v) / span * (H - padT - padB); };
-  var line = grp.querySelector('.px-scrub-line'), dot = grp.querySelector('.px-scrub-dot');
+  var line = grp.querySelector('.px-scrub-line'), dot = grp.querySelector('.px-scrub-dot'), halo = grp.querySelector('.px-scrub-halo');
   var MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var scrubbing = false;
   function dateFor(i) {
@@ -1297,13 +1297,15 @@ function bindPriceScrub(d, range) {
     grp.style.display = '';
     line.setAttribute('x1', x); line.setAttribute('x2', x);
     dot.setAttribute('cx', x); dot.setAttribute('cy', y);
+    if (halo) { halo.setAttribute('cx', x); halo.setAttribute('cy', y); }
     var chg = (closes[i] / closes[0] - 1) * 100;
     read.innerHTML = '<b class="pf-read-date">' + dateFor(i) + '</b> \u00b7 <b>' + fmtMoney(closes[i]) + '</b> \u00b7 <b class="' + (chg >= 0 ? 'up' : 'down') + '">' + fmtPct(chg) + '</b> since start';
   }
   zone.addEventListener('pointerdown', function (e) { scrubbing = true; try { zone.setPointerCapture(e.pointerId); } catch (err) {} scrubTo(e.clientX); e.preventDefault(); });
   zone.addEventListener('pointermove', function (e) { if (scrubbing) scrubTo(e.clientX); });
-  zone.addEventListener('pointerup', function () { scrubbing = false; });
-  zone.addEventListener('pointercancel', function () { scrubbing = false; });
+  function endScrub() { scrubbing = false; grp.style.display = 'none'; }
+  zone.addEventListener('pointerup', endScrub);
+  zone.addEventListener('pointercancel', endScrub);
 }
 
 /* ============================== scorecard UI ============================== */
