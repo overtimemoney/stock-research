@@ -6606,6 +6606,216 @@ if (typeof document !== 'undefined' && document.getElementById) {
   } catch (e) {}
 })();
 
+/* ==================== First-save account prompt ====================
+ * Value first, account second (Justin's call, 2026-10-31): the quiz
+ * and the app stay fully open — no account wall anywhere. The FIRST
+ * time a signed-out user saves something real (adds a watchlist stock
+ * or a portfolio position), a bottom sheet offers a free Cloud Sync
+ * account as a backup. Each trigger fires at most once per device,
+ * ever: the localStorage flags in sr_acctprompt_v1 are LOCAL-ONLY and
+ * deliberately NOT one of the Supabase synced keys.
+ *
+ * Detection is passive and cannot break a save: this block wraps
+ * Storage.prototype.setItem (the same technique the sync layer uses),
+ * calls the original first, and only then diffs the ticker sets of
+ * sr_watchlist_v1 / sr_portfolio_v1 writes to spot a genuinely new
+ * ticker. The sheet itself appears ~700ms after the save, once the
+ * add has fully completed and rendered.
+ *
+ * Signed-in state is never guessed. detectSignedIn() returns true
+ * (signed in), false (confidently signed out), or null (unknown) and
+ * the prompt only shows on an explicit false: a Supabase session
+ * token in localStorage (sb-<ref>-auth-token, written by the auth
+ * library itself) or the sync section's signed-in panel both mean
+ * signed in; an unreadable token or any ambiguity suppresses the
+ * prompt — a missed pitch beats nagging a signed-in user. */
+(function srAccountPrompt() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  if (typeof localStorage === 'undefined' || typeof Storage === 'undefined') return;
+
+  var FLAG_KEY = 'sr_acctprompt_v1';
+  var WL_KEY_L = 'sr_watchlist_v1';
+  var PF_KEY_L = 'sr_portfolio_v1';
+  var sheetEl = null;
+  var timer = null;
+
+  function readFlags() {
+    try {
+      var v = JSON.parse(localStorage.getItem(FLAG_KEY) || '{}');
+      return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
+    } catch (e) { return {}; }
+  }
+  function alreadyShown(kind) {
+    try { return !!readFlags()[kind]; } catch (e) { return true; }
+  }
+  function markShown(kind) {
+    try {
+      var f = readFlags();
+      f[kind] = 1;
+      localStorage.setItem(FLAG_KEY, JSON.stringify(f));
+    } catch (e) {}
+  }
+
+  function detectSignedIn() {
+    try {
+      var url = String(window.SR_SUPABASE_URL || '').trim();
+      var anon = String(window.SR_SUPABASE_ANON_KEY || '').trim();
+      if (!url || !anon) return null; // sync not configured: no account to pitch
+      var section = document.getElementById('sync-section');
+      if (!section || section.hidden) return null;
+      var tokenUser = false;
+      var tokenBad = false;
+      try {
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (!k || k.indexOf('sb-') !== 0 || k.slice(-11) !== '-auth-token') continue;
+          try {
+            var parsed = JSON.parse(localStorage.getItem(k) || 'null');
+            var sess = null;
+            if (parsed && typeof parsed === 'object') {
+              if (parsed.user) sess = parsed;
+              else if (parsed.currentSession && parsed.currentSession.user) sess = parsed.currentSession;
+              else if (parsed.session && parsed.session.user) sess = parsed.session;
+            }
+            if (sess && sess.user && (sess.user.id || sess.user.email)) tokenUser = true;
+          } catch (e) { tokenBad = true; }
+        }
+      } catch (e) { return null; }
+      if (tokenUser) return true;
+      if (tokenBad) return null;
+      var inn = document.getElementById('sync-signed-in');
+      var out = document.getElementById('sync-signed-out');
+      if (inn && !inn.hidden) return true;
+      if (out && !out.hidden) return false;
+      return null;
+    } catch (e) { return null; }
+  }
+
+  function tickerSet(raw) {
+    var set = {};
+    try {
+      var arr = JSON.parse(raw || '[]');
+      if (Array.isArray(arr)) {
+        arr.forEach(function (x) {
+          if (x && x.ticker) set[String(x.ticker).toUpperCase()] = 1;
+        });
+      }
+    } catch (e) {}
+    return set;
+  }
+
+  function onSaveWrite(kind, beforeRaw, afterRaw) {
+    try {
+      if (alreadyShown(kind)) return;
+      var before = tickerSet(beforeRaw);
+      var after = tickerSet(afterRaw);
+      var added = false;
+      for (var t in after) { if (!before[t]) { added = true; break; } }
+      if (added) schedule(kind);
+    } catch (e) {}
+  }
+
+  function schedule(kind) {
+    if (timer || sheetEl) return; // one prompt at a time, ever
+    timer = setTimeout(function () {
+      timer = null;
+      try { tryShow(kind); } catch (e) {}
+    }, 700);
+  }
+
+  function quizOpen() {
+    try {
+      var ov = document.getElementById('ob-overlay');
+      return !!ov && !ov.hidden;
+    } catch (e) { return false; }
+  }
+
+  function tryShow(kind) {
+    if (sheetEl) return;
+    if (alreadyShown(kind)) return;
+    if (quizOpen()) return; // never during the onboarding quiz
+    if (detectSignedIn() !== false) return; // signed in, or unsure: stay silent
+    markShown(kind); // shown once = consumed, whatever they tap
+    buildSheet();
+  }
+
+  function closeSheet() {
+    try {
+      if (sheetEl && sheetEl.parentNode) sheetEl.parentNode.removeChild(sheetEl);
+    } catch (e) {}
+    sheetEl = null;
+  }
+
+  function gotoSyncSignup() {
+    try { if (typeof switchTab === 'function') switchTab('portfolio'); } catch (e) {}
+    /* The menu opens on a tick, not synchronously: the app closes the
+     * settings menu on any document click outside it, and the CTA tap
+     * that brought us here is still bubbling toward document — opening
+     * the menu inside that same dispatch would close it instantly. */
+    setTimeout(function () {
+      try {
+        var menu = document.getElementById('settings-menu');
+        var gear = document.getElementById('btn-settings');
+        if (menu) menu.hidden = false;
+        if (gear) gear.setAttribute('aria-expanded', 'true');
+        var sec = document.getElementById('sync-section');
+        if (sec && sec.scrollIntoView) sec.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch (e) {}
+      setTimeout(function () {
+        try {
+          var em = document.getElementById('sync-email');
+          if (em) em.focus();
+        } catch (e) {}
+      }, 400);
+    }, 80);
+  }
+
+  function buildSheet() {
+    var bg = document.createElement('div');
+    bg.className = 'pf-sheet-bg';
+    bg.innerHTML = '<div class="pf-sheet" role="dialog" aria-modal="true" aria-label="Back this up">' +
+      '<h4>Back this up</h4>' +
+      '<p class="ap-body">Create a free account and your watchlist, portfolio, and research sync to the cloud.</p>' +
+      '<div class="pf-sheet-row" style="margin-top:12px">' +
+      '<button type="button" class="btn-ghost" id="ap-notnow" style="flex:1">Not now</button>' +
+      '<button type="button" class="pf-sh-save" id="ap-cta" style="flex:1">Create free account</button>' +
+      '</div></div>';
+    document.body.appendChild(bg);
+    sheetEl = bg;
+    var cta = bg.querySelector('#ap-cta');
+    if (cta) cta.addEventListener('click', function (e) { if (e) e.stopPropagation(); closeSheet(); gotoSyncSignup(); });
+    var nn = bg.querySelector('#ap-notnow');
+    if (nn) nn.addEventListener('click', function () { closeSheet(); });
+    bg.addEventListener('click', function (e) { if (e.target === bg) closeSheet(); });
+  }
+
+  /* Passive save observer: the original write always runs first and
+   * its result is always returned; observation is fully guarded so a
+   * failure here can never break a watchlist/portfolio save. Chains
+   * cleanly with the sync layer's own setItem patch (install order
+   * does not matter — each wrapper calls the previous one). */
+  try {
+    var origSetItem = Storage.prototype.setItem;
+    if (!origSetItem.__srAcctPrompt) {
+      var wrappedSetItem = function (k, v) {
+        var watch = false;
+        var before = null;
+        try {
+          watch = (this === localStorage) && (k === WL_KEY_L || k === PF_KEY_L);
+          if (watch) { try { before = this.getItem(k); } catch (e) { before = null; } }
+        } catch (e) { watch = false; }
+        var out = origSetItem.apply(this, arguments);
+        if (watch) {
+          try { onSaveWrite(k === WL_KEY_L ? 'wl' : 'pf', before, v); } catch (e) {}
+        }
+        return out;
+      };
+      wrappedSetItem.__srAcctPrompt = true;
+      Storage.prototype.setItem = wrappedSetItem;
+    }
+  } catch (e) {}
+})();
+
 /* Node export for offline pipeline tests (ignored in the browser). */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr, buildSwot: buildSwot, tickerSuggestions: tickerSuggestions, pjFadeGrowth: pjFadeGrowth, pfPaletteColors: pfPaletteColors, parseSAPeHistory: parseSAPeHistory, fetchPe5yAvg: fetchPe5yAvg };
