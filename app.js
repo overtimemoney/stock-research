@@ -3477,7 +3477,7 @@ function renderScanCard() {
           '<span class="scan-rank">' + (i + 1) + '</span>' +
           logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + scanNewPill(ix.key, row.t) + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
-          '<span class="scan-score" + scanScoreStyle(row.score) + >Score ' + row.score + '</span></button>';
+          '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
       });
     });
     return out;
@@ -3517,7 +3517,7 @@ function renderScanCard() {
           '<span class="scan-rank">' + (i + 1) + '</span>' +
           logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + scanNewPill(ix.key, row.t) + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
-          '<span class="scan-score" + scanScoreStyle(row.score) + >Score ' + row.score + '</span></button>';
+          '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
       });
     });
     return out;
@@ -3675,7 +3675,7 @@ function runScreener() {
       '<span class="scan-rank">' + (i + 1) + '</span>' +
       logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name || row.t) + '</span></span>' +
       '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
-      '<span class="scan-score" + scanScoreStyle(row.score) + >Score ' + row.score + '</span></button>';
+      '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
   });
   if (!out.length && isNum(f.dy) && !anyYield) html += '<div class="status">Dividend yield isn\'t in the stored data yet \u2014 it arrives with the next scan, or tap Rescan on the Watchlist scan card to get it now.</div>';
   else if (!out.length) html += '<div class="status">No stored stocks match those filters.</div>';
