@@ -1288,6 +1288,7 @@ var INFO_TEXT = {
   range52: 'The lowest and highest prices of the last 52 weeks (one year) \u2014 the range the stock has actually traded in recently.',
   belowhigh: 'How far below its one-year high the price sits, as a %. A big gap can be a bargain \u2014 or a warning that something is wrong. It is a starting clue, never proof.',
   divyield: 'Dividend yield = the yearly dividend per share as a % of the price. 2% on a $100 stock means about $2 a year in cash payments while you hold it. 0% means no dividend.',
+  payout: 'Payout ratio = the % of earnings paid out as dividends. Under about 60% leaves a comfortable cushion \u2014 the dividend is covered even in a bad year. 60\u201385% uses most of earnings, and above 100% means paying out more than the company earns, which rarely lasts.',
   instown: 'Institutional ownership = the % of the company\u2019s shares held by big professional investors \u2014 mutual funds, pension funds, hedge funds. High means the pros have committed real money after doing their own homework; very high can also mean a crowded trade if they all head for the exit at once.',
   target: 'Analysts who cover this stock each publish a 12-month price target \u2014 where they think the price is headed. The bar shows the average of those targets: the white dot is today\u2019s price, the gold dot is the average target, and the % is the gap between them. Treat it as a sentiment check, not a promise \u2014 targets are opinions, they are often wrong, and they tend to chase the price after it moves rather than predict it.',
   mktcap: 'Market cap = share price \u00d7 total shares \u2014 what the whole company is worth at today\'s price. Big (over $200B) usually means steadier; small (under $2B) usually means swingier.',
@@ -1817,6 +1818,7 @@ function renderScorecard(d) {
   html += kvItem('52-wk range', (isNum(d.low52) ? fmtNum(d.low52, 0) : '—') + ' – ' + (isNum(d.high52) ? fmtNum(d.high52, 0) : '—'), 'range52');
   html += kvItem('Below 52-wk high', isNum(d.pctBelowHigh) ? fmtNum(d.pctBelowHigh, 1) + '%' : '—', 'belowhigh');
   html += kvItem('Dividend yield', isNum(d.divYield) ? fmtNum(d.divYield, 2) + '%' : '—', 'divyield');
+  if (isNum(d.payout)) html += kvItem('Payout ratio', fmtNum(d.payout, 1) + '%', 'payout');
   html += kvItem('Analyst 1-yr target', isNum(d.target1Y) ? fmtMoney(d.target1Y) : '—', 'target');
   if (isNum(d.instOwn)) html += kvItem('Institutional ownership', fmtNum(d.instOwn, 1) + '%', 'instown');
   html += '</div>';
@@ -3791,6 +3793,7 @@ function renderOverview(d, item) {
   html += kvItem('Beta', isNum(d.beta) ? fmtNum(d.beta, 2) : '\u2014');
   html += kvItem('Current ratio', isNum(d.currentRatio) ? fmtNum(d.currentRatio, 2) : '\u2014');
   html += kvItem('Dividend yield', isNum(d.divYield) ? fmtNum(d.divYield, 2) + '%' : '\u2014');
+  if (isNum(d.payout)) html += kvItem('Payout ratio', fmtNum(d.payout, 1) + '%');
   html += kvItem('Below 52-wk high', isNum(d.pctBelowHigh) ? fmtNum(d.pctBelowHigh, 1) + '%' : '\u2014');
   html += '</div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' +
@@ -5483,8 +5486,15 @@ function initApp() {
     if (!dot) return;
     e.preventDefault();
     e.stopPropagation();
-    var host = dot.closest('td, .kv-item, label, .scan-card');
-    var txt = host ? host.querySelector('.info-text') : null;
+    var key = dot.getAttribute('data-info');
+    var txt = null, node = dot;
+    for (var up = 0; up < 6 && !txt; up++) {
+      node = node.parentElement;
+      if (!node) break;
+      txt = node.querySelector('.info-text[data-info-text="' + key + '"]');
+      if (!txt && node.nextElementSibling && node.nextElementSibling.classList.contains('info-text') &&
+          node.nextElementSibling.getAttribute('data-info-text') === key) txt = node.nextElementSibling;
+    }
     if (txt) txt.classList.toggle('open');
   });
   $('set-clear-ai').addEventListener('click', function () {
