@@ -224,6 +224,12 @@ button.screen-toggle { display: flex; align-items: baseline; flex-wrap: nowrap; 
 .ceo-line b { color: var(--ink); }
 .ceo-bio { font-size: 13px; color: var(--ink2); line-height: 1.45; margin: 0 0 8px; }
 .ceo-perf { font-size: 13px; font-weight: 700; color: var(--ink2); margin: 0 0 8px; }
+.ceo-toggle { display: flex; justify-content: space-between; align-items: center; width: 100%; background: none; border: 0; padding: 0; margin: 2px 0 8px; cursor: pointer; font: inherit; text-align: left; }
+.ceo-toggle .ceo-line { margin: 0; }
+.ceo-chev { color: var(--gold); font-size: 12px; flex: none; margin-left: 10px; transition: transform 160ms ease-out; }
+.ceo-toggle[aria-expanded="true"] .ceo-chev { transform: rotate(90deg); }
+.ceo-meta { font-size: 13px; font-weight: 700; color: var(--ink2); margin: 0 0 8px; }
+.ceo-body { margin-bottom: 2px; }
 .fv-labs { position: relative; height: 17px; }
 .fv-lab { position: absolute; bottom: 1px; transform: translateX(-50%); font-size: 11px; font-weight: 800; letter-spacing: .04em; white-space: nowrap; }
 .fv-labs:last-child .fv-lab { bottom: auto; top: 2px; }

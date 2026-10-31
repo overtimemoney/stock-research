@@ -819,17 +819,21 @@ function ceoCacheSet(key, e) {
 }
 function ceoBlockHtml(d) {
   if (!d || !d.ceo) return '';
-  var h = '<p class="earn-line ceo-line">CEO \u00b7 <b>' + esc(d.ceo) + '</b>';
-  if (d.ceoSince) h += ' \u00b7 since ' + (d.ceoSince.m != null ? CEO_MON_SHORT[d.ceoSince.m] + ' ' : '') + d.ceoSince.y;
-  if (d.ceoFounder) h += ' \u00b7 <span class="gold-text">Founder</span>';
-  h += '</p>';
-  if (d.ceoBio) h += '<p class="ceo-bio">' + esc(d.ceoBio) + '</p>';
+  var head = 'CEO \u00b7 <b>' + esc(d.ceo) + '</b>';
+  var inner = '';
+  var meta = [];
+  if (d.ceoSince) meta.push('Since ' + (d.ceoSince.m != null ? CEO_MON_SHORT[d.ceoSince.m] + ' ' : '') + d.ceoSince.y);
+  if (d.ceoFounder) meta.push('<span class="gold-text">Founder</span>');
+  if (meta.length) inner += '<p class="ceo-meta">' + meta.join(' \u00b7 ') + '</p>';
+  if (d.ceoBio) inner += '<p class="ceo-bio">' + esc(d.ceoBio) + '</p>';
   if (isNum(d.ceoStartClose) && d.ceoStartClose > 0 && isNum(d.price) && d.ceoStartLabel) {
     var pct = (d.price / d.ceoStartClose - 1) * 100;
     var ptxt = (pct >= 0 ? '+' : '') + (Math.abs(pct) >= 100 ? fmtNum(pct, 0) : fmtNum(pct, 1)) + '%';
-    h += '<p class="ceo-perf">Stock <span class="' + (pct >= 0 ? 'up' : 'down') + '">' + ptxt + '</span> since ' + esc(d.ceoStartLabel) + '</p>';
+    inner += '<p class="ceo-perf">Stock <span class="' + (pct >= 0 ? 'up' : 'down') + '">' + ptxt + '</span> since ' + esc(d.ceoStartLabel) + '</p>';
   }
-  return h;
+  if (!inner) return '<p class="earn-line ceo-line">' + head + '</p>';
+  return '<button type="button" class="ceo-toggle" data-ceotoggle aria-expanded="false"><span class="earn-line ceo-line">' + head + '</span><span class="ceo-chev">\u25b8</span></button>' +
+    '<div class="ceo-body" hidden>' + inner + '</div>';
 }
 function parseSAAbout(html) {
   if (!html) return '';
@@ -5973,6 +5977,14 @@ function initApp() {
           node.nextElementSibling.getAttribute('data-info-text') === key) txt = node.nextElementSibling;
     }
     if (txt) txt.classList.toggle('open');
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-ceotoggle]') : null;
+    if (!b) return;
+    var body = b.nextElementSibling;
+    if (!body || !body.classList.contains('ceo-body')) return;
+    body.hidden = !body.hidden;
+    b.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
   });
   $('set-clear-ai').addEventListener('click', function () {
     if (!window.confirm('Are you sure you\u2019d like to clear saved AI SWOTs?')) return;
