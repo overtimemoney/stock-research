@@ -1289,7 +1289,7 @@ var INFO_TEXT = {
   belowhigh: 'How far below its one-year high the price sits, as a %. A big gap can be a bargain \u2014 or a warning that something is wrong. It is a starting clue, never proof.',
   divyield: 'Dividend yield = the yearly dividend per share as a % of the price. 2% on a $100 stock means about $2 a year in cash payments while you hold it. 0% means no dividend.',
   instown: 'Institutional ownership = the % of the company\u2019s shares held by big professional investors \u2014 mutual funds, pension funds, hedge funds. High means the pros have committed real money after doing their own homework; very high can also mean a crowded trade if they all head for the exit at once.',
-  target: 'The average price analysts who cover the stock expect within about a year. It is opinion, not a promise \u2014 treat it as a sentiment check, not a forecast to bank on.',
+  target: 'Analysts who cover this stock each publish a 12-month price target \u2014 where they think the price is headed. The bar shows the average of those targets: the white dot is today\u2019s price, the gold dot is the average target, and the % is the gap between them. Treat it as a sentiment check, not a promise \u2014 targets are opinions, they are often wrong, and they tend to chase the price after it moves rather than predict it.',
   mktcap: 'Market cap = share price \u00d7 total shares \u2014 what the whole company is worth at today\'s price. Big (over $200B) usually means steadier; small (under $2B) usually means swingier.',
   size: 'Company size by market cap (price \u00d7 shares). Smaller companies tend to swing harder, get less analyst coverage, and can be harder to sell in a panic \u2014 so small size adds risk points here.',
   currentratio: 'Current ratio = short-term assets \u00f7 short-term bills. Above 1 means the company can cover what it owes within the year. Below 1 can mean cash stress if business dips.',
@@ -1616,8 +1616,9 @@ function fvBarHtml(d) {
   var tgPos = (tgt - lo) / (hi - lo) * 100;
   var diff = (tgt / d.price - 1) * 100;
   var gapL = Math.min(pxPos, tgPos), gapW = Math.abs(tgPos - pxPos);
-  function labCls(p) { return p < 14 ? 'fv-lab l' : p > 86 ? 'fv-lab r' : 'fv-lab'; }
+  function labCls(p) { return p < 16 ? 'fv-lab l' : p > 72 ? 'fv-lab r' : 'fv-lab'; }
   return '<div class="fv-wrap">' +
+    '<div class="fv-head">Analyst price target' + infoDot('target') + '</div>' + infoText('target') +
     '<div class="fv-labs"><span class="' + labCls(pxPos) + ' now" style="left:' + pxPos.toFixed(1) + '%">Now ' + fmtMoney(d.price) + '</span></div>' +
     '<div class="fv-track">' +
     (gapW > 0.5 ? '<div class="fv-gap' + (diff < 0 ? ' dn' : '') + '" style="left:' + gapL.toFixed(1) + '%;width:' + gapW.toFixed(1) + '%"></div>' : '') +
