@@ -1132,15 +1132,15 @@ function lineChartSVG(closes, high52, w, h, startText) {
   if (!closes || closes.length < 2) return '';
   var padT = 16, padB = 20, padX = 6;
   var max = Math.max.apply(null, closes), min = Math.min.apply(null, closes);
-  if (isNum(high52)) max = Math.max(max, high52);
   var span = (max - min) || 1;
   var X = function (i) { return padX + i * (w - padX * 2) / (closes.length - 1); };
   var Y = function (v) { return padT + (max - v) / span * (h - padT - padB); };
   var pts = closes.map(function (c, i) { return X(i).toFixed(1) + ',' + Y(c).toFixed(1); }).join(' ');
   var out = '<svg class="px-chart" viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Price chart">';
   if (isNum(high52)) {
-    out += '<line x1="' + padX + '" y1="' + Y(high52) + '" x2="' + (w - padX) + '" y2="' + Y(high52) + '" stroke="#B46A11" stroke-width="1.4" stroke-dasharray="5 4"/>' +
-      '<text x="' + (w - padX) + '" y="' + (Y(high52) - 4) + '" text-anchor="end" font-size="11" font-weight="800" fill="#B46A11">52-wk high ' + fmtNum(high52, 0) + '</text>';
+    var hy = Y(Math.min(high52, max));
+    out += '<line x1="' + padX + '" y1="' + hy + '" x2="' + (w - padX) + '" y2="' + hy + '" stroke="#B46A11" stroke-width="1.4" stroke-dasharray="5 4"/>' +
+      '<text x="' + (w - padX) + '" y="' + (hy - 4) + '" text-anchor="end" font-size="11" font-weight="800" fill="#B46A11">52-wk high ' + fmtNum(high52, 0) + '</text>';
   }
   out += '<polyline points="' + pts + '" fill="none" style="stroke:var(--chart-line)" stroke-width="2.2" stroke-linejoin="round"/>';
   out += '<text x="' + padX + '" y="' + (h - 5) + '" font-size="11" font-weight="700" fill="#77705f">' + startText + '</text>' +
@@ -1229,7 +1229,6 @@ function bindPriceScrub(d, range) {
   if (!svg || !zone || !grp || !read) return;
   var closes = series, n = closes.length;
   var max = Math.max.apply(null, closes), min = Math.min.apply(null, closes);
-  if (range === '1y' && isNum(d.high52)) max = Math.max(max, d.high52);
   var vb = svg.viewBox && svg.viewBox.baseVal;
   var span = (max - min) || 1, padT = 16, padB = 20, padX = 6, W = (vb && vb.width) || 640, H = (vb && vb.height) || 240;
   var X = function (i) { return padX + i * (W - padX * 2) / (n - 1); };
@@ -1781,9 +1780,9 @@ function renderScorecard(d) {
   html += radarCardHtml(d);
 
   var vMiss = [];
-  screen.forEach(function (s, i) { if (s.test === false) vMiss.push(['Market cap', 'Forward P/E', 'PEG', 'Below high'][i]); });
+  screen.forEach(function (s, i) { if (s.test === false) vMiss.push(['Market cap', 'Fwd P/E', 'PEG', 'Below high'][i]); });
   var vSum = vMiss.length ? ' \u00b7 misses ' + vMiss.join(', ') : (knownCount > 0 && passCount === knownCount ? ' \u00b7 all clear' : '');
-  html += '<button type="button" class="section-h screen-toggle" data-stoggle="vs">Your value screen \u2014 <span class="gold-text">' + passCount + ' of ' + knownCount + '</span><span class="screen-sum">' + vSum + '</span><span class="screen-chev">\u25b8</span></button>';
+  html += '<button type="button" class="section-h screen-toggle" data-stoggle="vs"><span class="screen-name">Value screen \u2014</span> <span class="gold-text screen-count">' + passCount + ' of ' + knownCount + '</span><span class="screen-sum">' + vSum + '</span><span class="screen-chev">\u25b8</span></button>';
   html += '<div class="screen-chips" data-sbody="vs" hidden>';
   screen.forEach(function (s) {
     var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
@@ -1798,7 +1797,7 @@ function renderScorecard(d) {
   var rMiss = [];
   rScreen.forEach(function (s, i) { if (s.test === false) rMiss.push(['Debt/Eq', 'Profitability', 'Current ratio', 'Beta', 'EPS growth', 'Boom-bust'][i]); });
   var rSum = rMiss.length ? ' \u00b7 flags ' + rMiss.join(', ') : (rKnown > 0 && rPass === rKnown ? ' \u00b7 all clear' : '');
-  html += '<button type="button" class="section-h screen-toggle" data-stoggle="rs">Risk screen \u2014 <span class="gold-text">' + rPass + ' of ' + rKnown + ' clear</span><span class="screen-sum">' + rSum + '</span><span class="screen-chev">\u25b8</span></button>';
+  html += '<button type="button" class="section-h screen-toggle" data-stoggle="rs"><span class="screen-name">Risk screen \u2014</span> <span class="gold-text screen-count">' + rPass + ' of ' + rKnown + ' clear</span><span class="screen-sum">' + rSum + '</span><span class="screen-chev">\u25b8</span></button>';
   html += '<div class="screen-chips" data-sbody="rs" hidden>';
   rScreen.forEach(function (s) {
     var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
