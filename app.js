@@ -420,14 +420,52 @@ async function fetchStock(ticker, opts) {
     if (about) { d.about = about; d.sources.push('StockAnalysis'); }
   } catch (e) { d.errors.push('About: ' + e.message); } };
 
-  // --- StockAnalysis company profile page: the CEO's name ---
+  // --- StockAnalysis company profile + Wikipedia: CEO, tenure, background ---
   var srcCeo = async function () { try {
     var html = await relayFetch('https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/company/', {
       timeout: 20000,
       validate: function (t) { return t.indexOf('>CEO</td>') !== -1; }
     });
-    var ceo = parseSACeo(html);
-    if (ceo) d.ceo = ceo;
+    var name = parseSACeo(html);
+    if (!name) return;
+    d.ceo = name;
+    var fmatch = String(html).match(/>Founded<\/td>\s*<td[^>]*>(\d{4})</);
+    var foundedYear = fmatch ? parseInt(fmatch[1], 10) : null;
+    var key = T + '|' + name;
+    var hit = ceoCacheGet(key);
+    if (hit) {
+      d.ceoSince = hit.since; d.ceoFounder = hit.founder; d.ceoBio = hit.bio;
+      d.ceoStartClose = hit.sc; d.ceoStartLabel = hit.sl;
+      return;
+    }
+    var facts = { since: null, founder: false, bio: '' };
+    try {
+      var wurl = 'https://en.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrlimit=1&prop=extracts&explaintext=1&exintro=1&redirects=1&gsrsearch=' + encodeURIComponent(name + ' ' + (d.companyName || T));
+      var wj = await relayFetch(wurl, { timeout: 20000, validate: function (t) { return t.indexOf('"extract"') !== -1; } });
+      var wpages = ((JSON.parse(wj).query || {}).pages) || {};
+      var lead = '';
+      Object.keys(wpages).forEach(function (k) { if (wpages[k].extract) lead = wpages[k].extract; });
+      if (lead && /chief executive|\bCEO\b/.test(lead.slice(0, 600))) facts = ceoFacts(lead, foundedYear);
+    } catch (e) { d.errors.push('CEO bio: ' + e.message); }
+    var sc = null, sl = '';
+    if (facts.since) {
+      try {
+        var cj = await relayFetch('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(T) + '?range=max&interval=1mo', {
+          timeout: 20000,
+          validate: function (t) { return t.indexOf('"chart"') !== -1; }
+        });
+        var res = JSON.parse(cj).chart.result[0];
+        var tsArr = res.timestamp || [];
+        var closes = (((res.indicators || {}).quote || [])[0] || {}).close || [];
+        var bars = [];
+        for (var bi = 0; bi < tsArr.length; bi++) { if (isNum(closes[bi]) && closes[bi] > 0) bars.push({ ts: tsArr[bi], c: closes[bi] }); }
+        var sb = ceoStartFromBars(bars, facts.since);
+        if (sb) { sc = sb.close; sl = sb.label; }
+      } catch (e) { d.errors.push('CEO perf: ' + e.message); }
+    }
+    d.ceoSince = facts.since; d.ceoFounder = facts.founder; d.ceoBio = facts.bio;
+    d.ceoStartClose = sc; d.ceoStartLabel = sl;
+    ceoCacheSet(key, { since: facts.since, founder: facts.founder, bio: facts.bio, sc: sc, sl: sl, ts: Date.now() });
   } catch (e) { d.errors.push('CEO: ' + e.message); } };
 
   var srcSurprise = async function () { try {
@@ -693,9 +731,105 @@ function parseSACeo(html) {
   if (!m) return '';
   return m[1].replace(/&amp;/g, '&').replace(/&#0?39;|&apos;/g, "'").trim();
 }
-function ceoLineHtml(d) {
+var CEO_MONTHS = { january: 0, february: 1, march: 2, april: 3, may: 4, june: 5, july: 6, august: 7, september: 8, october: 9, november: 10, december: 11 };
+var CEO_MON_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function ceoCleanLead(lead) {
+  return String(lead || '')
+    .replace(/\((?:[^()]*?(?:born|pronunciation)[^()]*?)\)/gi, '')
+    .replace(/\s+([,.;])/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function ceoSinceFrom(clean) {
+  var M = '(January|February|March|April|May|June|July|August|September|October|November|December)';
+  var pats = [
+    new RegExp('succeeding [^.;]+? in (?:' + M + ' )?(\\d{4}) as (?:CEO|chief executive)', 'i'),
+    new RegExp('(?:became|appointed|named) [^.;]{0,70}?(?:CEO|chief executive)[^.;]{0,40}? in (?:' + M + ' )?(\\d{4})', 'i'),
+    new RegExp('(?:CEO|chief executive)[^.;]{0,70}? since (?:' + M + ' )?(\\d{4})', 'i'),
+    new RegExp('has been [^.;]{0,60}? since (?:' + M + ' )?(\\d{4})', 'i'),
+    new RegExp('since (?:' + M + ' )?(\\d{4})', 'i')
+  ];
+  for (var i = 0; i < pats.length; i++) {
+    var m = clean.match(pats[i]);
+    if (m) {
+      var y = parseInt(m[2], 10);
+      if (y >= 1950 && y <= new Date().getFullYear()) {
+        return { y: y, m: (m[1] && CEO_MONTHS[m[1].toLowerCase()] !== undefined) ? CEO_MONTHS[m[1].toLowerCase()] : null };
+      }
+    }
+  }
+  return null;
+}
+function ceoBioFromLead(clean) {
+  var guarded = aboutGuard(clean, false).replace(/(\b[A-Z])\./g, '$1\u0003');
+  var parts = guarded.split(/(?<=[.!?])\s+(?=[A-Z0-9\u201c"])/).map(function (p) {
+    return aboutGuard(p.split('\u0003').join('.'), true);
+  }).filter(Boolean);
+  var KEYS = ['joined', 'co-found', 'founded', 'became', 'appoint', 'succeed', 'previous', 'served', 'oversaw', 'credited', 'senior vice', 'executive vice', 'president', 'chairman', 'worked', 'engineer', 'led the', 'ran the'];
+  var picked = [];
+  for (var i = 0; i < parts.length && picked.length < 2; i++) {
+    var low = ' ' + parts[i].toLowerCase() + ' ';
+    var score = 0;
+    KEYS.forEach(function (k) { if (low.indexOf(k) !== -1) score++; });
+    if (score >= 1 && (picked.join(' ') + ' ' + parts[i]).length <= 340) picked.push(parts[i]);
+  }
+  if (!picked.length) return aboutTrim(clean);
+  var bio = picked.join(' ');
+  if (bio.length > 340) {
+    var cut = bio.slice(0, 340);
+    var at = Math.max(cut.lastIndexOf('; '), cut.lastIndexOf(', '));
+    bio = (at > 120 ? cut.slice(0, at) : cut.slice(0, cut.lastIndexOf(' '))) + ' \u2026';
+  }
+  return bio;
+}
+function ceoFacts(lead, foundedYear) {
+  var clean = ceoCleanLead(lead);
+  var founder = /co-?found/i.test(clean) || /founded (?:the |a )?company/i.test(clean);
+  var since = ceoSinceFrom(clean);
+  if (!since && founder && foundedYear) since = { y: foundedYear, m: null };
+  return { since: since, founder: founder, bio: ceoBioFromLead(clean) };
+}
+function ceoStartFromBars(bars, since) {
+  var target = Date.UTC(since.y, since.m || 0, 1) / 1000;
+  var pick = null;
+  for (var i = 0; i < bars.length; i++) { if (bars[i].ts + 32 * 86400 > target) { pick = bars[i]; break; } }
+  if (!pick) return null;
+  var label;
+  if (pick.ts > target + 32 * 86400) {
+    var bd = new Date(pick.ts * 1000);
+    label = CEO_MON_SHORT[bd.getUTCMonth()] + ' ' + bd.getUTCFullYear();
+  } else if (since.m != null) label = CEO_MON_SHORT[since.m] + ' ' + since.y;
+  else label = String(since.y);
+  return { close: pick.c, label: label };
+}
+function ceoCacheGet(key) {
+  try {
+    var all = JSON.parse(localStorage.getItem('sr_ceo_v1') || '{}');
+    var e = all[key];
+    if (e && (Date.now() - e.ts) < 30 * 864e5) return e;
+  } catch (err) {}
+  return null;
+}
+function ceoCacheSet(key, e) {
+  try {
+    var all = JSON.parse(localStorage.getItem('sr_ceo_v1') || '{}');
+    all[key] = e;
+    localStorage.setItem('sr_ceo_v1', JSON.stringify(all));
+  } catch (err) {}
+}
+function ceoBlockHtml(d) {
   if (!d || !d.ceo) return '';
-  return '<p class="earn-line ceo-line">CEO \u00b7 <b>' + esc(d.ceo) + '</b></p>';
+  var h = '<p class="earn-line ceo-line">CEO \u00b7 <b>' + esc(d.ceo) + '</b>';
+  if (d.ceoSince) h += ' \u00b7 since ' + (d.ceoSince.m != null ? CEO_MON_SHORT[d.ceoSince.m] + ' ' : '') + d.ceoSince.y;
+  if (d.ceoFounder) h += ' \u00b7 <span class="gold-text">Founder</span>';
+  h += '</p>';
+  if (d.ceoBio) h += '<p class="ceo-bio">' + esc(d.ceoBio) + '</p>';
+  if (isNum(d.ceoStartClose) && d.ceoStartClose > 0 && isNum(d.price) && d.ceoStartLabel) {
+    var pct = (d.price / d.ceoStartClose - 1) * 100;
+    var ptxt = (pct >= 0 ? '+' : '') + (Math.abs(pct) >= 100 ? fmtNum(pct, 0) : fmtNum(pct, 1)) + '%';
+    h += '<p class="ceo-perf">Stock <span class="' + (pct >= 0 ? 'up' : 'down') + '">' + ptxt + '</span> since ' + esc(d.ceoStartLabel) + '</p>';
+  }
+  return h;
 }
 function parseSAAbout(html) {
   if (!html) return '';
@@ -1800,7 +1934,7 @@ function renderScorecard(d) {
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
   if (d.about) html += '<div class="sc-about">' + esc(d.about) + '</div>';
-  html += ceoLineHtml(d);
+  html += ceoBlockHtml(d);
   html += earnLineHtml(d);
 
   if (d.history && d.history.length >= 2) {
@@ -4040,7 +4174,7 @@ function renderOverview(d, item) {
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
   html += earnLineHtml(d);
-  html += ceoLineHtml(d);
+  html += ceoBlockHtml(d);
   if (item && isNum(item.target) && item.target > 0 && isNum(d.price)) {
     var above = (d.price / item.target - 1) * 100;
     html += '<p class="fineprint" style="margin:2px 0 8px">Your target buy: ' + fmtMoney(item.target) + ' \u2014 ' +

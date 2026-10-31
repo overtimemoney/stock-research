@@ -222,6 +222,8 @@ button.screen-toggle { display: flex; align-items: baseline; flex-wrap: nowrap; 
 .earn-line { font-size: 13px; font-weight: 700; color: var(--ink2); margin: 2px 0 8px; }
 .earn-line.today { color: var(--gold); }
 .ceo-line b { color: var(--ink); }
+.ceo-bio { font-size: 13px; color: var(--ink2); line-height: 1.45; margin: 0 0 8px; }
+.ceo-perf { font-size: 13px; font-weight: 700; color: var(--ink2); margin: 0 0 8px; }
 .fv-labs { position: relative; height: 17px; }
 .fv-lab { position: absolute; bottom: 1px; transform: translateX(-50%); font-size: 11px; font-weight: 800; letter-spacing: .04em; white-space: nowrap; }
 .fv-labs:last-child .fv-lab { bottom: auto; top: 2px; }
