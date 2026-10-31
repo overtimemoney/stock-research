@@ -3384,10 +3384,12 @@ function maybeStartScan() {
 function scanScoreClass(score) { return score >= 70 ? 'up' : (score >= 45 ? '' : 'down'); }
 /* Pill color as a smooth ramp instead of the three hard buckets, so a
  * 44 and a 45 look nearly identical (Justin's call, 2026-10-31): red at
- * 30, the neutral warm white at 50, green at 70, clamped outside. */
+ * 30, the app's gold at 50 (Justin's middle tier, 2026-10-31: the
+ * middle of the scale gets the color between green and red), green
+ * at 70, clamped outside. */
 function scanScoreStyle(score) {
   if (!isNum(score)) return '';
-  var stops = [[30, [255, 90, 77]], [50, [244, 239, 227]], [70, [47, 191, 107]]];
+  var stops = [[30, [255, 90, 77]], [50, [248, 199, 61]], [70, [47, 191, 107]]];
   var c;
   if (score <= stops[0][0]) c = stops[0][1];
   else if (score >= stops[2][0]) c = stops[2][1];
