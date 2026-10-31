@@ -1244,7 +1244,7 @@ function valueScreen(d) {
   return [
     { label: 'Market cap over $5B', test: isNum(d.marketCap) ? (d.marketCap > 5e9) : null, value: fmtCap(d.marketCap) },
     { label: 'Forward P/E under 10', test: isNum(d.forwardPE) ? (d.forwardPE < 10) : null, value: isNum(d.forwardPE) ? fmtNum(d.forwardPE, 2) : '—' },
-    { label: 'PEG under 0.5', test: isNum(d.peg) ? (d.peg < 0.5) : null, value: isNum(d.peg) ? fmtNum(d.peg, 2) : '—' },
+    { label: 'PEG under 0.75', test: isNum(d.peg) ? (d.peg < 0.75) : null, value: isNum(d.peg) ? fmtNum(d.peg, 2) : '—' },
     { label: '25%+ below 52-wk high', test: isNum(d.pctBelowHigh) ? (d.pctBelowHigh >= 25) : null, value: isNum(d.pctBelowHigh) ? fmtNum(d.pctBelowHigh, 1) + '% below' : '—' }
   ];
 }
