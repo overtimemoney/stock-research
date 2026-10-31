@@ -2013,9 +2013,9 @@ function runProjection() {
   renderPjPath();
   var path = pjPath.slice(0, years + pjTtmOffset());
   var scen = [
-    { name: 'Bear', d: -5, m: mult - 2, note: 'path −5 pts/yr' },
+    { name: 'Bear', d: -5, m: mult * 0.8, note: 'path −5 pts/yr' },
     { name: 'Base', d: 0, m: mult, note: 'your path' },
-    { name: 'Bull', d: 5, m: mult + 2, note: 'path +5 pts/yr' }
+    { name: 'Bull', d: 5, m: mult * 1.2, note: 'path +5 pts/yr' }
   ];
   var html = '<table class="factors scen"><tr><th>Case</th><th>EPS in ' + years + 'y</th><th>Exit P/E</th><th class="num">Implied price</th><th class="num">Return</th><th class="num">CAGR</th></tr>';
   scen.forEach(function (s) {
@@ -4295,7 +4295,7 @@ var GLOSSARY = [
   ['Margin of safety', 'The gap between what you pay and what you think a stock is worth. The wider it is, the more wrong you can afford to be. Your value screen hunts for it; it does not guarantee it.'],
   ['SWOT analysis', 'A four-box check of a business. Strengths and Weaknesses are INTERNAL — what the company itself excels at or falls short on: a strong brand, a loyal customer base, a strong balance sheet, unique technology; or high debt, a weak supply chain, a lack of capital. Opportunities and Threats are EXTERNAL — outside factors that could help or harm: a country cutting tariffs opens a new market (opportunity); rising material costs, tougher competition or tight labor supply squeeze the business (threats).'],
   ['Exit P/E (exit multiple)', 'The P/E you assume the market will pay for a stock when you sell it in the future. The Projection Builder multiplies future EPS by this to get the implied price — small changes here swing the answer a lot.'],
-  ['Bear / Base / Bull case', 'Three versions of the same forecast: pessimistic, most likely, optimistic. In the Projection Builder they are your EPS path with growth shifted down 5 points, as-is, and up 5 points (plus a small exit P/E adjustment).'],
+  ['Bear / Base / Bull case', 'Three versions of the same forecast: pessimistic, most likely, optimistic. In the Projection Builder they are your EPS path with growth shifted down 5 points, as-is, and up 5 points, with the exit P/E shifted down 20%, as-is, and up 20%.'],
   ['Implied price', 'The future price a projection works out to: future EPS × exit P/E. It is an "if these assumptions hold" number, not a prediction.'],
   ['Enterprise value', 'Market cap plus total debt minus cash. The cost of buying the whole business outright, debts and all. Better than market cap for comparing companies with very different borrowing.'],
   ['Buyback', 'When a company repurchases its own shares. Fewer shares means each remaining share owns a bigger slice of the profit, so EPS rises even if total profit doesn\'t.'],
