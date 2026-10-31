@@ -240,6 +240,37 @@ function fillFromFinviz(d, fvHtml) {
   var divM = divRaw.match(/\(([\d.]+)%\)/);
   if (divM) d.divYield = parseFloat(divM[1]);
   else if (isNum(parseNum(p['Dividend %']))) d.divYield = parseNum(p['Dividend %']);
+  // The number before the parens in "Dividend TTM"/"Dividend Est." is
+  // the annual cash dividend per share ("1.06 (0.31%)" -> $1.06).
+  var divCashM = divRaw.match(/([\d.]+)\s*\(/);
+  if (divCashM) d.divCash = parseFloat(divCashM[1]);
+  // Ownership, payout and analyst target ride the same snapshot table
+  // (keys verified against a live AAPL page, 2026-10-30).
+  d.insiderOwn = parseNum(p['Insider Own']);
+  d.instOwn = parseNum(p['Inst Own']);
+  d.payout = parseNum(p['Payout']);
+  d.targetPrice = parseNum(p['Target Price']);
+  var exDiv = p['Dividend Ex-Date'];
+  d.exDivDate = (exDiv && exDiv !== '-') ? exDiv : null;
+  // Insider transactions table: rows classed fv-insider-row follow the
+  // "Insider Trading" heading; 9 cells per row (name, relationship,
+  // date, transaction, cost, #shares, value $, #shares total, SEC).
+  try {
+    var itIdx = fvHtml.indexOf('Insider Trading');
+    if (itIdx !== -1) {
+      var itSeg = fvHtml.slice(itIdx, itIdx + 40000);
+      var itRows = [], itRe = /<tr class="fv-insider-row[^"]*"[^>]*>([\s\S]*?)<\/tr>/g, itM;
+      while ((itM = itRe.exec(itSeg)) !== null && itRows.length < 8) {
+        var itCells = [], tdRe2 = /<td[^>]*>([\s\S]*?)<\/td>/g, tdM2;
+        while ((tdM2 = tdRe2.exec(itM[1])) !== null) itCells.push(stripTags(tdM2[1]));
+        if (itCells.length >= 7 && itCells[0]) {
+          itRows.push({ name: itCells[0], rel: itCells[1], date: itCells[2], type: itCells[3],
+            shares: parseNum(itCells[5]), value: parseNum(itCells[6]) });
+        }
+      }
+      if (itRows.length) d.insiderTx = itRows;
+    }
+  } catch (e) { /* insider table is a bonus — never break the snapshot */ }
   var hiParts = (p['52W High'] || '').split(/\s+/);
   var loParts = (p['52W Low'] || '').split(/\s+/);
   d.high52 = parseNum(hiParts[0]);
@@ -1407,6 +1438,101 @@ async function runAiSwot(d) {
   }
 }
 
+/* Analyst target used across the card: Nasdaq's 1-yr target when it
+ * landed, else the Finviz snapshot target (same value the key stat
+ * shows when Nasdaq answered). */
+function analystTarget(d) {
+  if (isNum(d.target1Y)) return d.target1Y;
+  if (isNum(d.targetPrice)) return d.targetPrice;
+  return null;
+}
+
+/* Rewards & risks (Simply Wall St-style checklist, 2026-10-30): plain
+ * one-liners generated only from figures already on the scorecard —
+ * no new data, no advice language. */
+function buildRewardsRisks(d) {
+  var rewards = [], risks = [];
+  var sc = scoreStock(d);
+  var tgt = analystTarget(d);
+  var tx = d.insiderTx || [];
+  var buys = 0, sales = 0;
+  tx.forEach(function (t) { if (t.type === 'Buy') buys++; else if (t.type === 'Sale') sales++; });
+  var traj = epsTrajectory(d);
+  if (sc.score != null && sc.score >= 70) rewards.push('Valuation score ' + sc.score + ' \u2014 in the app\'s undervalued range');
+  if (isNum(d.epsGrowthNextY) && d.epsGrowthNextY >= 15) rewards.push('Earnings forecast to grow ' + fmtNum(d.epsGrowthNextY, 0) + '% next year');
+  if (isNum(d.salesGrowthTTM) && d.salesGrowthTTM >= 10) rewards.push('Revenue grew ' + fmtNum(d.salesGrowthTTM, 0) + '% over the last year');
+  if (isNum(d.pctBelowHigh) && d.pctBelowHigh >= 25) rewards.push('Trading ' + fmtNum(d.pctBelowHigh, 1) + '% below its 52-week high');
+  if (isNum(tgt) && isNum(d.price) && d.price > 0 && (tgt / d.price - 1) * 100 >= 10) rewards.push('Analyst target is ' + fmtNum((tgt / d.price - 1) * 100, 0) + '% above the price');
+  if (isNum(d.debtEq) && d.debtEq <= 0.5) rewards.push('Low debt (D/E ' + fmtNum(d.debtEq, 2) + ')');
+  if (isNum(d.profitMargin) && d.profitMargin >= 15) rewards.push('Profit margin ' + fmtNum(d.profitMargin, 1) + '%');
+  if (isNum(d.divYield) && d.divYield >= 2) rewards.push('Pays a ' + fmtNum(d.divYield, 2) + '% dividend');
+  if (traj.points.length >= 2 && !traj.warning) rewards.push('No earnings cliff in the forecast path');
+  if (buys > 0 && buys >= sales) rewards.push('Insiders have been buying (net)');
+  if (epsPossibleCliff(d)) risks.push('Possible earnings cliff \u2014 see the check above');
+  else if (traj.warning) risks.push('Earnings cliff in the forecast path \u2014 see the check above');
+  if (epsProfitWarning(d)) risks.push('Profitability warning \u2014 see above');
+  if (isNum(d.epsGrowthNextY) && d.epsGrowthNextY < 0) risks.push('Earnings forecast to shrink ' + fmtNum(Math.abs(d.epsGrowthNextY), 0) + '% next year');
+  if (isNum(d.debtEq) && d.debtEq >= 2) risks.push('High debt (D/E ' + fmtNum(d.debtEq, 2) + ')');
+  if (isNum(d.currentRatio) && d.currentRatio < 1) risks.push('Current ratio below 1 (' + fmtNum(d.currentRatio, 2) + ')');
+  if (isNum(d.profitMargin) && d.profitMargin < 0) risks.push('Currently unprofitable (margin ' + fmtNum(d.profitMargin, 1) + '%)');
+  if (isNum(d.beta) && d.beta >= 1.5) risks.push('Volatile stock (beta ' + fmtNum(d.beta, 2) + ')');
+  if (tx.length && buys === 0) risks.push('Recent insider transactions are all sales');
+  return { rewards: rewards.slice(0, 6), risks: risks.slice(0, 6) };
+}
+function rewardsRisksHtml(d, maxEach) {
+  var rr = buildRewardsRisks(d);
+  if (!rr.rewards.length && !rr.risks.length) return '';
+  var cap = maxEach || 6;
+  var html = '<div class="section-h">Rewards & risks</div><div class="rr-grid"><div class="rr-col"><div class="rr-h good">Rewards</div>';
+  if (rr.rewards.length) rr.rewards.slice(0, cap).forEach(function (r) { html += '<div class="rr-line"><span class="rr-mark good">\u2713</span><span>' + esc(r) + '</span></div>'; });
+  else html += '<div class="rr-line muted">No standout rewards from these checks</div>';
+  html += '</div><div class="rr-col"><div class="rr-h bad">Risks</div>';
+  if (rr.risks.length) rr.risks.slice(0, cap).forEach(function (r) { html += '<div class="rr-line"><span class="rr-mark bad">\u2717</span><span>' + esc(r) + '</span></div>'; });
+  else html += '<div class="rr-line muted">No major flags from these checks</div>';
+  html += '</div></div>';
+  return html;
+}
+
+/* Insider activity block: summary counts + the most recent filings,
+ * from the Finviz insider table parsed in fillFromFinviz. */
+function insiderHtml(d) {
+  var tx = d.insiderTx || [];
+  if (!tx.length) return '';
+  var buys = 0, sales = 0;
+  tx.forEach(function (t) { if (t.type === 'Buy') buys++; else if (t.type === 'Sale') sales++; });
+  var parts = [];
+  if (buys) parts.push(buys + (buys === 1 ? ' buy' : ' buys'));
+  if (sales) parts.push(sales + (sales === 1 ? ' sale' : ' sales'));
+  var html = '<div class="section-h">Insider activity</div>';
+  html += '<p class="fineprint" style="margin:0 0 4px">Insider activity \u00b7 ' + (parts.length ? parts.join(' \u00b7 ') + ' recently' : 'recent filings below') + '</p>';
+  tx.slice(0, 4).forEach(function (t) {
+    var cls = t.type === 'Buy' ? 'good' : (/sale/i.test(t.type) ? 'bad' : '');
+    html += '<div class="tx-row"><span class="tx-name">' + esc(t.name) + '</span>' +
+      '<span class="tx-chip ' + cls + '">' + esc(t.type) + '</span>' +
+      '<span class="tx-sh">' + (isNum(t.shares) ? Math.round(t.shares).toLocaleString('en-US') + ' sh' : '') + '</span>' +
+      '<span class="tx-date">' + esc(t.date) + '</span></div>';
+  });
+  return html;
+}
+
+/* Dividend check-up: yield, payout, ex-date and the cash per share.
+ * The cash figure is Finviz's annual dividend when present, else
+ * price x yield as an approximation. Facts only — no advice. */
+function dividendHtml(d) {
+  if (!(isNum(d.divYield) && d.divYield > 0)) return '';
+  var cash = isNum(d.divCash) ? d.divCash : (isNum(d.price) ? d.price * d.divYield / 100 : null);
+  var html = '<div class="section-h">Dividend</div><div class="kv-grid">';
+  html += kvItem('Dividend yield', fmtNum(d.divYield, 2) + '%', 'divyield');
+  if (isNum(d.payout)) html += kvItem('Payout ratio', fmtNum(d.payout, 1) + '%');
+  if (d.exDivDate) html += kvItem('Ex-dividend date', d.exDivDate);
+  if (isNum(cash)) html += kvItem('Cash per share / yr', fmtMoney(cash));
+  html += '</div>';
+  if (isNum(d.payout)) {
+    html += '<p class="fineprint">' + (d.payout < 60 ? 'Payout uses under 60% of earnings' : d.payout <= 85 ? 'Payout uses most of earnings' : 'Payout is above 85% of earnings \u2014 thin cushion') + '</p>';
+  }
+  return html;
+}
+
 function renderScorecard(d) {
   lastStock = d;
   var sc = scoreStock(d);
@@ -1502,6 +1628,8 @@ function renderScorecard(d) {
   html += kvItem('Below 52-wk high', isNum(d.pctBelowHigh) ? fmtNum(d.pctBelowHigh, 1) + '%' : '—', 'belowhigh');
   html += kvItem('Dividend yield', isNum(d.divYield) ? fmtNum(d.divYield, 2) + '%' : '—', 'divyield');
   html += kvItem('Analyst 1-yr target', isNum(d.target1Y) ? fmtMoney(d.target1Y) : '—', 'target');
+  if (isNum(d.insiderOwn)) html += kvItem('Insider ownership', fmtNum(d.insiderOwn, 2) + '%');
+  if (isNum(d.instOwn)) html += kvItem('Institutional ownership', fmtNum(d.instOwn, 1) + '%');
   html += '</div>';
 
   var profitWarn = epsProfitWarning(d);
@@ -1515,6 +1643,10 @@ function renderScorecard(d) {
   } else {
     html += '<p class="fineprint">Not enough EPS data came back to run the cliff check for this ticker.</p>';
   }
+
+  html += insiderHtml(d);
+  html += dividendHtml(d);
+  html += rewardsRisksHtml(d, 6);
 
   var aiSaved = getAiSwot(d.ticker);
   html += '<div class="section-h">Classic SWOT — <span class="gold-text">AI</span></div><div id="ai-swot-zone">';
@@ -3242,6 +3374,7 @@ function renderOverview(d, item) {
     html += '<div class="chip ' + cls + '"><span>' + esc(s.label) + '<br><span class="factor-note">' + esc(s.value) + '</span></span><span class="mark">' + mark + '</span></div>';
   });
   html += '</div>';
+  html += rewardsRisksHtml(d, 3);
   html += '<div class="section-h">Key <span class="gold-text">stats</span></div><div class="kv-grid">';
   html += kvItem('Market cap', fmtCap(d.marketCap), 'mktcap');
   html += kvItem('Forward P/E', isNum(d.forwardPE) ? fmtNum(d.forwardPE, 2) : '\u2014');
