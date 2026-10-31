@@ -463,8 +463,13 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
         <span class="ob-kicker">The 5% Quiz</span>
         <button id="ob-skip" class="ob-skip" type="button">Skip</button>
       </div>
+      <div class="ob-progress">
+        <div class="ob-segs"><span class="ob-seg on" id="ob-seg-1"></span><span class="ob-seg" id="ob-seg-2"></span></div>
+        <span class="ob-step-label" id="ob-step-label">Question 1 of 2</span>
+      </div>
       <div id="ob-intro">
         <h2 class="ob-h">How much more do you think you'd make if you earned an extra 5% per year?</h2>
+        <p class="ob-guide">New here? Answer 2 quick questions to get into the app — it takes about 30 seconds.</p>
         <div class="ob-context">
           <p>Meet the average 401(k) saver. They invest about $500 a month — roughly 9.6% of a typical paycheck, the national average contribution rate (Fidelity). At a typical 10% per year, after 40 years they'd have</p>
           <div class="ob-big gold-text">$2.66 million</div>
@@ -498,9 +503,10 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
           <button class="ob-opt" type="button" data-obq="1">$7.98M</button>
           <button class="ob-opt" type="button" data-obq="1" data-correct="1">$10.67M</button>
         </div>
+        <p class="ob-hint" id="ob-hint-1">Tap an answer to continue</p>
         <div id="ob-reveal-1" class="ob-reveal" hidden>
           <p class="ob-callout">4&times; as much money. Same savings, same 40 years — just 5% more per year = $8.02 million more.</p>
-          <button id="ob-next-1" class="btn-gold wide" type="button">Now try 10% more &rarr;</button>
+          <button id="ob-next-1" class="btn-gold wide" type="button">Next question &rarr;</button>
         </div>
       </div>
       <div id="ob-panel-2" class="ob-panel" hidden>
@@ -511,12 +517,14 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
           <button class="ob-opt" type="button" data-obq="2" data-correct="1">$44.06M</button>
           <button class="ob-opt" type="button" data-obq="2">$66.47M</button>
         </div>
+        <p class="ob-hint" id="ob-hint-2">Tap an answer to continue</p>
         <div id="ob-reveal-2" class="ob-reveal" hidden>
           <p class="ob-callout">16.6&times; the 401(k). $44.06M vs $2.66M — from the same $500 a month.</p>
           <p class="ob-punch">20% a year, every year, is something almost nobody can do — that's Warren Buffett territory. But 15%? That's just the difference between knowing what to buy… and what not to buy.</p>
           <p class="ob-punch">This app helps you tell the difference.</p>
           <p class="ob-disclaimer">Hypothetical example for education only — not financial advice, and not a prediction.</p>
-          <button id="ob-cta" class="btn-gold wide" type="button">Start researching</button>
+          <p class="ob-signpost">That's it — tap below to enter the app.</p>
+          <button id="ob-cta" class="btn-gold wide" type="button">Enter the app &rarr;</button>
         </div>
       </div>
     </div>

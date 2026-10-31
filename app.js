@@ -6339,8 +6339,8 @@ if (typeof document !== 'undefined' && document.getElementById) {
  * deliberately NOT one of the Supabase synced keys, so finishing the
  * quiz never touches sync. The automatic first-launch showing is
  * UNSKIPPABLE (mode 'auto': the Skip control is hidden and guarded, so
- * the only exit is completing the flow via the final "Start
- * researching" CTA, which sets the flag). Settings -> "The 5% Quiz"
+ * the only exit is completing the flow via the final "Enter the app"
+ * CTA, which sets the flag). Settings -> "The 5% Quiz"
  * replays it any time in mode 'replay', where Skip stays available and
  * leaving a replay never changes the flag.
  *
@@ -6437,6 +6437,17 @@ if (typeof document !== 'undefined' && document.getElementById) {
       }
     }
 
+    /* Progress header (signage only): stage 1 = question 1 (incl. its
+     * reveal), stage 2 = question 2, stage 3 = final screen ("Done"). */
+    function setProgress(stage) {
+      var label = document.getElementById('ob-step-label');
+      var seg1 = document.getElementById('ob-seg-1');
+      var seg2 = document.getElementById('ob-seg-2');
+      if (seg1) seg1.classList.toggle('on', stage >= 1);
+      if (seg2) seg2.classList.toggle('on', stage >= 2);
+      if (label) label.textContent = stage >= 3 ? 'Done' : 'Question ' + Math.min(stage, 2) + ' of 2';
+    }
+
     function resetQuiz() {
       visible = ['10'];
       var intro = document.getElementById('ob-intro');
@@ -6459,6 +6470,11 @@ if (typeof document !== 'undefined' && document.getElementById) {
           opts[i].classList.remove('right', 'wrong', 'dim');
         }
       });
+      ['ob-hint-1', 'ob-hint-2'].forEach(function (id) {
+        var h = document.getElementById(id);
+        if (h) h.hidden = false;
+      });
+      setProgress(1);
       if (scroller) scroller.scrollTop = 0;
       renderChart('10');
     }
@@ -6497,6 +6513,8 @@ if (typeof document !== 'undefined' && document.getElementById) {
       var wrap = document.getElementById('ob-opts-' + q);
       if (!wrap || wrap.classList.contains('locked')) return;
       wrap.classList.add('locked');
+      var hint = document.getElementById('ob-hint-' + q);
+      if (hint) hint.hidden = true; /* replaced by the reveal's button */
       var opts = wrap.querySelectorAll('.ob-opt');
       for (var i = 0; i < opts.length; i++) {
         opts[i].disabled = true;
@@ -6511,6 +6529,7 @@ if (typeof document !== 'undefined' && document.getElementById) {
       } else {
         visible = ['10', '15', '20'];
         renderChart('20');
+        setProgress(3); /* final screen */
         reveal('ob-reveal-2');
       }
     }
@@ -6535,6 +6554,7 @@ if (typeof document !== 'undefined' && document.getElementById) {
       if (intro) intro.hidden = true;
       if (p1) p1.hidden = true;
       if (p2) p2.hidden = false;
+      setProgress(2);
       if (scroller) { try { scroller.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { scroller.scrollTop = 0; } }
     });
     var replayBtn = document.getElementById('menu-quiz');
