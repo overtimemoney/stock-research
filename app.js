@@ -986,39 +986,39 @@ function riskScore(d) {
     factors.push({ name: name, value: value, display: display, max: max, pts: pts, note: note || '' });
   }
   if (isNum(d.beta) && d.beta > 0) {
-    add('Beta (volatility)', d.beta, fmtNum(d.beta, 2), 9,
-      band(d.beta, [[0.5, 1], [0.8, 3], [1, 4], [1.3, 5], [1.6, 7], [2, 8], [Infinity, 9]]),
+    add('Beta (volatility)', d.beta, fmtNum(d.beta, 2), 10,
+      band(d.beta, [[0.5, 1], [0.8, 3], [1, 4], [1.3, 6], [1.6, 8], [2, 9], [Infinity, 10]]),
       'How hard the stock swings vs the market');
   }
   if (isNum(d.debtEq) && d.debtEq >= 0) {
-    add('Debt / Equity', d.debtEq, fmtNum(d.debtEq, 2), 22,
-      band(d.debtEq, [[0.1, 0], [0.4, 4], [0.8, 9], [1.5, 13], [3, 17], [Infinity, 22]]),
+    add('Debt / Equity', d.debtEq, fmtNum(d.debtEq, 2), 20,
+      band(d.debtEq, [[0.1, 0], [0.4, 4], [0.8, 8], [1.5, 12], [3, 15], [Infinity, 20]]),
       'More debt = less room when things go wrong');
   }
   if (isNum(d.profitMargin)) {
-    add('Profit margin', d.profitMargin, fmtNum(d.profitMargin, 1) + '%', 13,
-      band(d.profitMargin, [[-10, 13], [0, 11], [5, 9], [10, 6], [15, 3], [25, 2], [Infinity, 0]]),
+    add('Profit margin', d.profitMargin, fmtNum(d.profitMargin, 1) + '%', 15,
+      band(d.profitMargin, [[-10, 15], [0, 13], [5, 10], [10, 7], [15, 3], [25, 2], [Infinity, 0]]),
       'Loss-making means no cushion');
   }
   if (isNum(d.marketCap) && d.marketCap > 0) {
-    add('Company size', d.marketCap, fmtCap(d.marketCap), 13,
-      band(d.marketCap, [[2e9, 13], [1e10, 10], [5e10, 6], [2e11, 3], [Infinity, 0]]),
+    add('Company size', d.marketCap, fmtCap(d.marketCap), 10,
+      band(d.marketCap, [[2e9, 10], [1e10, 8], [5e10, 5], [2e11, 2], [Infinity, 0]]),
       'Small companies fail more often than giants');
   }
   if (isNum(d.epsGrowthNextY)) {
-    add('EPS trend, next yr', d.epsGrowthNextY, fmtPct(d.epsGrowthNextY), 13,
-      band(d.epsGrowthNextY, [[-25, 13], [-10, 10], [0, 7], [10, 3], [25, 1], [Infinity, 0]]),
+    add('EPS trend, next yr', d.epsGrowthNextY, fmtPct(d.epsGrowthNextY), 15,
+      band(d.epsGrowthNextY, [[-25, 15], [-10, 12], [0, 8], [10, 3], [25, 1], [Infinity, 0]]),
       'Falling earnings are where the danger starts');
   }
   if (isNum(d.currentRatio) && d.currentRatio > 0) {
-    add('Current ratio', d.currentRatio, fmtNum(d.currentRatio, 2), 8,
-      band(d.currentRatio, [[0.8, 8], [1, 6], [1.5, 4], [2, 2], [Infinity, 0]]),
+    add('Current ratio', d.currentRatio, fmtNum(d.currentRatio, 2), 10,
+      band(d.currentRatio, [[0.8, 10], [1, 8], [1.5, 5], [2, 3], [Infinity, 0]]),
       'Can it pay its near-term bills?');
   }
   var bb = boomBust(d);
   if (bb && bb.testable) {
-    add('Boom-bust pattern', bb.ratio, isNum(bb.ratio) ? fmtNum(bb.ratio, 1) + '\u00d7 in 2 yrs' : '\u2014', 22,
-      bb.fires ? 22 : 0,
+    add('Boom-bust pattern', bb.ratio, isNum(bb.ratio) ? fmtNum(bb.ratio, 1) + '\u00d7 in 2 yrs' : '\u2014', 20,
+      bb.fires ? 20 : 0,
       bb.fires
         ? 'Revenue ' + (bb.projected ? 'is projected to top' : 'topped') + ' at ' + bb.topLabel + ' after doubling in 2 yrs, and EPS ' + (bb.cliff
             ? 'falls off a cliff after ' + bb.cliff.peakLabel
@@ -1287,7 +1287,7 @@ var INFO_TEXT = {
   currentratio: 'Current ratio = short-term assets \u00f7 short-term bills. Above 1 means the company can cover what it owes within the year. Below 1 can mean cash stress if business dips.',
   boombust: 'Some businesses boom then bust in cycles (memory chips are the classic case). This flags it when the forecast shows a big earnings peak followed by a cliff, after revenue roughly doubled into the peak \u2014 peak earnings make a stock look deceptively cheap.',
   scanscore: 'Every stock in the index gets two 0\u2013100 scores: a Value score (cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt) and a Risk score (debt, volatility, size, earnings trend, boom-bust pattern). The Score on this list = 60% Value + 40% safety, where safety = 100 \u2212 Risk. Only stocks with enough data to score fairly can appear, and it shows the Top 10 for each index. Scores refresh when a company reports earnings, and the full index is rescanned about once a week. Scans fetch gently to stay under Finviz\'s rate limit, so a full scan takes a few minutes \u2014 you can close the app and it resumes where it left off.',
-  radar: 'Five 0\u2013100 rings on the same numbers: Value (the valuation score), Future (forecast EPS growth), Past (recent revenue growth), Health (debt, liquidity, margins) and Dividend (the yield). A fuller ring means a stronger measure. If the Future ring ends in red, the cliff check fired \u2014 earnings are forecast to fall off a peak.',
+  radar: 'Five 0\u2013100 measures drawn as a snowflake: Value (the valuation score), Future (forecast EPS growth), Past (recent revenue growth), Health (debt, liquidity, margins) and Dividend (the yield). The further a point reaches, the stronger that measure \u2014 a big, even snowflake is strong all round. If the Future point is red, the cliff check fired \u2014 earnings are forecast to fall off a peak.',
 };
 var FACTOR_INFO = {
   'Forward P/E': 'fwpe', 'PEG ratio': 'peg', 'Below 52-wk high': 'belowhigh',
@@ -1619,8 +1619,8 @@ function fvBarHtml(d) {
 }
 
 /* "At a glance" measures: five 0-100 axes mapped piecewise-linearly
- * from figures already on the card, drawn as concentric rings (see
- * ringsSvg). Presentation only — no score reads these. */
+ * from figures already on the card, drawn as a snowflake radar (see
+ * radarSvg). Presentation only — no score reads these. */
 var RADAR_FUT = [[-20, 0], [-5, 15], [0, 30], [8, 50], [15, 65], [25, 80], [40, 92], [60, 100]];
 var RADAR_PAST = [[-20, 0], [0, 35], [5, 55], [10, 70], [20, 85], [35, 100]];
 var RADAR_DE = [[0.1, 100], [0.5, 85], [1, 65], [2, 40], [3, 20], [4, 5]];
@@ -1664,56 +1664,50 @@ function radarAxes(d) {
   axes.push({ label: 'Dividend', score: isNum(d.divYield) ? Math.round(radarMap(Math.max(0, d.divYield), RADAR_DIV)) : null });
   return axes;
 }
-function ringArcPath(cx, cy, r, fromPct, toPct) {
-  var a0 = fromPct / 100 * 2 * Math.PI, a1 = toPct / 100 * 2 * Math.PI;
-  var x0 = cx + r * Math.sin(a0), y0 = cy - r * Math.cos(a0);
-  var x1 = cx + r * Math.sin(a1), y1 = cy - r * Math.cos(a1);
-  var laf = (toPct - fromPct) > 50 ? 1 : 0;
-  return 'M' + x0.toFixed(1) + ' ' + y0.toFixed(1) + 'A' + r.toFixed(1) + ' ' + r.toFixed(1) + ' 0 ' + laf + ' 1 ' + x1.toFixed(1) + ' ' + y1.toFixed(1);
-}
-/* Concentric "At a glance" rings (Justin's pick, 2026-10-30 — replaces
- * the radar so the visual is ours, not a snowflake copy): one ring per
- * measure, sweeping clockwise from the top to its 0-100 score. When the
- * cliff check fires, the Future ring ends in a red drop segment. */
-function ringsSvg(axes, size, cliff) {
-  var cx = size / 2, cy = size / 2;
-  var sw = Math.max(7, Math.round(size * 0.072));
-  var step = size * 0.092;
-  var r0 = size / 2 - sw / 2 - 1;
-  var out = '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '" class="rings-svg" role="img" aria-label="At a glance rings">';
-  axes.forEach(function (a, i) {
-    var r = r0 - i * step;
-    if (r <= sw) return;
-    out += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r.toFixed(1) + '" class="ring-track" stroke-width="' + sw + '"/>';
-    if (isNum(a.score) && a.score > 0) {
-      if (a.score >= 99.5) out += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r.toFixed(1) + '" class="ring-fill" stroke-width="' + sw + '"/>';
-      else out += '<path d="' + ringArcPath(cx, cy, r, 0, a.score) + '" class="ring-fill" stroke-width="' + sw + '"/>';
-      if (cliff && i === 1) out += '<path d="' + ringArcPath(cx, cy, r, Math.max(0, a.score - 12), a.score) + '" class="ring-cliff" stroke-width="' + sw + '"/>';
-    }
+function radarSvg(axes, size, cliff) {
+  var cx = size / 2, cy = size / 2, R = size / 2 - 6;
+  function pt(i, frac) {
+    var a = -Math.PI / 2 + i * (2 * Math.PI / 5);
+    return [cx + R * frac * Math.cos(a), cy + R * frac * Math.sin(a)];
+  }
+  function ptsStr(fracFn) {
+    return axes.map(function (a, i) { var p = pt(i, fracFn(a)); return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ');
+  }
+  var out = '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '" class="radar-svg" role="img" aria-label="At a glance snowflake">';
+  [0.25, 0.5, 0.75, 1].forEach(function (f) {
+    out += '<polygon points="' + ptsStr(function () { return f; }) + '" class="radar-grid"/>';
   });
-  out += '</svg>';
-  return out;
+  axes.forEach(function (a, i) {
+    var p = pt(i, 1);
+    out += '<line x1="' + cx + '" y1="' + cy + '" x2="' + p[0].toFixed(1) + '" y2="' + p[1].toFixed(1) + '" class="radar-grid"/>';
+  });
+  out += '<polygon points="' + ptsStr(function (a) { return isNum(a.score) ? a.score / 100 : 0; }) + '" class="radar-poly"/>';
+  axes.forEach(function (a, i) {
+    var p = pt(i, isNum(a.score) ? a.score / 100 : 0);
+    out += '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="3.2" class="radar-dot' + (cliff && i === 1 ? ' cliff' : '') + '"/>';
+  });
+  return out + '</svg>';
 }
 function cliffFlag(d) {
   try { return !!(epsCliffInfo(d) || epsPossibleCliff(d)); } catch (e) { return false; }
 }
-function ringsLegendHtml(axes, cliff) {
+function radarLegendHtml(axes, cliff) {
   return axes.map(function (a, i) {
-    return '<div class="ring-leg-row"><span class="ring-leg-name">' + a.label +
-      (cliff && i === 1 ? ' <span class="ring-cliff-tag">cliff</span>' : '') +
-      '</span><span class="ring-leg-num">' + (isNum(a.score) ? a.score : '—') + '</span></div>';
+    return '<div class="radar-leg-row"><span class="radar-leg-name">' + a.label +
+      (cliff && i === 1 ? ' <span class="radar-cliff-tag">cliff</span>' : '') +
+      '</span><span class="radar-leg-num">' + (isNum(a.score) ? a.score : '\u2014') + '</span></div>';
   }).join('');
 }
-function ringsFlexHtml(axes, cliff, mini) {
-  return '<div class="rings-flex' + (mini ? ' mini' : '') + '">' + ringsSvg(axes, mini ? 118 : 190, cliff) +
-    '<div class="ring-leg">' + ringsLegendHtml(axes, cliff) + '</div></div>';
+function radarFlexHtml(axes, cliff, mini) {
+  return '<div class="radar-flex' + (mini ? ' mini' : '') + '">' + radarSvg(axes, mini ? 118 : 190, cliff) +
+    '<div class="radar-leg">' + radarLegendHtml(axes, cliff) + '</div></div>';
 }
 function radarCount(axes) { return axes.filter(function (a) { return isNum(a.score); }).length; }
 function radarCardHtml(d) {
   var axes = radarAxes(d);
   if (radarCount(axes) < 3) return '';
   return '<div class="section-h">At a glance' + infoDot('radar') + '</div>' + infoText('radar') +
-    ringsFlexHtml(axes, cliffFlag(d), false);
+    radarFlexHtml(axes, cliffFlag(d), false);
 }
 
 function renderScorecard(d) {
@@ -2902,13 +2896,13 @@ function scanFinalizeIdx(idxs) {
     var s = scoreStock(rec);
     if (!(s && isNum(s.score) && s.maxAvailable >= 60)) return;
     // The combined score's risk side needs the same grounding: the
-    // screener-fed risk factors total 78 points (beta 9 + debt/eq 22
-    // + profit margin 13 + size 13 + EPS trend 13 + current ratio 8;
+    // screener-fed risk factors total 80 points (beta 10 + debt/eq 20
+    // + profit margin 15 + size 10 + EPS trend 15 + current ratio 10;
     // the boom-bust factor needs a revenue path the screener doesn't
     // carry, so it never counts here). Require at least 60% of those
-    // 90 — 54 points — mirroring the valuation side's 60-of-100 rule.
+    // 80 — 48 points — mirroring the valuation side's 60-of-100 rule.
     var rk = riskScore(rec);
-    if (!(rk && isNum(rk.score) && rk.maxAvailable >= 47)) return;
+    if (!(rk && isNum(rk.score) && rk.maxAvailable >= 48)) return;
     // One score for the daily list (Justin's ask, 2026-10-27):
     // 60% how cheap it is + 40% how safe it is.
     var combined = Math.round(0.6 * s.score + 0.4 * (100 - rk.score));
@@ -3708,7 +3702,7 @@ function renderOverview(d, item) {
   }
   var ovAxes = radarAxes(d);
   if (radarCount(ovAxes) >= 3) {
-    html += '<div class="section-h" style="margin-top:12px">At a glance</div>' + ringsFlexHtml(ovAxes, cliffFlag(d), true);
+    html += '<div class="section-h" style="margin-top:12px">At a glance</div>' + radarFlexHtml(ovAxes, cliffFlag(d), true);
   }
   var pw = epsProfitWarning(d);
   if (pw) html += '<div class="alert warn">' + esc(pw) + '</div>';
