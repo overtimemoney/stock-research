@@ -4531,17 +4531,37 @@ function pfKeyToISO(key) {
 }
 function pfLogoErr(img) {
   var fb = img.getAttribute('data-fb');
-  if (fb) { img.removeAttribute('data-fb'); img.src = fb; }
+  if (fb) { img.removeAttribute('data-fb'); img.removeAttribute('crossorigin'); img.src = fb; }
   else img.style.display = 'none';
+}
+/* A logo can "load" yet be invisible: FMP serves some logos (e.g. RH)
+ * as all-white artwork, which vanishes on the white tile and never
+ * triggers onerror. Sample the pixels; if nothing visible is darker
+ * than near-white, treat it as a failed load and fall back. */
+function pfLogoOk(img) {
+  try {
+    var c = document.createElement('canvas');
+    c.width = 24; c.height = 24;
+    var ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0, 24, 24);
+    var px = ctx.getImageData(0, 0, 24, 24).data, visible = 0, nonWhite = 0;
+    for (var i = 0; i < px.length; i += 4) {
+      if (px[i + 3] > 24) { visible++; if (px[i] < 235 || px[i + 1] < 235 || px[i + 2] < 235) nonWhite++; }
+    }
+    if (!visible || !nonWhite) pfLogoErr(img);
+  } catch (e) { /* no CORS on the fallback CDN: canvas tainted, keep image */ }
 }
 /* Company logo tile (Justin's rollout, 2026-10-30): white rounded
  * tile, ticker initial behind the image; pfLogoImg/p pfLogoErr give
  * the FMP -> Parqet -> letter fallback chain the Profile tab uses. */
 function logoTile(ticker, cls) {
-  return '<span class="logo-tile ' + (cls || '') + '" aria-hidden="true">' + esc(String(ticker || '?').charAt(0).toUpperCase()) + pfLogoImg(ticker) + '</span>';
+  var t = String(ticker || '?').toUpperCase();
+  var base = cls === 'lg' ? 19 : cls === 'sm' ? 13 : 16;
+  var f = t.length <= 2 ? 1 : t.length === 3 ? 0.8 : t.length === 4 ? 0.66 : 0.56;
+  return '<span class="logo-tile ' + (cls || '') + '" aria-hidden="true"><span class="logo-txt" style="font-size:' + Math.round(base * f) + 'px">' + esc(t) + '</span>' + pfLogoImg(ticker) + '</span>';
 }
 function pfLogoImg(ticker) {
-  return '<img class="pf-logo" src="https://financialmodelingprep.com/image-stock/' + encodeURIComponent(ticker) + '.png" data-fb="https://assets.parqet.com/logos/symbol/' + encodeURIComponent(ticker) + '?format=png" onerror="pfLogoErr(this)" alt="">';
+  return '<img class="pf-logo" src="https://financialmodelingprep.com/image-stock/' + encodeURIComponent(ticker) + '.png" data-fb="https://assets.parqet.com/logos/symbol/' + encodeURIComponent(ticker) + '?format=png" crossorigin="anonymous" onload="pfLogoOk(this)" onerror="pfLogoErr(this)" alt="">';
 }
 function pfKv(k, v) { return '<div class="pf-kv"><span>' + k + '</span><b>' + v + '</b></div>'; }
 

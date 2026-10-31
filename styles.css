@@ -449,6 +449,7 @@ table.scen td { padding: 8px 6px; }
 /* ---------- company logo tiles (scorecard, watchlist, scan, overview, compare) ---------- */
 .logo-tile { position: relative; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 11px; background: #fff; color: #141414; font-size: 16px; font-weight: 900; flex: 0 0 auto; }
 .logo-tile .pf-logo { padding: 4px; }
+.logo-txt { letter-spacing: -.02em; line-height: 1; }
 .logo-tile.sm { width: 32px; height: 32px; border-radius: 9px; font-size: 13px; }
 .logo-tile.lg { width: 48px; height: 48px; border-radius: 13px; font-size: 19px; }
 .sc-head-l { display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
