@@ -1255,7 +1255,7 @@ function bindPriceScrub(d, range) {
     line.setAttribute('x1', x); line.setAttribute('x2', x);
     dot.setAttribute('cx', x); dot.setAttribute('cy', y);
     var chg = (closes[i] / closes[0] - 1) * 100;
-    read.innerHTML = '<b class="pf-read-date">' + dateFor(i) + '</b> \u00b7 <b>' + fmtMoney(closes[i]) + '</b> \u00b7 <b class="' + (chg >= 0 ? 'up' : 'down') + '">' + fmtPct(chg) + '</b> since the start of the chart';
+    read.innerHTML = '<b class="pf-read-date">' + dateFor(i) + '</b> \u00b7 <b>' + fmtMoney(closes[i]) + '</b> \u00b7 <b class="' + (chg >= 0 ? 'up' : 'down') + '">' + fmtPct(chg) + '</b> since start';
   }
   zone.addEventListener('pointerdown', function (e) { scrubbing = true; try { zone.setPointerCapture(e.pointerId); } catch (err) {} scrubTo(e.clientX); e.preventDefault(); });
   zone.addEventListener('pointermove', function (e) { if (scrubbing) scrubTo(e.clientX); });
