@@ -227,6 +227,23 @@ td.num, th.num { text-align: right !important; font-variant-numeric: tabular-num
 .tx-chip.bad { color: var(--bad); border-color: var(--chip-fail-line); background: var(--chip-fail-bg); }
 .tx-sh { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tx-date { color: var(--muted); white-space: nowrap; }
+/* Analyst-target bar + at-a-glance radar + scan NEW pill (2026-10-30) */
+.fv-wrap { margin: 16px 0 2px; }
+.fv-track { position: relative; height: 8px; border-radius: 999px; background: var(--score-track); }
+.fv-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--gold-grad); }
+.fv-dot { position: absolute; top: 50%; width: 13px; height: 13px; border-radius: 50%; transform: translate(-50%, -50%); }
+.fv-dot.price { background: #fff; border: 2.5px solid var(--ink2); z-index: 2; }
+.fv-dot.target { background: var(--gold); border: 2.5px solid var(--gold-deep); z-index: 1; }
+.fv-cap { font-size: 12.5px; font-weight: 600; color: var(--muted); margin-top: 8px; }
+.radar-wrap { display: flex; justify-content: center; padding: 2px 0; }
+.radar-ring { fill: none; stroke: var(--line); stroke-width: 1; }
+.radar-spoke { stroke: var(--line); stroke-width: 1; }
+.radar-poly { fill: rgba(231, 172, 24, .28); stroke: var(--gold-mid); stroke-width: 2; stroke-linejoin: round; transform-box: fill-box; transform-origin: center; animation: radar-in .24s var(--ease-out); }
+@keyframes radar-in { from { opacity: 0; transform: scale(.93); } }
+.radar-lab { font-size: 10.5px; font-weight: 800; letter-spacing: .05em; fill: var(--muted); }
+.radar-lab.mini { font-size: 11px; }
+.radar-num { font-size: 12.5px; font-weight: 900; fill: var(--ink); }
+.scan-new { background: var(--gold-grad); color: #141414; font-size: 9px; font-weight: 900; letter-spacing: .06em; padding: 1.5px 6px; border-radius: 999px; vertical-align: 2px; white-space: nowrap; }
 .src-line { font-size: 11.5px; color: var(--muted); margin-top: 12px; line-height: 1.5; }
 .sc-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 
@@ -663,4 +680,5 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
   .info-text, .tool-intro.locked, .intro-tri, .pf-chev, .scan-bar i { transition-duration: .01s; }
   .toast-bubble { transition: opacity .2s ease; }
   .tool-page.active { animation: none; }
+  .radar-poly { animation: none; }
 }

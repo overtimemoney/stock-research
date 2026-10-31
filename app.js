@@ -1236,7 +1236,8 @@ var INFO_TEXT = {
   size: 'Company size by market cap (price \u00d7 shares). Smaller companies tend to swing harder, get less analyst coverage, and can be harder to sell in a panic \u2014 so small size adds risk points here.',
   currentratio: 'Current ratio = short-term assets \u00f7 short-term bills. Above 1 means the company can cover what it owes within the year. Below 1 can mean cash stress if business dips.',
   boombust: 'Some businesses boom then bust in cycles (memory chips are the classic case). This flags it when the forecast shows a big earnings peak followed by a cliff, after revenue roughly doubled into the peak \u2014 peak earnings make a stock look deceptively cheap.',
-  scanscore: 'Every stock in the index gets two 0\u2013100 scores: a Value score (cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt) and a Risk score (debt, volatility, size, earnings trend, boom-bust pattern). The Score on this list = 60% Value + 40% safety, where safety = 100 \u2212 Risk. Only stocks with enough data to score fairly can appear, and it shows the Top 10 for each index. Scores refresh when a company reports earnings, and the full index is rescanned about once a week. Scans fetch gently to stay under Finviz\'s rate limit, so a full scan takes a few minutes \u2014 you can close the app and it resumes where it left off.'
+  scanscore: 'Every stock in the index gets two 0\u2013100 scores: a Value score (cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt) and a Risk score (debt, volatility, size, earnings trend, boom-bust pattern). The Score on this list = 60% Value + 40% safety, where safety = 100 \u2212 Risk. Only stocks with enough data to score fairly can appear, and it shows the Top 10 for each index. Scores refresh when a company reports earnings, and the full index is rescanned about once a week. Scans fetch gently to stay under Finviz\'s rate limit, so a full scan takes a few minutes \u2014 you can close the app and it resumes where it left off.',
+  radar: 'Five 0\u2013100 lenses on the same numbers: Value (the valuation score), Future (forecast EPS growth), Past (recent revenue growth), Health (debt, liquidity, margins) and Dividend (the yield). A fuller shape means a more all-round stock; a lone spike shows where its whole case rests.'
 };
 var FACTOR_INFO = {
   'Forward P/E': 'fwpe', 'PEG ratio': 'peg', 'Below 52-wk high': 'belowhigh',
@@ -1533,6 +1534,101 @@ function dividendHtml(d) {
   return html;
 }
 
+/* Analyst-target bar: today's price vs the 1-yr analyst target on
+ * one track — white dot is the price, gold dot is the target. */
+function fvBarHtml(d) {
+  var tgt = analystTarget(d);
+  if (!isNum(tgt) || tgt <= 0 || !isNum(d.price) || d.price <= 0) return '';
+  var lo = Math.min(d.price, tgt) * 0.9, hi = Math.max(d.price, tgt) * 1.05;
+  var pxPos = (d.price - lo) / (hi - lo) * 100;
+  var tgPos = (tgt - lo) / (hi - lo) * 100;
+  var diff = (tgt / d.price - 1) * 100;
+  return '<div class="fv-wrap"><div class="fv-track">' +
+    '<div class="fv-fill" style="width:' + pxPos.toFixed(1) + '%"></div>' +
+    '<span class="fv-dot target" style="left:' + tgPos.toFixed(1) + '%"></span>' +
+    '<span class="fv-dot price" style="left:' + pxPos.toFixed(1) + '%"></span></div>' +
+    '<div class="fv-cap">Analyst 1-yr target ' + fmtMoney(tgt) + ' \u00b7 ' + fmtNum(Math.abs(diff), 1) + '% ' + (diff >= 0 ? 'above' : 'below') + ' the price</div></div>';
+}
+
+/* "At a glance" radar (Simply Wall St's snowflake, our numbers):
+ * five 0-100 axes mapped piecewise-linearly from figures already on
+ * the card. Presentation only — no score reads these. */
+var RADAR_FUT = [[-20, 0], [-5, 15], [0, 30], [8, 50], [15, 65], [25, 80], [40, 92], [60, 100]];
+var RADAR_PAST = [[-20, 0], [0, 35], [5, 55], [10, 70], [20, 85], [35, 100]];
+var RADAR_DE = [[0.1, 100], [0.5, 85], [1, 65], [2, 40], [3, 20], [4, 5]];
+var RADAR_CR = [[0.8, 10], [1, 45], [1.5, 75], [2, 95]];
+var RADAR_PM = [[-10, 5], [0, 40], [5, 60], [10, 75], [20, 90], [30, 100]];
+var RADAR_DIV = [[0, 0], [0.5, 25], [1, 45], [2, 65], [3, 80], [5, 100]];
+function radarMap(v, anchors) {
+  if (!isNum(v)) return null;
+  if (v <= anchors[0][0]) return anchors[0][1];
+  for (var i = 1; i < anchors.length; i++) {
+    if (v <= anchors[i][0]) {
+      var x0 = anchors[i - 1][0], y0 = anchors[i - 1][1], x1 = anchors[i][0], y1 = anchors[i][1];
+      return y0 + (y1 - y0) * (v - x0) / (x1 - x0);
+    }
+  }
+  return anchors[anchors.length - 1][1];
+}
+function radarAxes(d) {
+  var axes = [];
+  axes.push({ label: 'Value', score: scoreStock(d).score });
+  var g1 = isNum(d.epsGrowthNextY) ? radarMap(d.epsGrowthNextY, RADAR_FUT) : null;
+  var fc = (d.epsForecasts || []).filter(function (f) { return f && isNum(f.eps); });
+  var fut = g1;
+  if (fc.length >= 2 && fc[0].eps > 0 && fc[1].eps > 0) {
+    var g2 = radarMap((fc[1].eps / fc[0].eps - 1) * 100, RADAR_FUT);
+    fut = isNum(g1) ? (g1 + g2) / 2 : g2;
+  }
+  axes.push({ label: 'Future', score: isNum(fut) ? Math.round(fut) : null });
+  var pastParts = [];
+  if (isNum(d.salesGrowthTTM)) pastParts.push(radarMap(d.salesGrowthTTM, RADAR_PAST));
+  if (isNum(d.revGrowthQtr)) pastParts.push(radarMap(d.revGrowthQtr, RADAR_PAST));
+  var past = null;
+  if (pastParts.length) past = Math.round(pastParts.reduce(function (s, x) { return s + x; }, 0) / pastParts.length);
+  else if (isNum(d.epsGrowthTTM)) past = Math.round(radarMap(d.epsGrowthTTM, RADAR_PAST));
+  axes.push({ label: 'Past', score: past });
+  var hParts = [];
+  if (isNum(d.debtEq) && d.debtEq >= 0) hParts.push(radarMap(d.debtEq, RADAR_DE));
+  if (isNum(d.currentRatio) && d.currentRatio > 0) hParts.push(radarMap(d.currentRatio, RADAR_CR));
+  if (isNum(d.profitMargin)) hParts.push(radarMap(d.profitMargin, RADAR_PM));
+  axes.push({ label: 'Health', score: hParts.length ? Math.round(hParts.reduce(function (s, x) { return s + x; }, 0) / hParts.length) : null });
+  axes.push({ label: 'Dividend', score: isNum(d.divYield) ? Math.round(radarMap(Math.max(0, d.divYield), RADAR_DIV)) : null });
+  return axes;
+}
+function radarSvg(axes, size, mini) {
+  var cx = size / 2, cy = size / 2, R = size * 0.32;
+  function pt(i, frac) {
+    var ang = -Math.PI / 2 + i * (2 * Math.PI / 5);
+    return [cx + R * frac * Math.cos(ang), cy + R * frac * Math.sin(ang)];
+  }
+  function ring(frac) {
+    return axes.map(function (a, i) { var p = pt(i, frac); return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ');
+  }
+  var out = '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '" role="img" aria-label="At a glance radar chart">';
+  [0.33, 0.66, 1].forEach(function (f) { out += '<polygon points="' + ring(f) + '" class="radar-ring"/>'; });
+  axes.forEach(function (a, i) { var p = pt(i, 1); out += '<line x1="' + cx + '" y1="' + cy + '" x2="' + p[0].toFixed(1) + '" y2="' + p[1].toFixed(1) + '" class="radar-spoke"/>'; });
+  out += '<polygon points="' + axes.map(function (a, i) { var p = pt(i, isNum(a.score) ? a.score / 100 : 0); return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ') + '" class="radar-poly"/>';
+  axes.forEach(function (a, i) {
+    var p = pt(i, 1.24);
+    if (mini) {
+      out += '<text x="' + p[0].toFixed(1) + '" y="' + (p[1] + 4).toFixed(1) + '" text-anchor="middle" class="radar-lab mini">' + a.label.charAt(0) + '</text>';
+    } else {
+      out += '<text x="' + p[0].toFixed(1) + '" y="' + p[1].toFixed(1) + '" text-anchor="middle" class="radar-lab">' + a.label.toUpperCase() + '</text>' +
+        '<text x="' + p[0].toFixed(1) + '" y="' + (p[1] + 13).toFixed(1) + '" text-anchor="middle" class="radar-num">' + (isNum(a.score) ? a.score : '\u2014') + '</text>';
+    }
+  });
+  out += '</svg>';
+  return out;
+}
+function radarCount(axes) { return axes.filter(function (a) { return isNum(a.score); }).length; }
+function radarCardHtml(d) {
+  var axes = radarAxes(d);
+  if (radarCount(axes) < 3) return '';
+  return '<div class="section-h">At a glance' + infoDot('radar') + '</div>' + infoText('radar') +
+    '<div class="radar-wrap">' + radarSvg(axes, 250, false) + '</div>';
+}
+
 function renderScorecard(d) {
   lastStock = d;
   var sc = scoreStock(d);
@@ -1582,6 +1678,8 @@ function renderScorecard(d) {
     html += '<p class="fineprint">Higher = riskier \u00b7 scaled to 100 over factors with data (' + rk.maxAvailable + ' pts).</p>';
   }
 
+  html += radarCardHtml(d);
+
   html += '<div class="section-h">Your value screen — <span class="gold-text">' + passCount + ' of ' + knownCount + '</span></div>';
   html += '<div class="screen-chips">';
   screen.forEach(function (s) {
@@ -1603,6 +1701,7 @@ function renderScorecard(d) {
   });
   html += '</div>';
 
+  html += fvBarHtml(d);
   html += '<div class="section-h">Key <span class="gold-text">stats</span></div><div class="kv-grid">';
   html += kvItem('Market cap', fmtCap(d.marketCap), 'mktcap');
   html += kvItem('Forward P/E', isNum(d.forwardPE) ? fmtNum(d.forwardPE, 2) + (d.forwardPECalc ? ' (calc.)' : '') : '—', 'fwpe');
@@ -2832,6 +2931,7 @@ function scanStep() {
       if (droppedTotal === 0) {
         st.done = true;
         st.partial = false;
+        scanUpdateNewBadges(results, true);
         SCAN_IDXS.forEach(function (ix) { st.idx[ix.key].merged = {}; });
       } else {
         st.partial = true;
@@ -2917,6 +3017,37 @@ function getScanData() {
 }
 function setScanData(s) { try { localStorage.setItem(SCAN_DATA_KEY, JSON.stringify(s)); } catch (e) {} }
 
+/* NEW badges (2026-10-30): when a completed Top-10 list replaces the
+ * last shown one, names that weren't in the previous list carry a
+ * NEW pill until the next completed list lands. The first-ever list
+ * gets no badges — everything would be "new". */
+var SCAN_TOP_KEY = 'sr_scan_top_v1';
+var SCAN_NEW_KEY = 'sr_scan_new_v1';
+function scanNewList(ixKey) {
+  var nv = lsGet(SCAN_NEW_KEY, null);
+  return (nv && nv[ixKey]) || [];
+}
+function scanNewPill(ixKey, t) {
+  return scanNewList(ixKey).indexOf(t) !== -1 ? ' <span class="scan-new">NEW</span>' : '';
+}
+function scanUpdateNewBadges(results, force) {
+  if (!results) return;
+  var today = scanTodayKey();
+  var top = lsGet(SCAN_TOP_KEY, null);
+  if (!force && top && top.date === today) return; // already noted today's first list
+  var hadPrev = !!(top && ((top.spx || []).length || (top.rut || []).length));
+  var newIn = { spx: [], rut: [] }, newTop = { date: today, spx: [], rut: [] };
+  ['spx', 'rut'].forEach(function (ix) {
+    var prev = (top && top[ix]) || [];
+    (results[ix] || []).forEach(function (r) {
+      newTop[ix].push(r.t);
+      if (hadPrev && prev.indexOf(r.t) === -1) newIn[ix].push(r.t);
+    });
+  });
+  lsSet(SCAN_NEW_KEY, { date: today, spx: newIn.spx, rut: newIn.rut });
+  lsSet(SCAN_TOP_KEY, newTop);
+}
+
 function scanPersistIdx(ixKey, merged) {
   var ds = getScanData() || { recs: {}, asOf: null, lastRefreshDay: null, lastRefreshCount: 0 };
   Object.keys(merged).forEach(function (t) {
@@ -2957,6 +3088,7 @@ function scanShowDataResults(ds, refreshed) {
   var s = getScan();
   if (!s || s.date !== today) s = scanFreshState();
   s.results = scanRankFromData(ds);
+  scanUpdateNewBadges(s.results, false);
   s.done = true;
   s.partial = false;
   s.fromData = true;
@@ -3155,12 +3287,12 @@ function renderScanCard() {
       var n = Object.keys(ds.recs).filter(function (t) { return ds.recs[t].ix === ix.key; }).length;
       if (!n) return;
       var rows = ranked[ix.key] || [];
-      out += '<div class="scan-group">' + esc(ix.label) + ' <span class="scan-count">' + n + ' stocks scored</span></div>';
+      out += '<div class="scan-group">' + esc(ix.label) + ' <span class="scan-count">' + n + ' stocks scored' + (scanNewList(ix.key).length ? ' \u00b7 ' + scanNewList(ix.key).length + ' new' : '') + '</span></div>';
       if (!rows.length) { out += '<div class="status">No scored stocks came back.</div>'; }
       rows.forEach(function (row, i) {
         out += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
           '<span class="scan-rank">' + (i + 1) + '</span>' +
-          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + '</span></span>' +
+          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + scanNewPill(ix.key, row.t) + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
           '<span class="scan-score ' + scanScoreClass(row.score) + '">Score ' + row.score + '</span></button>';
       });
@@ -3193,13 +3325,14 @@ function renderScanCard() {
           '<button type="button" class="btn-ghost" id="scan-start-rut">Scan Russell 2000</button>';
         return;
       }
-      var countTxt = isNum(z.scored) ? z.scored + ' stocks scored' : '';
+      var newCt = scanNewList(ix.key).length;
+      var countTxt = isNum(z.scored) ? z.scored + ' stocks scored' + (newCt ? ' \u00b7 ' + newCt + ' new' : '') : '';
       out += '<div class="scan-group">' + esc(ix.label) + (countTxt ? ' <span class="scan-count">' + countTxt + '</span>' : '') + '</div>';
       if (!rows.length) { out += '<div class="status">No scored stocks came back.</div>'; }
       rows.forEach(function (row, i) {
         out += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
           '<span class="scan-rank">' + (i + 1) + '</span>' +
-          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + '</span></span>' +
+          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + scanNewPill(ix.key, row.t) + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
           '<span class="scan-score ' + scanScoreClass(row.score) + '">Score ' + row.score + '</span></button>';
       });
@@ -3332,6 +3465,7 @@ function renderOverview(d, item) {
     html += '<p class="fineprint" style="margin:2px 0 8px">Your target buy: ' + fmtMoney(item.target) + ' \u2014 ' +
       (d.price <= item.target ? 'price is at or below it' : fmtNum(above, 1) + '% above it') + '.</p>';
   }
+  html += fvBarHtml(d);
   if (sc.score != null) {
     var vClass = sc.verdict === 'Undervalued' ? 'undervalued' : sc.verdict === 'Fairly valued' ? 'fair' : 'overpriced';
     html += '<div class="verdict ' + vClass + '"><div><div class="v-label">Valuation verdict</div>' +
@@ -3345,6 +3479,10 @@ function renderOverview(d, item) {
       '<div class="v-word">' + esc(rk.verdict) + '</div></div>' +
       '<div class="v-score">' + rk.score + '<small> / 100</small></div></div>';
     html += '<div class="score-bar risk-bar"><div style="width:' + rk.score + '%"></div></div>';
+  }
+  var ovAxes = radarAxes(d);
+  if (radarCount(ovAxes) >= 3) {
+    html += '<div class="section-h" style="margin-top:12px">At a glance</div><div class="radar-wrap">' + radarSvg(ovAxes, 150, true) + '</div>';
   }
   var pw = epsProfitWarning(d);
   if (pw) html += '<div class="alert warn">' + esc(pw) + '</div>';
