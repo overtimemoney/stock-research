@@ -3413,6 +3413,136 @@ function renderScanCard() {
   });
 }
 
+/* ---------- custom screener (over the stored scan dataset) ----------
+ * Filters the records the daily scan already stored (sr_scan_data_v1)
+ * with the app's own value screen fields, scored by the same
+ * 60% value + 40% safety blend as the daily Top 10. Runs entirely
+ * on-device against stored data — no new fetching. */
+var SCR_FIELDS = ['fpe', 'peg', 'mcap', 'growth', 'below', 'de', 'beta', 'pm', 'cr'];
+var SCR_SAVED_KEY = 'sr_screens_v1';
+function scanRecordScore(rec) {
+  if (!(isNum(rec.forwardPE) && rec.forwardPE > 0)) return null;
+  var s = scoreStock(rec);
+  if (!s || !isNum(s.score)) return null;
+  var rk = riskScore(rec); // no revPath on records: boom-bust sits out, same as the scan
+  if (!rk || !isNum(rk.score)) return null;
+  return { val: s.score, risk: rk.score, combined: Math.round(0.6 * s.score + 0.4 * (100 - rk.score)) };
+}
+function scrReadControls() {
+  var f = { ix: $('scr-ix').value, sort: $('scr-sort').value };
+  SCR_FIELDS.forEach(function (k) {
+    var v = parseFloat($('scr-' + k).value);
+    f[k] = isNum(v) ? v : null;
+  });
+  return f;
+}
+function scrApplyControls(f) {
+  $('scr-ix').value = f.ix || 'both';
+  $('scr-sort').value = f.sort || 'combined';
+  SCR_FIELDS.forEach(function (k) { $('scr-' + k).value = isNum(f[k]) ? f[k] : ''; });
+}
+function scrPasses(rec, f) {
+  if (f.ix !== 'both' && rec.ix !== f.ix) return false;
+  if (isNum(f.fpe) && !(isNum(rec.forwardPE) && rec.forwardPE <= f.fpe)) return false;
+  if (isNum(f.peg) && !(isNum(rec.peg) && rec.peg <= f.peg)) return false;
+  if (isNum(f.mcap) && !(isNum(rec.marketCap) && rec.marketCap >= f.mcap * 1e9)) return false;
+  if (isNum(f.growth) && !(isNum(rec.epsGrowthNextY) && rec.epsGrowthNextY >= f.growth)) return false;
+  if (isNum(f.below) && !(isNum(rec.pctBelowHigh) && rec.pctBelowHigh >= f.below)) return false;
+  if (isNum(f.de) && !(isNum(rec.debtEq) && rec.debtEq <= f.de)) return false;
+  if (isNum(f.beta) && !(isNum(rec.beta) && rec.beta <= f.beta)) return false;
+  if (isNum(f.pm) && !(isNum(rec.profitMargin) && rec.profitMargin >= f.pm)) return false;
+  if (isNum(f.cr) && !(isNum(rec.currentRatio) && rec.currentRatio >= f.cr)) return false;
+  return true;
+}
+function runScreener() {
+  var box = $('scr-results');
+  if (!box) return;
+  var ds = getScanData();
+  if (!ds || !ds.recs || !Object.keys(ds.recs).length) {
+    box.innerHTML = '<div class="status">No stored scan data yet \u2014 the daily scan builds it.</div>' +
+      '<button type="button" class="btn-ghost" id="scr-close2" style="margin-top:8px">Back to the scan card</button>';
+    var c = $('scr-close2');
+    if (c) c.addEventListener('click', closeScreener);
+    return;
+  }
+  var f = scrReadControls();
+  var out = [];
+  Object.keys(ds.recs).forEach(function (t) {
+    var rec = ds.recs[t];
+    if (!scrPasses(rec, f)) return;
+    var sc = scanRecordScore(rec);
+    if (!sc) return;
+    out.push({ t: t, name: rec.name, price: rec.price, forwardPE: rec.forwardPE, epsGrowthNextY: rec.epsGrowthNextY, pctBelowHigh: rec.pctBelowHigh, marketCap: rec.marketCap, score: sc.combined });
+  });
+  var sorters = {
+    combined: function (a, b) { return b.score - a.score; },
+    fpe: function (a, b) { return a.forwardPE - b.forwardPE; },
+    growth: function (a, b) { return (isNum(b.epsGrowthNextY) ? b.epsGrowthNextY : -1e9) - (isNum(a.epsGrowthNextY) ? a.epsGrowthNextY : -1e9); },
+    below: function (a, b) { return (isNum(b.pctBelowHigh) ? b.pctBelowHigh : -1) - (isNum(a.pctBelowHigh) ? a.pctBelowHigh : -1); },
+    mcap: function (a, b) { return (isNum(b.marketCap) ? b.marketCap : 0) - (isNum(a.marketCap) ? a.marketCap : 0); }
+  };
+  out.sort(sorters[f.sort] || sorters.combined);
+  var html = '<div class="fineprint" style="margin:10px 0 4px">' + out.length + ' matches \u00b7 stored data from ' + esc(ds.asOf || 'an earlier scan') + '</div>';
+  out.slice(0, 100).forEach(function (row, i) {
+    html += '<button type="button" class="scan-row" data-scr-research="' + esc(row.t) + '">' +
+      '<span class="scan-rank">' + (i + 1) + '</span>' +
+      logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name || row.t) + '</span></span>' +
+      '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
+      '<span class="scan-score ' + scanScoreClass(row.score) + '">Score ' + row.score + '</span></button>';
+  });
+  if (!out.length) html += '<div class="status">No stored stocks match those filters.</div>';
+  box.innerHTML = html;
+  box.querySelectorAll('[data-scr-research]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var T = b.getAttribute('data-scr-research');
+      closeScreener();
+      switchTab('scorecard');
+      $('search-input').value = T;
+      runSearch(T);
+    });
+  });
+}
+function getSavedScreens() { return lsGet(SCR_SAVED_KEY, []); }
+function renderSavedScreens() {
+  var box = $('scr-saved');
+  if (!box) return;
+  var list = getSavedScreens();
+  if (!list.length) { box.innerHTML = ''; return; }
+  var html = '';
+  list.forEach(function (s, i) {
+    html += '<span class="scr-chip"><button type="button" class="scr-chip-load" data-scr-load="' + i + '">' + esc(s.name) + '</button>' +
+      '<button type="button" class="scr-chip-x" data-scr-del="' + i + '" aria-label="Delete saved screen">\u2715</button></span>';
+  });
+  box.innerHTML = html;
+  box.querySelectorAll('[data-scr-load]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var s = getSavedScreens()[parseInt(b.getAttribute('data-scr-load'), 10)];
+      if (s) { scrApplyControls(s.f); runScreener(); }
+    });
+  });
+  box.querySelectorAll('[data-scr-del]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var list2 = getSavedScreens();
+      var s = list2[parseInt(b.getAttribute('data-scr-del'), 10)];
+      if (s && window.confirm('Delete saved screen "' + s.name + '"?')) {
+        list2.splice(parseInt(b.getAttribute('data-scr-del'), 10), 1);
+        lsSet(SCR_SAVED_KEY, list2);
+        renderSavedScreens();
+      }
+    });
+  });
+}
+function openScreener() {
+  var p = $('scr-panel');
+  if (p) { p.scrollTop = 0; p.classList.add('open'); }
+  renderSavedScreens();
+  runScreener();
+}
+function closeScreener() {
+  var p = $('scr-panel');
+  if (p) p.classList.remove('open');
+}
+
 /* ---------- full-screen stock overview (watchlist tap) ----------
  * Justin's ask (2026-10-29): tapping a watchlist row opens a
  * full-screen overview of the stock -- a condensed scorecard
@@ -5089,6 +5219,22 @@ function initApp() {
     switchTab('disclaimer');
   });
   $('ov-back').addEventListener('click', function () { closeOverview(); });
+  $('wl-screener').addEventListener('click', function () { openScreener(); });
+  $('scr-back').addEventListener('click', function () { closeScreener(); });
+  $('scr-run').addEventListener('click', function () { runScreener(); });
+  $('scr-clear').addEventListener('click', function () { scrApplyControls({ ix: 'both', sort: 'combined' }); runScreener(); });
+  $('scr-save').addEventListener('click', function () {
+    var name = window.prompt('Name this screen:', '');
+    if (name === null) return;
+    name = String(name).trim();
+    if (!name) return;
+    var list = getSavedScreens();
+    list.push({ name: name, f: scrReadControls() });
+    lsSet(SCR_SAVED_KEY, list);
+    renderSavedScreens();
+  });
+  $('scr-ix').addEventListener('change', function () { runScreener(); });
+  $('scr-sort').addEventListener('change', function () { runScreener(); });
   /* Floating nav shrinks while scrolling down (Instagram-style) and
    * restores on scroll up or near the top (Justin's ask, 2026-10-29). */
   var navEl = document.querySelector('.tabbar');
