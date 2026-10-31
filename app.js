@@ -1288,6 +1288,7 @@ var INFO_TEXT = {
   range52: 'The lowest and highest prices of the last 52 weeks (one year) \u2014 the range the stock has actually traded in recently.',
   belowhigh: 'How far below its one-year high the price sits, as a %. A big gap can be a bargain \u2014 or a warning that something is wrong. It is a starting clue, never proof.',
   divyield: 'Dividend yield = the yearly dividend per share as a % of the price. 2% on a $100 stock means about $2 a year in cash payments while you hold it. 0% means no dividend.',
+  instown: 'Institutional ownership = the % of the company\u2019s shares held by big professional investors \u2014 mutual funds, pension funds, hedge funds. High means the pros have committed real money after doing their own homework; very high can also mean a crowded trade if they all head for the exit at once.',
   target: 'The average price analysts who cover the stock expect within about a year. It is opinion, not a promise \u2014 treat it as a sentiment check, not a forecast to bank on.',
   mktcap: 'Market cap = share price \u00d7 total shares \u2014 what the whole company is worth at today\'s price. Big (over $200B) usually means steadier; small (under $2B) usually means swingier.',
   size: 'Company size by market cap (price \u00d7 shares). Smaller companies tend to swing harder, get less analyst coverage, and can be harder to sell in a panic \u2014 so small size adds risk points here.',
@@ -1816,7 +1817,7 @@ function renderScorecard(d) {
   html += kvItem('Below 52-wk high', isNum(d.pctBelowHigh) ? fmtNum(d.pctBelowHigh, 1) + '%' : '—', 'belowhigh');
   html += kvItem('Dividend yield', isNum(d.divYield) ? fmtNum(d.divYield, 2) + '%' : '—', 'divyield');
   html += kvItem('Analyst 1-yr target', isNum(d.target1Y) ? fmtMoney(d.target1Y) : '—', 'target');
-  if (isNum(d.instOwn)) html += kvItem('Institutional ownership', fmtNum(d.instOwn, 1) + '%');
+  if (isNum(d.instOwn)) html += kvItem('Institutional ownership', fmtNum(d.instOwn, 1) + '%', 'instown');
   html += '</div>';
 
   var profitWarn = epsProfitWarning(d);
