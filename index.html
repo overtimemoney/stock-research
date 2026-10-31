@@ -136,6 +136,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
     <div id="scr-saved" class="scr-saved"></div>
     <div class="card scr-controls">
       <label class="scr-row"><span>Index</span><select id="scr-ix"><option value="both">Both indexes</option><option value="spx">S&amp;P 500</option><option value="rut">Russell 2000</option></select></label>
+      <label class="scr-row"><span>Sector</span><select id="scr-sector"><option value="all">All sectors</option></select></label>
       <label class="scr-row"><span>Forward P/E, max</span><input id="scr-fpe" type="number" step="any" min="0" inputmode="decimal"></label>
       <label class="scr-row"><span>PEG, max</span><input id="scr-peg" type="number" step="any" min="0" inputmode="decimal"></label>
       <label class="scr-row"><span>Market cap, min ($B)</span><input id="scr-mcap" type="number" step="any" min="0" inputmode="decimal"></label>
@@ -146,7 +147,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
       <label class="scr-row"><span>Profit margin, min %</span><input id="scr-pm" type="number" step="any" inputmode="decimal"></label>
       <label class="scr-row"><span>Current ratio, min</span><input id="scr-cr" type="number" step="any" min="0" inputmode="decimal"></label>
       <label class="scr-row"><span>Dividend yield, min %</span><input id="scr-dy" type="number" step="any" min="0" inputmode="decimal"></label>
-      <label class="scr-row"><span>Sort by</span><select id="scr-sort"><option value="combined">Combined score</option><option value="fpe">Forward P/E (low)</option><option value="growth">EPS growth</option><option value="below">Below 52-wk high</option><option value="mcap">Market cap</option></select></label>
+      <label class="scr-row"><span>Sort by</span><select id="scr-sort"><option value="combined">Combined score</option><option value="fpe">Forward P/E (low)</option><option value="growth">EPS growth</option><option value="below">Below 52-wk high</option><option value="mcap">Market cap</option><option value="sector">Sector</option></select></label>
       <div class="scr-actions">
         <button type="button" class="btn-gold" id="scr-run">Run screen</button>
         <button type="button" class="btn-ghost" id="scr-save">Save screen</button>

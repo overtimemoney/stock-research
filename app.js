@@ -2938,10 +2938,161 @@ function getScan() {
 }
 function setScan(s) { try { localStorage.setItem(SCAN_KEY, JSON.stringify(s)); } catch (e) {} }
 
+/* Finviz industry -> sector, their own screener taxonomy
+ * (extracted 2026-10-31). Scan records carry industry; the sector is
+ * derived here so records stay small. Unknown industries -> 'Other'. */
+var INDUSTRY_SECTOR = {
+  'Advertising Agencies': 'Communication Services',
+  'Aerospace & Defense': 'Industrials',
+  'Agricultural Inputs': 'Basic Materials',
+  'Airlines': 'Industrials',
+  'Airports & Air Services': 'Industrials',
+  'Aluminum': 'Basic Materials',
+  'Apparel Manufacturing': 'Consumer Cyclical',
+  'Apparel Retail': 'Consumer Cyclical',
+  'Asset Management': 'Financial',
+  'Auto & Truck Dealerships': 'Consumer Cyclical',
+  'Auto Manufacturers': 'Consumer Cyclical',
+  'Auto Parts': 'Consumer Cyclical',
+  'Banks - Diversified': 'Financial',
+  'Banks - Regional': 'Financial',
+  'Beverages - Brewers': 'Consumer Defensive',
+  'Beverages - Non-Alcoholic': 'Consumer Defensive',
+  'Beverages - Wineries & Distilleries': 'Consumer Defensive',
+  'Biotechnology': 'Healthcare',
+  'Broadcasting': 'Communication Services',
+  'Building Materials': 'Basic Materials',
+  'Building Products & Equipment': 'Industrials',
+  'Business Equipment & Supplies': 'Industrials',
+  'Capital Markets': 'Financial',
+  'Chemicals': 'Basic Materials',
+  'Coking Coal': 'Basic Materials',
+  'Communication Equipment': 'Technology',
+  'Computer Hardware': 'Technology',
+  'Confectioners': 'Consumer Defensive',
+  'Conglomerates': 'Industrials',
+  'Consulting Services': 'Industrials',
+  'Consumer Electronics': 'Technology',
+  'Copper': 'Basic Materials',
+  'Credit Services': 'Financial',
+  'Department Stores': 'Consumer Cyclical',
+  'Diagnostics & Research': 'Healthcare',
+  'Discount Stores': 'Consumer Defensive',
+  'Drug Manufacturers - General': 'Healthcare',
+  'Drug Manufacturers - Specialty & Generic': 'Healthcare',
+  'Education & Training Services': 'Consumer Defensive',
+  'Electrical Equipment & Parts': 'Industrials',
+  'Electronic Components': 'Technology',
+  'Electronic Gaming & Multimedia': 'Communication Services',
+  'Electronics & Computer Distribution': 'Technology',
+  'Engineering & Construction': 'Industrials',
+  'Entertainment': 'Communication Services',
+  'Farm & Heavy Construction Machinery': 'Industrials',
+  'Farm Products': 'Consumer Defensive',
+  'Financial Conglomerates': 'Financial',
+  'Financial Data & Stock Exchanges': 'Financial',
+  'Food Distribution': 'Consumer Defensive',
+  'Footwear & Accessories': 'Consumer Cyclical',
+  'Furnishings, Fixtures & Appliances': 'Consumer Cyclical',
+  'Gambling': 'Consumer Cyclical',
+  'Gold': 'Basic Materials',
+  'Grocery Stores': 'Consumer Defensive',
+  'Health Information Services': 'Healthcare',
+  'Healthcare Plans': 'Healthcare',
+  'Home Improvement Retail': 'Consumer Cyclical',
+  'Household & Personal Products': 'Consumer Defensive',
+  'Industrial Distribution': 'Industrials',
+  'Information Technology Services': 'Technology',
+  'Infrastructure Operations': 'Industrials',
+  'Insurance - Diversified': 'Financial',
+  'Insurance - Life': 'Financial',
+  'Insurance - Property & Casualty': 'Financial',
+  'Insurance - Reinsurance': 'Financial',
+  'Insurance - Specialty': 'Financial',
+  'Insurance Brokers': 'Financial',
+  'Integrated Freight & Logistics': 'Industrials',
+  'Internet Content & Information': 'Communication Services',
+  'Internet Retail': 'Consumer Cyclical',
+  'Leisure': 'Consumer Cyclical',
+  'Lodging': 'Consumer Cyclical',
+  'Lumber & Wood Production': 'Basic Materials',
+  'Luxury Goods': 'Consumer Cyclical',
+  'Marine Shipping': 'Industrials',
+  'Medical Care Facilities': 'Healthcare',
+  'Medical Devices': 'Healthcare',
+  'Medical Distribution': 'Healthcare',
+  'Medical Instruments & Supplies': 'Healthcare',
+  'Metal Fabrication': 'Industrials',
+  'Mortgage Finance': 'Financial',
+  'Oil & Gas Drilling': 'Energy',
+  'Oil & Gas E&P': 'Energy',
+  'Oil & Gas Equipment & Services': 'Energy',
+  'Oil & Gas Integrated': 'Energy',
+  'Oil & Gas Midstream': 'Energy',
+  'Oil & Gas Refining & Marketing': 'Energy',
+  'Other Industrial Metals & Mining': 'Basic Materials',
+  'Other Precious Metals & Mining': 'Basic Materials',
+  'Packaged Foods': 'Consumer Defensive',
+  'Packaging & Containers': 'Consumer Cyclical',
+  'Paper & Paper Products': 'Basic Materials',
+  'Personal Services': 'Consumer Cyclical',
+  'Pharmaceutical Retailers': 'Healthcare',
+  'Pollution & Treatment Controls': 'Industrials',
+  'Publishing': 'Communication Services',
+  'REIT - Diversified': 'Real Estate',
+  'REIT - Healthcare Facilities': 'Real Estate',
+  'REIT - Hotel & Motel': 'Real Estate',
+  'REIT - Industrial': 'Real Estate',
+  'REIT - Mortgage': 'Real Estate',
+  'REIT - Office': 'Real Estate',
+  'REIT - Residential': 'Real Estate',
+  'REIT - Retail': 'Real Estate',
+  'REIT - Specialty': 'Real Estate',
+  'Railroads': 'Industrials',
+  'Real Estate - Development': 'Real Estate',
+  'Real Estate - Diversified': 'Real Estate',
+  'Real Estate Services': 'Real Estate',
+  'Recreational Vehicles': 'Consumer Cyclical',
+  'Rental & Leasing Services': 'Industrials',
+  'Residential Construction': 'Consumer Cyclical',
+  'Resorts & Casinos': 'Consumer Cyclical',
+  'Restaurants': 'Consumer Cyclical',
+  'Scientific & Technical Instruments': 'Technology',
+  'Security & Protection Services': 'Industrials',
+  'Semiconductor Equipment & Materials': 'Technology',
+  'Semiconductors': 'Technology',
+  'Silver': 'Basic Materials',
+  'Software - Application': 'Technology',
+  'Software - Infrastructure': 'Technology',
+  'Solar': 'Technology',
+  'Specialty Business Services': 'Industrials',
+  'Specialty Chemicals': 'Basic Materials',
+  'Specialty Industrial Machinery': 'Industrials',
+  'Specialty Retail': 'Consumer Cyclical',
+  'Staffing & Employment Services': 'Industrials',
+  'Steel': 'Basic Materials',
+  'Telecom Services': 'Communication Services',
+  'Textile Manufacturing': 'Consumer Cyclical',
+  'Thermal Coal': 'Energy',
+  'Tobacco': 'Consumer Defensive',
+  'Tools & Accessories': 'Industrials',
+  'Travel Services': 'Consumer Cyclical',
+  'Trucking': 'Industrials',
+  'Uranium': 'Energy',
+  'Utilities - Diversified': 'Utilities',
+  'Utilities - Independent Power Producers': 'Utilities',
+  'Utilities - Regulated Electric': 'Utilities',
+  'Utilities - Regulated Gas': 'Utilities',
+  'Utilities - Regulated Water': 'Utilities',
+  'Utilities - Renewable': 'Utilities',
+  'Waste Management': 'Industrials'
+};
+function sectorOf(rec) { return (rec && rec.industry && INDUSTRY_SECTOR[rec.industry]) || 'Other'; }
 function scanMerge(idxs, view, rows) {
   rows.forEach(function (row) {
     var rec = idxs.merged[row.t];
     if (!rec) { rec = { name: row.name || row.t }; idxs.merged[row.t] = rec; }
+    if (row.ind) rec.industry = row.ind;
     var n = row.n || {};
     if (view === '121') {
       if (isNum(n.forwardPE)) rec.forwardPE = n.forwardPE;
@@ -3225,7 +3376,7 @@ function scanPersistIdx(ixKey, merged) {
     ds.recs[t] = { name: r.name, ix: ixKey, forwardPE: r.forwardPE, peg: r.peg, epsGrowthNextY: r.epsGrowthNextY,
       price: r.price, marketCap: r.marketCap, grossMargin: r.grossMargin, profitMargin: r.profitMargin,
       debtEq: r.debtEq, currentRatio: r.currentRatio, pctBelowHigh: r.pctBelowHigh, beta: r.beta,
-      divYield: r.divYield };
+      divYield: r.divYield, industry: r.industry };
   });
   if (ixKey === 'spx') ds.asOf = scanTodayKey();
   setScanData(ds);
@@ -3238,6 +3389,34 @@ function scanPersistIdx(ixKey, merged) {
  * once, on a launch where the dataset is still missing them; scans
  * keep the field from here on. */
 var DY_BACKFILL_KEY = 'sr_dy_backfill_v1';
+var SECTOR_BACKFILL_KEY = 'sr_sector_backfill_v1';
+async function sectorBackfill() {
+  if (lsGet(SECTOR_BACKFILL_KEY, null)) return;
+  var ds = getScanData();
+  if (!ds || !ds.recs) return;
+  var tickers = Object.keys(ds.recs);
+  if (!tickers.length) return;
+  var have = tickers.filter(function (t) { return !!ds.recs[t].industry; }).length;
+  if (have > tickers.length * 0.5) { lsSet(SECTOR_BACKFILL_KEY, 1); return; }
+  try {
+    var resp = await fetch('scan-data.json?cb=' + Date.now(), { cache: 'no-store' });
+    if (!resp.ok) return;
+    var snap = await resp.json();
+    if (!snap || !snap.recs) return;
+    var filled = 0;
+    tickers.forEach(function (t) {
+      if (!ds.recs[t].industry && snap.recs[t] && snap.recs[t].industry) {
+        ds.recs[t].industry = snap.recs[t].industry;
+        filled++;
+      }
+    });
+    if (filled > 0) {
+      setScanData(ds);
+      lsSet(SECTOR_BACKFILL_KEY, 1);
+      if (document.querySelector('#tool-scr.active')) runScreener();
+    }
+  } catch (e) {}
+}
 async function dyBackfill() {
   if (lsGet(DY_BACKFILL_KEY, null)) return;
   var ds = getScanData();
@@ -3272,6 +3451,7 @@ function scanRecordFromQuote(html, prev) {
   var d = { ticker: '', sources: [], errors: [] };
   try { fillFromFinviz(d, html); } catch (e) { return null; }
   var rec = { name: d.companyName || (prev && prev.name) || '', ix: prev && prev.ix };
+  rec.industry = prev ? prev.industry : null;
   ['forwardPE', 'peg', 'price', 'marketCap', 'grossMargin', 'profitMargin', 'debtEq', 'beta', 'currentRatio', 'pctBelowHigh', 'divYield'].forEach(function (k) {
     rec[k] = isNum(d[k]) ? d[k] : (prev ? prev[k] : null);
   });
@@ -3653,7 +3833,7 @@ function scanRecordScore(rec) {
   return { val: s.score, risk: rk.score, combined: Math.round(0.6 * s.score + 0.4 * (100 - rk.score)) };
 }
 function scrReadControls() {
-  var f = { ix: $('scr-ix').value, sort: $('scr-sort').value };
+  var f = { ix: $('scr-ix').value, sort: $('scr-sort').value, sector: $('scr-sector') ? $('scr-sector').value : 'all' };
   SCR_FIELDS.forEach(function (k) {
     var v = parseFloat($('scr-' + k).value);
     f[k] = isNum(v) ? v : null;
@@ -3664,10 +3844,12 @@ function scrReadControls() {
 function scrApplyControls(f) {
   $('scr-ix').value = f.ix || 'both';
   $('scr-sort').value = f.sort || 'combined';
+  var ss = $('scr-sector'); if (ss) ss.value = f.sector || 'all';
   SCR_FIELDS.forEach(function (k) { $('scr-' + k).value = isNum(f[k]) ? f[k] : ''; });
 }
 function scrPasses(rec, f) {
   if (f.ix !== 'both' && rec.ix !== f.ix) return false;
+  if (f.sector && f.sector !== 'all' && sectorOf(rec) !== f.sector) return false;
   if (isNum(f.fpe) && !(isNum(rec.forwardPE) && rec.forwardPE <= f.fpe)) return false;
   if (isNum(f.peg) && !(isNum(rec.peg) && rec.peg <= f.peg)) return false;
   if (isNum(f.mcap) && !(isNum(rec.marketCap) && rec.marketCap >= f.mcap * 1e9)) return false;
@@ -3691,34 +3873,54 @@ function runScreener() {
     if (c) c.addEventListener('click', function () { switchTab('watchlist'); });
     return;
   }
+  var ss = $('scr-sector');
+  if (ss) {
+    var cur = ss.value || 'all';
+    var secs = {};
+    Object.keys(ds.recs).forEach(function (t) { secs[sectorOf(ds.recs[t])] = true; });
+    var secNames = Object.keys(secs).filter(function (x) { return x !== 'Other'; }).sort();
+    if (secs.Other) secNames.push('Other');
+    ss.innerHTML = '<option value="all">All sectors</option>' + secNames.map(function (x) { return '<option value="' + esc(x) + '">' + esc(x) + '</option>'; }).join('');
+    ss.value = (cur === 'all' || secNames.indexOf(cur) >= 0) ? cur : 'all';
+  }
   var f = scrReadControls();
   var out = [];
-  var anyYield = false;
+  var anyYield = false, anyInd = false;
   Object.keys(ds.recs).forEach(function (t) {
     var rec = ds.recs[t];
     if (isNum(rec.divYield)) anyYield = true;
+    if (rec.industry) anyInd = true;
     if (!scrPasses(rec, f)) return;
     var sc = scanRecordScore(rec);
     if (!sc) return;
-    out.push({ t: t, name: rec.name, price: rec.price, forwardPE: rec.forwardPE, epsGrowthNextY: rec.epsGrowthNextY, pctBelowHigh: rec.pctBelowHigh, marketCap: rec.marketCap, score: sc.combined });
+    out.push({ t: t, name: rec.name, price: rec.price, forwardPE: rec.forwardPE, epsGrowthNextY: rec.epsGrowthNextY, pctBelowHigh: rec.pctBelowHigh, marketCap: rec.marketCap, score: sc.combined, sector: sectorOf(rec) });
   });
   var sorters = {
     combined: function (a, b) { return b.score - a.score; },
     fpe: function (a, b) { return a.forwardPE - b.forwardPE; },
     growth: function (a, b) { return (isNum(b.epsGrowthNextY) ? b.epsGrowthNextY : -1e9) - (isNum(a.epsGrowthNextY) ? a.epsGrowthNextY : -1e9); },
     below: function (a, b) { return (isNum(b.pctBelowHigh) ? b.pctBelowHigh : -1) - (isNum(a.pctBelowHigh) ? a.pctBelowHigh : -1); },
-    mcap: function (a, b) { return (isNum(b.marketCap) ? b.marketCap : 0) - (isNum(a.marketCap) ? a.marketCap : 0); }
+    mcap: function (a, b) { return (isNum(b.marketCap) ? b.marketCap : 0) - (isNum(a.marketCap) ? a.marketCap : 0); },
+    sector: function (a, b) { var sa = a.sector === 'Other' ? 'ZZZ' : a.sector, sb = b.sector === 'Other' ? 'ZZZ' : b.sector; return sa < sb ? -1 : sa > sb ? 1 : (b.score - a.score); }
   };
   out.sort(sorters[f.sort] || sorters.combined);
   var html = '<div class="fineprint" style="margin:10px 0 4px">' + out.length + ' matches \u00b7 stored data from ' + esc(ds.asOf || 'an earlier scan') + '</div>';
+  var sectorCounts = {};
+  if (f.sort === 'sector') out.forEach(function (row) { sectorCounts[row.sector] = (sectorCounts[row.sector] || 0) + 1; });
+  var lastSector = null;
   out.slice(0, 100).forEach(function (row, i) {
+    if (f.sort === 'sector' && row.sector !== lastSector) {
+      lastSector = row.sector;
+      html += '<div class="scan-group">' + esc(row.sector) + ' <span class="scan-count">' + sectorCounts[row.sector] + ' stocks</span></div>';
+    }
     html += '<button type="button" class="scan-row" data-scr-research="' + esc(row.t) + '">' +
       '<span class="scan-rank">' + (i + 1) + '</span>' +
-      logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name || row.t) + '</span></span>' +
+      logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name || row.t) + (row.sector !== 'Other' ? ' \u00b7 ' + esc(row.sector) : '') + '</span></span>' +
       '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
       '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
   });
   if (!out.length && isNum(f.dy) && !anyYield) html += '<div class="status">Dividend yield isn\'t in the stored data yet \u2014 it arrives with the next scan, or tap Rescan on the Watchlist scan card to get it now.</div>';
+  else if (!out.length && f.sector && f.sector !== 'all' && !anyInd) html += '<div class="status">Sector data isn\'t in the stored data yet \u2014 it arrives with the next scan, or tap Rescan on the Watchlist scan card to get it now.</div>';
   else if (!out.length) html += '<div class="status">No stored stocks match those filters.</div>';
   box.innerHTML = html;
   box.querySelectorAll('[data-scr-research]').forEach(function (b) {
@@ -5476,6 +5678,7 @@ function initApp() {
   });
   $('scr-ix').addEventListener('change', function () { runScreener(); });
   $('scr-sort').addEventListener('change', function () { runScreener(); });
+  if ($('scr-sector')) $('scr-sector').addEventListener('change', function () { runScreener(); });
   /* Floating nav shrinks while scrolling down (Instagram-style) and
    * restores on scroll up or near the top (Justin's ask, 2026-10-29). */
   var navEl = document.querySelector('.tabbar');
@@ -5626,6 +5829,7 @@ function initApp() {
     glossJumpTo(b.getAttribute('data-gterm'), item ? item.getAttribute('data-term') : null);
   });
   dyBackfill();
+  sectorBackfill();
   renderGlossary('');
   renderJournal();
   renderPjSaved();
