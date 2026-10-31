@@ -1597,7 +1597,7 @@ function dividendHtml(d) {
   var cash = isNum(d.divCash) ? d.divCash : (isNum(d.price) ? d.price * d.divYield / 100 : null);
   var html = '<div class="section-h">Dividend</div><div class="kv-grid">';
   html += kvItem('Dividend yield', fmtNum(d.divYield, 2) + '%', 'divyield');
-  if (isNum(d.payout)) html += kvItem('Payout ratio', fmtNum(d.payout, 1) + '%');
+  if (isNum(d.payout)) html += kvItem('Payout ratio', fmtNum(d.payout, 1) + '%', 'payout');
   if (d.exDivDate) html += kvItem('Ex-dividend date', d.exDivDate);
   if (isNum(cash)) html += kvItem('Cash per share / yr', fmtMoney(cash));
   html += '</div>';
@@ -1829,11 +1829,11 @@ function renderScorecard(d) {
   html += kvItem('Beta', isNum(d.beta) ? fmtNum(d.beta, 2) : '—', 'beta');
   html += kvItem('52-wk range', (isNum(d.low52) ? fmtNum(d.low52, 0) : '—') + ' – ' + (isNum(d.high52) ? fmtNum(d.high52, 0) : '—'), 'range52');
   html += kvItem('Below 52-wk high', isNum(d.pctBelowHigh) ? fmtNum(d.pctBelowHigh, 1) + '%' : '—', 'belowhigh');
-  html += kvItem('Dividend yield', isNum(d.divYield) ? fmtNum(d.divYield, 2) + '%' : '—', 'divyield');
-  if (isNum(d.payout)) html += kvItem('Payout ratio', fmtNum(d.payout, 1) + '%', 'payout');
   html += kvItem('Analyst 1-yr target', isNum(d.target1Y) ? fmtMoney(d.target1Y) : '—', 'target');
   if (isNum(d.instOwn)) html += kvItem('Institutional ownership', fmtNum(d.instOwn, 1) + '%', 'instown');
   html += '</div>';
+
+  html += dividendHtml(d);
 
   var profitWarn = epsProfitWarning(d);
   if (profitWarn) html += '<div class="alert warn">⚠ ' + esc(profitWarn) + '</div>';
@@ -1846,8 +1846,6 @@ function renderScorecard(d) {
   } else {
     html += '<p class="fineprint">Not enough EPS data came back to run the cliff check for this ticker.</p>';
   }
-
-  html += dividendHtml(d);
 
   var aiSaved = getAiSwot(d.ticker);
   html += '<div class="section-h">Classic SWOT — <span class="gold-text">AI</span></div><div id="ai-swot-zone">';
@@ -3806,8 +3804,6 @@ function renderOverview(d, item) {
   html += kvItem('Debt / Equity', isNum(d.debtEq) ? fmtNum(d.debtEq, 2) : '\u2014');
   html += kvItem('Beta', isNum(d.beta) ? fmtNum(d.beta, 2) : '\u2014');
   html += kvItem('Current ratio', isNum(d.currentRatio) ? fmtNum(d.currentRatio, 2) : '\u2014');
-  html += kvItem('Dividend yield', isNum(d.divYield) ? fmtNum(d.divYield, 2) + '%' : '\u2014');
-  if (isNum(d.payout)) html += kvItem('Payout ratio', fmtNum(d.payout, 1) + '%');
   html += kvItem('Below 52-wk high', isNum(d.pctBelowHigh) ? fmtNum(d.pctBelowHigh, 1) + '%' : '\u2014');
   html += '</div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' +
@@ -4884,7 +4880,7 @@ var GLOSS_ART = {
 'Beta': '<path d="M14 56 88 48 162 52 236 42 286 46"/><path d="M14 64 60 28 106 68 152 20 198 64 244 26 286 54" class="ga"/><text x="14" y="14" class="gt">MARKET</text><text x="196" y="14" class="gtf">STOCK, BETA 2</text>',
 'Moat': '<path d="M116 72V38h10V27h12v11h24V27h12v11h10v34"/><path d="M138 72V56a12 12 0 0 1 24 0v16"/><ellipse cx="150" cy="76" rx="88" ry="6" class="ga"/><text x="196" y="34" class="gt">HARD TO</text><text x="196" y="49" class="gt">ATTACK</text>',
 'CAGR': '<path d="M18 70C90 66 150 40 282 13" class="ga"/><path d="M18 70 282 13" stroke-dasharray="4 5"/><circle cx="18" cy="70" r="3.5" class="gaf"/><circle cx="150" cy="46" r="3.5" class="gaf"/><circle cx="282" cy="13" r="3.5" class="gaf"/><text x="92" y="24" class="gt">SAME % EVERY YEAR, ON AVERAGE</text>',
-'Dividend yield': '<circle cx="100" cy="34" r="20" class="gab"/><path d="M100 34L100 14A20 20 0 0 1 103.7 14.4Z" class="gaf"/><circle cx="100" cy="34" r="20" class="ga"/><path d="M100 58v12M93 64l7 7 7-7" class="ga"/><text x="146" y="30" class="gt">CASH PAID TO YOU</text><text x="146" y="48" class="gt">EVERY YEAR</text><text x="146" y="66" class="gtf">YIELD 3%</text>',
+'Dividend yield': '<rect x="28" y="10" width="60" height="60" class="gab"/><rect x="28" y="10" width="60" height="60" class="ga"/><rect x="76" y="58" width="10" height="10" class="gaf"/><path d="M90 63h21M105 57l6 6-6 6" class="ga"/><rect x="115" y="55" width="16" height="16" class="ga"/><rect x="118" y="58" width="10" height="10" class="gaf"/><text x="58" y="81" text-anchor="middle" class="gt">YOUR MONEY</text><text x="146" y="30" class="gt">CASH PAID TO YOU</text><text x="146" y="48" class="gt">EVERY YEAR</text><text x="146" y="66" class="gtf">YIELD 3%</text>',
 'Analyst target': '<circle cx="126" cy="42" r="30"/><circle cx="126" cy="42" r="18" class="ga"/><circle cx="126" cy="42" r="5" class="gaf"/><path d="M218 68 144 49" class="ga"/><path d="M206 68h13M209 56l3 12" class="ga"/><text x="188" y="22" class="gt">WHERE ANALYSTS AIM</text>',
 'TTM (trailing twelve months)': '<path d="M28 28h224v24H28Z"/><path d="M47 28v24M65 28v24M84 28v24M102 28v24M121 28v24M140 28v24M158 28v24M177 28v24M196 28v24M214 28v24M233 28v24"/><path d="M28 64h224" class="ga"/><text x="140" y="79" class="gt" text-anchor="middle">THE LAST 12 MONTHS</text>',
 'YoY (year over year)': '<path d="M22 74h256"/><rect x="82" y="36" width="36" height="38"/><rect x="178" y="18" width="36" height="56" class="ga"/><text x="64" y="26" class="gt">LAST YEAR</text><text x="164" y="10" class="gt">THIS YEAR</text><path d="M130 46 166 28" class="ga"/><path d="M154 26h13v13" class="ga"/>',
