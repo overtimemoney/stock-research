@@ -549,6 +549,14 @@ table.scen td { padding: 8px 6px; }
 .qm-chips button { border: 1px solid var(--line); background: none; color: var(--muted); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer; }
 .qm-chips button.on { background: var(--gold-grad); color: #141414; border-color: transparent; }
 /* Factor tables: fixed layout so the points column never wraps mid-number ("25 / 25" splitting across lines) — Justin flagged the right column 2026-10-26. */
+/* Horizontal-scroll wrapper: a wide table can never push content
+ * off-screen again (Projection Builder results overflow, 2026-10-30). */
+.tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+@media (max-width: 480px) {
+  table.factors.scen { font-size: 13px; }
+  table.factors.scen td, table.factors.scen th { padding: 8px 6px; white-space: nowrap; }
+  table.factors.scen th { font-size: 10.5px; }
+}
 table.factors:not(.scen) { table-layout: fixed; }
 table.factors:not(.scen) th:nth-child(2), table.factors:not(.scen) td:nth-child(2) { width: 100px; }
 table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; white-space: nowrap; }

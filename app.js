@@ -2244,26 +2244,26 @@ function runProjection() {
   renderPjPath();
   var path = pjPath.slice(0, years + pjTtmOffset());
   var scen = [
-    { name: 'Bear', d: -5, m: mult * 0.8, note: 'path −5 pts/yr' },
-    { name: 'Base', d: 0, m: mult, note: 'your path' },
-    { name: 'Bull', d: 5, m: mult * 1.2, note: 'path +5 pts/yr' }
+    { name: 'Bear', d: -5, m: mult * 0.8 },
+    { name: 'Base', d: 0, m: mult },
+    { name: 'Bull', d: 5, m: mult * 1.2 }
   ];
-  var html = '<table class="factors scen"><tr><th>Case</th><th>EPS in ' + years + 'y</th><th>Exit P/E</th><th class="num">Implied price</th><th class="num">Return</th><th class="num">CAGR</th></tr>';
+  var html = '<div class="tbl-scroll"><table class="factors scen"><tr><th>Case</th><th>EPS in ' + years + 'y</th><th>Exit P/E</th><th class="num">Implied price</th><th class="num">Return</th><th class="num">CAGR</th></tr>';
   scen.forEach(function (s) {
     var feps = pjCaseEps(base, path, s.d);
     if (!isNum(feps)) {
-      html += '<tr><td><strong>' + s.name + '</strong> <span class="factor-note">(' + s.note + ')</span></td><td>—</td><td>' + fmtNum(s.m, 1) + '×</td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>';
+      html += '<tr><td><strong>' + s.name + '</strong></td><td>—</td><td>' + fmtNum(s.m, 1) + '×</td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>';
       return;
     }
     var fp = feps * s.m;
     var ret = (fp / price - 1) * 100;
     var cagr = fp > 0 ? (Math.pow(fp / price, 1 / years) - 1) * 100 : -100;
-    html += '<tr><td><strong>' + s.name + '</strong> <span class="factor-note">(' + s.note + ')</span></td><td>' + fmtMoney(feps) + '</td><td>' + fmtNum(s.m, 1) + '×</td>' +
+    html += '<tr><td><strong>' + s.name + '</strong></td><td>' + fmtMoney(feps) + '</td><td>' + fmtNum(s.m, 1) + '×</td>' +
       '<td class="num"><strong>' + fmtMoney(fp) + '</strong></td><td class="num ' + (ret >= 0 ? 'up' : 'down') + '">' + fmtPct(ret) + '</td><td class="num">' + fmtPct(cagr) + '</td></tr>';
   });
   var curT = ($('pj-ticker').value || '').trim().toUpperCase();
   var savedPj = curT ? getProjections()[curT] : null;
-  html += '</table>';
+  html += '</table></div>';
   html += '<div class="pj-save-row"><button class="btn-gold" id="pj-save" type="button">' + (savedPj ? 'Update saved projection' : 'Save projection') + '</button>' +
     (savedPj
       ? '<span class="factor-note">Saved for ' + esc(curT) + ' on ' + esc(String(savedPj.savedAt || '').slice(0, 10)) + '</span><button class="link-btn danger" id="pj-del" type="button">Delete saved</button>'
