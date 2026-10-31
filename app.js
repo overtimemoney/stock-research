@@ -1779,8 +1779,11 @@ function renderScorecard(d) {
 
   html += radarCardHtml(d);
 
-  html += '<div class="section-h">Your value screen — <span class="gold-text">' + passCount + ' of ' + knownCount + '</span></div>';
-  html += '<div class="screen-chips">';
+  var vMiss = [];
+  screen.forEach(function (s, i) { if (s.test === false) vMiss.push(['Market cap', 'Forward P/E', 'PEG', 'Below high'][i]); });
+  var vSum = vMiss.length ? ' \u00b7 misses ' + vMiss.join(', ') : (knownCount > 0 && passCount === knownCount ? ' \u00b7 all clear' : '');
+  html += '<button type="button" class="section-h screen-toggle" data-stoggle="vs">Your value screen \u2014 <span class="gold-text">' + passCount + ' of ' + knownCount + '</span><span class="screen-sum">' + vSum + '</span><span class="screen-chev">\u25b8</span></button>';
+  html += '<div class="screen-chips" data-sbody="vs" hidden>';
   screen.forEach(function (s) {
     var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
     var mark = s.test === null ? '?' : s.test ? '✓ PASS' : '✗';
@@ -1791,8 +1794,11 @@ function renderScorecard(d) {
   var rScreen = riskScreen(d);
   var rKnown = rScreen.filter(function (s) { return s.test !== null; }).length;
   var rPass = rScreen.filter(function (s) { return s.test === true; }).length;
-  html += '<div class="section-h">Risk screen — <span class="gold-text">' + rPass + ' of ' + rKnown + ' clear</span></div>';
-  html += '<div class="screen-chips">';
+  var rMiss = [];
+  rScreen.forEach(function (s, i) { if (s.test === false) rMiss.push(['Debt/Eq', 'Profitability', 'Current ratio', 'Beta', 'EPS growth', 'Boom-bust'][i]); });
+  var rSum = rMiss.length ? ' \u00b7 flags ' + rMiss.join(', ') : (rKnown > 0 && rPass === rKnown ? ' \u00b7 all clear' : '');
+  html += '<button type="button" class="section-h screen-toggle" data-stoggle="rs">Risk screen \u2014 <span class="gold-text">' + rPass + ' of ' + rKnown + ' clear</span><span class="screen-sum">' + rSum + '</span><span class="screen-chev">\u25b8</span></button>';
+  html += '<div class="screen-chips" data-sbody="rs" hidden>';
   rScreen.forEach(function (s) {
     var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
     var mark = s.test === null ? '?' : s.test ? '\u2713 CLEAR' : '\u2717 FLAG';
@@ -1878,6 +1884,14 @@ function renderScorecard(d) {
   bindAiSwotBtn(d);
   document.querySelectorAll('[data-scrange]').forEach(function (b) {
     b.addEventListener('click', function () { scRange = b.getAttribute('data-scrange'); renderScChart(d); });
+  });
+  document.querySelectorAll('[data-stoggle]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var body = document.querySelector('[data-sbody="' + b.getAttribute('data-stoggle') + '"]');
+      if (!body) return;
+      body.hidden = !body.hidden;
+      b.classList.toggle('open', !body.hidden);
+    });
   });
   renderScChart(d);
   $('sc-watch').addEventListener('click', function () {
