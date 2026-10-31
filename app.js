@@ -1157,7 +1157,7 @@ function lineChartSVG(closes, high52, w, h, startText) {
 var scRange = '1y';
 
 async function ensureRangeHist(d, range) {
-  var key = range === '5y' ? 'hist5' : 'hist10';
+  var key = range === '5y' ? 'hist5' : (range === '10y' ? 'hist10' : 'histMax');
   var tsKey = key + 'Ts';
   if (d[key] && d[key].length >= 2) return true;
   try {
@@ -1191,23 +1191,23 @@ function renderScChart(d) {
     b.classList.toggle('on', b.getAttribute('data-scrange') === range);
   });
   var label = $('sc-range-label');
-  if (label) label.textContent = range === '1y' ? '1 year' : (range === '5y' ? '5 years' : '10 years');
-  var series = range === '1y' ? d.history : (range === '5y' ? d.hist5 : d.hist10);
+  if (label) label.textContent = range === '1y' ? '1 year' : (range === '5y' ? '5 years' : (range === '10y' ? '10 years' : 'All time'));
+  var series = range === '1y' ? d.history : (range === '5y' ? d.hist5 : (range === '10y' ? d.hist10 : d.histMax));
   if (!series || series.length < 2) {
     if (d['histErr_' + range]) {
-      box.innerHTML = '<div class="status err">Couldn\'t load the ' + (range === '5y' ? '5-year' : '10-year') + ' history. <button type="button" class="btn-mini" id="sc-chart-retry">Retry</button></div>';
+      box.innerHTML = '<div class="status err">Couldn\'t load the ' + (range === '5y' ? '5-year' : (range === '10y' ? '10-year' : 'all-time')) + ' history. <button type="button" class="btn-mini" id="sc-chart-retry">Retry</button></div>';
       var rb = $('sc-chart-retry');
       if (rb) rb.addEventListener('click', function () { delete d['histErr_' + range]; renderScChart(d); });
       return;
     }
-    box.innerHTML = '<div class="status"><span class="spinner"></span>Loading ' + (range === '5y' ? '5-year' : '10-year') + ' history\u2026</div>';
+    box.innerHTML = '<div class="status"><span class="spinner"></span>Loading ' + (range === '5y' ? '5-year' : (range === '10y' ? '10-year' : 'all-time')) + ' history\u2026</div>';
     ensureRangeHist(d, range).then(function (ok) {
       if (!ok) d['histErr_' + range] = true;
       if (lastStock === d) renderScChart(d);
     });
     return;
   }
-  var startText = range === '1y' ? '1 year ago' : (range === '5y' ? '5 years ago' : '10 years ago');
+  var startText = range === '1y' ? '1 year ago' : (range === '5y' ? '5 years ago' : (range === '10y' ? '10 years ago' : (d.histMaxTs && isNum(d.histMaxTs[0]) ? 'since ' + new Date(d.histMaxTs[0] * 1000).getFullYear() : 'At the start')));
   box.innerHTML = '<div id="sc-chart-read" class="pf-bench-read">Drag across the chart to see the price at any point.</div>' +
     '<div class="chart-wrap">' + lineChartSVG(series, range === '1y' ? d.high52 : null, 640, 240, startText) + '</div>';
   bindPriceScrub(d, range);
@@ -1219,8 +1219,8 @@ function renderScChart(d) {
 function bindPriceScrub(d, range) {
   range = range || '1y';
   var wrap = $('score-result');
-  var series = range === '5y' ? d.hist5 : (range === '10y' ? d.hist10 : d.history);
-  var tsArr = range === '5y' ? d.hist5Ts : (range === '10y' ? d.hist10Ts : d.historyTs);
+  var series = range === '5y' ? d.hist5 : (range === '10y' ? d.hist10 : (range === 'max' ? d.histMax : d.history));
+  var tsArr = range === '5y' ? d.hist5Ts : (range === '10y' ? d.hist10Ts : (range === 'max' ? d.histMaxTs : d.historyTs));
   if (!wrap || !series || series.length < 2) return;
   var svg = wrap.querySelector('.px-chart');
   var zone = svg ? svg.querySelector('.px-scrub-zone') : null;
@@ -1230,7 +1230,8 @@ function bindPriceScrub(d, range) {
   var closes = series, n = closes.length;
   var max = Math.max.apply(null, closes), min = Math.min.apply(null, closes);
   if (range === '1y' && isNum(d.high52)) max = Math.max(max, d.high52);
-  var span = (max - min) || 1, padT = 16, padB = 20, padX = 6, W = 640, H = 170;
+  var vb = svg.viewBox && svg.viewBox.baseVal;
+  var span = (max - min) || 1, padT = 16, padB = 20, padX = 6, W = (vb && vb.width) || 640, H = (vb && vb.height) || 240;
   var X = function (i) { return padX + i * (W - padX * 2) / (n - 1); };
   var Y = function (v) { return padT + (max - v) / span * (H - padT - padB); };
   var line = grp.querySelector('.px-scrub-line'), dot = grp.querySelector('.px-scrub-dot');
@@ -1738,7 +1739,7 @@ function renderScorecard(d) {
 
   if (d.history && d.history.length >= 2) {
     html += '<div class="section-h">Price — <span class="gold-text" id="sc-range-label">1 year</span></div>' +
-      '<div class="sc-range-chips"><button type="button" data-scrange="1y" class="on">1Y</button><button type="button" data-scrange="5y">5Y</button><button type="button" data-scrange="10y">10Y</button></div>' +
+      '<div class="sc-range-chips"><button type="button" data-scrange="1y" class="on">1Y</button><button type="button" data-scrange="5y">5Y</button><button type="button" data-scrange="10y">10Y</button><button type="button" data-scrange="max">ALL</button></div>' +
       '<div id="sc-chart-box"></div>';
   }
   html += fvBarHtml(d);
