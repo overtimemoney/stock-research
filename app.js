@@ -1209,7 +1209,7 @@ function renderScChart(d) {
   }
   var startText = range === '1y' ? '1 year ago' : (range === '5y' ? '5 years ago' : '10 years ago');
   box.innerHTML = '<div id="sc-chart-read" class="pf-bench-read">Drag across the chart to see the price at any point.</div>' +
-    '<div class="chart-wrap">' + lineChartSVG(series, range === '1y' ? d.high52 : null, 640, 170, startText) + '</div>';
+    '<div class="chart-wrap">' + lineChartSVG(series, range === '1y' ? d.high52 : null, 640, 240, startText) + '</div>';
   bindPriceScrub(d, range);
 }
 
@@ -1741,6 +1741,7 @@ function renderScorecard(d) {
       '<div class="sc-range-chips"><button type="button" data-scrange="1y" class="on">1Y</button><button type="button" data-scrange="5y">5Y</button><button type="button" data-scrange="10y">10Y</button></div>' +
       '<div id="sc-chart-box"></div>';
   }
+  html += fvBarHtml(d);
 
   if (sc.score != null) {
     html += '<div class="verdict ' + vClass + '"><div><div class="v-label">Valuation verdict</div>' +
@@ -1799,7 +1800,6 @@ function renderScorecard(d) {
   });
   html += '</div>';
 
-  html += fvBarHtml(d);
   html += '<div class="section-h">Key <span class="gold-text">stats</span></div><div class="kv-grid">';
   html += kvItem('Market cap', fmtCap(d.marketCap), 'mktcap');
   html += kvItem('Forward P/E', isNum(d.forwardPE) ? fmtNum(d.forwardPE, 2) + (d.forwardPECalc ? ' (calc.)' : '') : '—', 'fwpe');
