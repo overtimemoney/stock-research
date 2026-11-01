@@ -259,6 +259,9 @@ button.screen-toggle { display: flex; align-items: baseline; flex-wrap: nowrap; 
 .radar-cliff-tag { color: var(--bad); font-size: 10px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
 .radar-flex.mini .radar-leg-row { font-size: 12px; padding: 2.5px 0; }
 .scan-row .scan-new { background: var(--gold-grad); color: #141414; font-size: 9px; font-weight: 900; letter-spacing: .06em; padding: 1.5px 6px; border-radius: 999px; vertical-align: 2px; white-space: nowrap; }
+.scan-cyc { background: rgba(248,199,61,.16); color: #F8C73D; font-size: 9px; font-weight: 900; letter-spacing: .06em; padding: 1.5px 6px; border-radius: 999px; vertical-align: 2px; white-space: nowrap; }
+.scan-cyc.partial { background: rgba(160,160,160,.14); color: var(--ink3, #9a958a); }
+.wl-base { font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--ink3, #9a958a); vertical-align: 1px; }
 /* Custom screener panel (2026-10-30) */
 .scr-saved { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .scr-chip { display: inline-flex; align-items: center; border: 1px solid var(--line); background: var(--chip-bg); border-radius: 999px; overflow: hidden; }

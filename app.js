@@ -413,10 +413,15 @@ async function fetchStock(ticker, opts) {
   } catch (e) { d.errors.push('Revenue path: ' + e.message); } };
 
   // --- StockAnalysis annual statements: yearly EPS + margins for
-  // --- the cyclical severity overlay (day-cached via fetchQMetrics).
+  // --- the cyclical severity overlay (day-cached via cycLoadYearly,
+  // --- shared with the scan enrichment and the watchlist).
   var srcYearly = async function () { try {
-    var qm = await fetchQMetrics(T, 'y');
-    if (qm) { buildYearly(d, qm); if (d.yearly) d.sources.push('StockAnalysis'); }
+    var cycData = await cycLoadYearly(T);
+    if (cycData) {
+      d.yearly = cycData.yearly;
+      if (!d.revPath && cycData.revPath) d.revPath = cycData.revPath;
+      d.sources.push('StockAnalysis');
+    }
   } catch (e) { d.errors.push('Yearly statements: ' + e.message); } };
 
   // --- StockAnalysis main page: the "About" company description ---
@@ -636,12 +641,15 @@ function scoreStock(d) {
       d.debtEq <= 0.1 ? 10 : d.debtEq <= 0.4 ? 8 : d.debtEq <= 0.8 ? 6 :
       d.debtEq <= 1.5 ? 3 : d.debtEq <= 3 ? 1 : 0, 'Lower leverage = more points');
   }
-  // Cyclical overlays (Justin's spec, 2026-11-01) -- only when
-  // severity >= 0.5. Cheap-P/E trap: Forward P/E under 8 with TTM EPS
-  // growth over 200% means the multiple is printed on peak earnings,
-  // so the Forward P/E and PEG factors earn at most half their max.
+  // Cyclical overlays (Justin's spec, 2026-11-01). Cheap-P/E trap:
+  // Forward P/E under 8 with TTM EPS growth over 200% means the
+  // multiple is printed on peak earnings, so the Forward P/E and PEG
+  // factors earn at most half their max. The trap stands on its own
+  // two conditions (it is also the scan's cheap rule, applied to
+  // every scanned stock); the verdict cap below stays gated on
+  // severity >= 0.5.
   var cyc = cyclicalSeverity(d);
-  var trap = cyc.severity >= 0.5 && isNum(d.forwardPE) && d.forwardPE > 0 && d.forwardPE < 8 && isNum(d.epsGrowthTTM) && d.epsGrowthTTM > 200;
+  var trap = isNum(d.forwardPE) && d.forwardPE > 0 && d.forwardPE < 8 && isNum(d.epsGrowthTTM) && d.epsGrowthTTM > 200;
   if (trap) {
     factors.forEach(function (f) {
       if (f.name === 'Forward P/E' || f.name === 'PEG ratio') {
@@ -1271,6 +1279,60 @@ function buildYearly(d, qm) {
   });
   var yrs = Object.keys(byYear).map(function (k) { return byYear[k]; }).sort(function (a, b) { return a.year - b.year; });
   if (yrs.length) d.yearly = yrs;
+}
+
+/* Cyclical-overlay data cache (2026-11-01): yearly statements are
+ * the one expensive input to the severity overlay, so each ticker's
+ * built yearly series + revenue path is cached for the day and
+ * shared by the scorecard, the watchlist and the scan enrichment.
+ * fetchQMetrics has its own day cache underneath; this layer caches
+ * the BUILT shapes so repeat readers skip the network entirely. */
+var CYC_KEY = 'sr_cyc_v1';
+/* Revenue path from the annual-statements payload: reported years
+ * from the statements plus StockAnalysis' forecast years, shaped
+ * like parseSAForecast's output ({label, rev, est}); a reported
+ * year wins over a forecast for the same label. */
+function revPathFromQm(qm) {
+  if (!qm || !qm.periods) return null;
+  var byLabel = {};
+  qm.periods.forEach(function (p, i) {
+    var m = String(p).match(/(\d{4})/);
+    if (!m) return;
+    var rev = qm.revenue ? qm.revenue[i] : null;
+    if (isNum(rev) && rev > 0) byLabel['FY' + m[1]] = { label: 'FY' + m[1], rev: rev, est: false };
+  });
+  var est = (qm.est && qm.est.revenue) || [];
+  est.forEach(function (e) {
+    var m = String(e.plabel || '').match(/(\d{4})/);
+    if (!m) return;
+    var label = 'FY' + m[1];
+    if (!byLabel[label] && isNum(e.value) && e.value > 0) byLabel[label] = { label: label, rev: e.value, est: true };
+  });
+  var out = Object.keys(byLabel).map(function (k) { return byLabel[k]; });
+  out.sort(function (a, b) { return a.label < b.label ? -1 : a.label > b.label ? 1 : 0; });
+  return out.length >= 3 ? out : null;
+}
+function cycCachePeek(T) {
+  var all = lsGet(CYC_KEY, {});
+  var hit = all && all[T];
+  if (hit && hit.day === new Date().toDateString() && hit.yearly) return hit;
+  return null;
+}
+async function cycLoadYearly(T) {
+  var hit = cycCachePeek(T);
+  if (hit) return { yearly: hit.yearly, revPath: hit.revPath || null };
+  try {
+    var qm = await fetchQMetrics(T, 'y');
+    if (!qm) return null;
+    var tmp = {};
+    buildYearly(tmp, qm);
+    if (!tmp.yearly) return null;
+    var rp = revPathFromQm(qm);
+    var all = lsGet(CYC_KEY, {});
+    all[T] = { day: new Date().toDateString(), yearly: tmp.yearly, revPath: rp };
+    lsSet(CYC_KEY, all);
+    return { yearly: tmp.yearly, revPath: rp };
+  } catch (e) { return null; }
 }
 
 function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
@@ -3248,12 +3310,12 @@ function wlValuationDisplay(T) {
     var sc = scoreStock(hit.data);
     if (sc.score != null) {
       var rk = riskScore(hit.data);
-      return { score: sc.score, verdict: sc.verdict, risk: rk.score, fresh: (Date.now() - hit.ts) < CACHE_TTL };
+      return { score: sc.score, verdict: sc.verdict, risk: rk.score, riskOverlay: !!hit.data.yearly, fresh: (Date.now() - hit.ts) < CACHE_TTL };
     }
   }
   var map = lsGet(WLVAL_KEY, {});
   var e = map[T];
-  if (e && isNum(e.score)) return { score: e.score, verdict: e.verdict, risk: isNum(e.risk) ? e.risk : null, fresh: (Date.now() - (e.at || 0)) < 24 * 3600 * 1000 };
+  if (e && isNum(e.score)) return { score: e.score, verdict: e.verdict, risk: isNum(e.risk) ? e.risk : null, riskOverlay: e.riskOverlay === true, fresh: (Date.now() - (e.at || 0)) < 24 * 3600 * 1000 };
   return null;
 }
 /* Watchlist valuation pass. Finviz covers most fields, but two risk
@@ -3307,6 +3369,15 @@ async function fetchWlValuation(T) {
     auxCache[T] = { day: day, epsForecasts: d.epsForecasts || [], revPath: d.revPath || null };
     lsSet(WLAUX_KEY, auxCache);
   }
+  // Cyclical overlay: when today's yearly statements are already
+  // cached (a scorecard visit or the scan enrichment), the watchlist
+  // risk is the FINAL score; otherwise it stays base and the row
+  // labels it as such.
+  var cycHit = cycCachePeek(T);
+  if (cycHit && cycHit.yearly) {
+    d.yearly = cycHit.yearly;
+    if (!d.revPath && cycHit.revPath) d.revPath = cycHit.revPath;
+  }
   // EPS growth next yr: fiscal-year over fiscal-year, the scorecard's
   // rule -- Nasdaq FY pair first, Finviz pair as fallback.
   var nextFY = (d.epsForecasts && d.epsForecasts[0]) || null;
@@ -3319,7 +3390,7 @@ async function fetchWlValuation(T) {
   var sc = scoreStock(d);
   if (sc.score == null) return null;
   var rk = riskScore(d);
-  return { score: sc.score, verdict: sc.verdict, risk: rk.score };
+  return { score: sc.score, verdict: sc.verdict, risk: rk.score, riskOverlay: !!d.yearly };
 }
 
 /* ============================== daily index scan ==============================
@@ -3340,7 +3411,7 @@ async function fetchWlValuation(T) {
  * are labelled partial, with the true scored count. */
 function wlValInner(v) {
   return 'Value <b style="color:hsl(' + Math.round(v.score * 1.2) + ', 78%, var(--val-l))">' + v.score + '</b>' +
-    (isNum(v.risk) ? ' \u00b7 Risk <b style="color:hsl(' + Math.round((100 - v.risk) * 1.2) + ', 78%, var(--val-l))">' + v.risk + '</b>' : '');
+    (isNum(v.risk) ? ' \u00b7 Risk <b style="color:hsl(' + Math.round((100 - v.risk) * 1.2) + ', 78%, var(--val-l))">' + v.risk + '</b>' + (v.riskOverlay === true ? '' : ' <span class="wl-base">base</span>') : '');
 }
 
 /* Background fill for stale watchlist scores. The old version fired
@@ -3362,7 +3433,7 @@ async function wlFillPass(tickers) {
       try {
         var v = await fetchWlValuation(T);
         if (v) {
-          vmap[T] = { score: v.score, verdict: v.verdict, risk: v.risk, at: Date.now() };
+          vmap[T] = { score: v.score, verdict: v.verdict, risk: v.risk, riskOverlay: v.riskOverlay, at: Date.now() };
           lsSet(WLVAL_KEY, vmap);
           var rowEls = document.querySelectorAll('#wl-list .wl-row');
           for (var i = 0; i < rowEls.length; i++) {
@@ -3583,6 +3654,7 @@ function scanMerge(idxs, view, rows) {
       if (isNum(n.forwardPE)) rec.forwardPE = n.forwardPE;
       if (isNum(n.PEG)) rec.peg = n.PEG;
       if (isNum(n.epsYoY1)) rec.epsGrowthNextY = n.epsYoY1;
+      if (isNum(n.epsYoY)) rec.epsGrowthTTM = n.epsYoY;
       if (isNum(n.price)) rec.price = n.price;
       // Finviz reports market cap in $millions; the risk score's size
       // bands (and fmtCap) work in raw dollars.
@@ -3600,7 +3672,7 @@ function scanMerge(idxs, view, rows) {
   });
 }
 
-function scanFinalizeIdx(idxs) {
+function scanRankAll(idxs) {
   var out = [];
   Object.keys(idxs.merged).forEach(function (t) {
     var rec = idxs.merged[t];
@@ -3622,10 +3694,88 @@ function scanFinalizeIdx(idxs) {
     // One score for the daily list (Justin's ask, 2026-10-27):
     // 60% how cheap it is + 40% how safe it is.
     var combined = Math.round(0.6 * s.score + 0.4 * (100 - rk.score));
-    out.push({ t: t, name: rec.name, score: combined, price: isNum(rec.price) ? rec.price : null });
+    out.push({ t: t, name: rec.name, score: combined, price: isNum(rec.price) ? rec.price : null, rec: rec, sev: rk.cyc ? rk.cyc.severity : 0 });
   });
   out.sort(function (a, b) { return b.score - a.score; });
-  return out.slice(0, 10);
+  return out;
+}
+
+/* Display shape for a scan row: the plain entry the card has always
+ * stored, plus the cyclical tags when they apply (severity >= 0.5,
+ * or a partial check when the full overlay could not load). */
+function scanDisplayEntry(e, partialOverride) {
+  var o = { t: e.t, name: e.name, score: e.score, price: e.price };
+  if (isNum(e.sev) && e.sev >= 0.5) o.sev = e.sev;
+  if (partialOverride || e.partial) o.partial = true;
+  return o;
+}
+
+function scanFinalizeIdx(idxs) {
+  return scanRankAll(idxs).slice(0, 10).map(function (e) { return scanDisplayEntry(e); });
+}
+
+/* Full-overlay enrichment for the scan lists (Justin's spec,
+ * 2026-11-01): the preliminary ranking runs on screener fields
+ * alone; the top 25 of each index then load yearly statements
+ * (day-cached) and re-rank with the same scoreStock/riskScore as the
+ * scorecard before the Top 10 is final. Entries whose statements
+ * fail to load keep their preliminary score, flagged partial. */
+var scanEnriching = false, scanLastFull = null;
+async function scanEnrichTop(fullByIx) {
+  if (scanEnriching) return;
+  scanEnriching = true;
+  try {
+    var changed = false;
+    for (var ii = 0; ii < SCAN_IDXS.length; ii++) {
+      var ixKey = SCAN_IDXS[ii].key;
+      var ranked = fullByIx[ixKey];
+      if (!ranked || !ranked.length) continue;
+      var top = ranked.slice(0, 25);
+      for (var i = 0; i < top.length; i += 4) {
+        await Promise.all(top.slice(i, i + 4).map(async function (entry) {
+          var data = await cycLoadYearly(entry.t);
+          if (data) {
+            entry.rec.yearly = data.yearly;
+            if (data.revPath) entry.rec.revPath = data.revPath;
+            var s = scoreStock(entry.rec), rk = riskScore(entry.rec);
+            if (s && isNum(s.score) && rk && isNum(rk.score)) {
+              entry.score = Math.round(0.6 * s.score + 0.4 * (100 - rk.score));
+              entry.sev = rk.cyc ? rk.cyc.severity : 0;
+            }
+            entry.full = true;
+          } else {
+            entry.partial = true;
+          }
+        }));
+      }
+      top.sort(function (a, b) { return b.score - a.score; });
+      var final10 = top.slice(0, 10).map(function (e) { return scanDisplayEntry(e); });
+      var sNow = getScan();
+      if (sNow && sNow.done && sNow.date === scanTodayKey() && sNow.results) {
+        sNow.results[ixKey] = final10;
+        setScan(sNow);
+        changed = true;
+      }
+    }
+    if (changed) {
+      var s2 = getScan();
+      if (s2 && s2.results) scanUpdateNewBadges(s2.results, true);
+      renderScanCard();
+    }
+  } catch (e) {}
+  scanEnriching = false;
+}
+
+/* Full preliminary rankings from the persisted dataset, over CLONES
+ * of the stored records: enrichment hangs yearly/revenue data on the
+ * records it scores, and the stored dataset must not grow them. */
+function scanFullFromData(ds) {
+  var byIx = { spx: { merged: {} }, rut: { merged: {} } };
+  Object.keys(ds.recs).forEach(function (t) {
+    var r = ds.recs[t];
+    if (byIx[r.ix]) byIx[r.ix].merged[t] = Object.assign({}, r);
+  });
+  return { spx: scanRankAll(byIx.spx), rut: scanRankAll(byIx.rut) };
 }
 
 async function scanFetchPage(ixKey, v, r) {
@@ -3652,7 +3802,7 @@ async function scanFetchPage(ixKey, v, r) {
  * through the public relays (different egress IPs) and extracts the
  * rows here, with the worker's own extraction mirrored field-for-field. */
 var SCAN_VIEW_FIELDS = {
-  '121': ['marketCap', 'PE', 'forwardPE', 'PEG', 'epsYoY1', 'price', 'change'],
+  '121': ['marketCap', 'PE', 'forwardPE', 'PEG', 'epsYoY', 'epsYoY1', 'price', 'change'],
   '161': ['grossMargin', 'netMargin', 'debtEq', 'curRatio'],
   '171': ['high52w', 'beta']
 };
@@ -3672,7 +3822,7 @@ function scanExtractRows(html, v) {
   var slim = rows.map(function (row) {
     var n = {};
     if (row.numbers) keep.forEach(function (k) { if (typeof row.numbers[k] === 'number') n[k] = row.numbers[k]; });
-    return { t: row.text ? row.text.ticker : '', name: row.text ? row.text.company : '', n: n };
+    return { t: row.text ? row.text.ticker : '', name: row.text ? row.text.company : '', ind: row.text ? (row.text.industry || '') : '', n: n };
   }).filter(function (row) { return row.t; });
   return { total: total, rows: slim };
 }
@@ -3719,12 +3869,14 @@ function scanStep() {
       // the indexes that were started -- an unstarted Russell must
       // not hold the S&P's completion hostage).
       var droppedTotal = SCAN_IDXS.reduce(function (a, ix) { return a + (st.idx[ix.key].started === false ? 0 : st.idx[ix.key].dropped.length); }, 0);
-      var results = {};
+      var results = {}, full = {};
       SCAN_IDXS.forEach(function (ix) {
         var z = st.idx[ix.key];
         z.scored = Object.keys(z.merged).length;
-        results[ix.key] = scanFinalizeIdx(z);
+        full[ix.key] = scanRankAll(z);
+        results[ix.key] = full[ix.key].slice(0, 10).map(function (e) { return scanDisplayEntry(e); });
       });
+      scanLastFull = full;
       st.results = results;
       // Feed the persistent dataset: any index that landed complete
       // becomes the stored copy future days refresh incrementally.
@@ -3745,6 +3897,7 @@ function scanStep() {
       setScan(st);
       scanRunning = false;
       renderScanCard();
+      if (droppedTotal === 0) scanEnrichTop(full);
     }
     return;
   }
@@ -3861,7 +4014,7 @@ function scanPersistIdx(ixKey, merged) {
     ds.recs[t] = { name: r.name, ix: ixKey, forwardPE: r.forwardPE, peg: r.peg, epsGrowthNextY: r.epsGrowthNextY,
       price: r.price, marketCap: r.marketCap, grossMargin: r.grossMargin, profitMargin: r.profitMargin,
       debtEq: r.debtEq, currentRatio: r.currentRatio, pctBelowHigh: r.pctBelowHigh, beta: r.beta,
-      divYield: r.divYield, industry: r.industry };
+      divYield: r.divYield, industry: r.industry, epsGrowthTTM: r.epsGrowthTTM };
   });
   if (ixKey === 'spx') ds.asOf = scanTodayKey();
   setScanData(ds);
@@ -3937,7 +4090,7 @@ function scanRecordFromQuote(html, prev) {
   try { fillFromFinviz(d, html); } catch (e) { return null; }
   var rec = { name: d.companyName || (prev && prev.name) || '', ix: prev && prev.ix };
   rec.industry = prev ? prev.industry : null;
-  ['forwardPE', 'peg', 'price', 'marketCap', 'grossMargin', 'profitMargin', 'debtEq', 'beta', 'currentRatio', 'pctBelowHigh', 'divYield'].forEach(function (k) {
+  ['forwardPE', 'peg', 'price', 'marketCap', 'grossMargin', 'profitMargin', 'debtEq', 'beta', 'currentRatio', 'pctBelowHigh', 'divYield', 'epsGrowthTTM'].forEach(function (k) {
     rec[k] = isNum(d[k]) ? d[k] : (prev ? prev[k] : null);
   });
   if (isNum(d.epsNextY) && isNum(d.epsThisY) && d.epsThisY > 0) rec.epsGrowthNextY = (d.epsNextY / d.epsThisY - 1) * 100;
@@ -3975,6 +4128,9 @@ function scanShowDataResults(ds, refreshed) {
   });
   setScan(s);
   renderScanCard();
+  // Top-25 full-overlay pass over the stored records (clones); the
+  // day cache makes repeat calls network-free.
+  scanEnrichTop(scanFullFromData(ds));
 }
 
 var scanRefreshing = false;
@@ -4181,7 +4337,7 @@ function renderScanCard() {
       rows.forEach(function (row, i) {
         out += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
           '<span class="scan-rank">' + (i + 1) + '</span>' +
-          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + scanNewPill(ix.key, row.t) + '</span></span>' +
+          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">\u26a0 Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">\u26a0 partial check</span>' : '') + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
           '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
       });
@@ -4221,7 +4377,7 @@ function renderScanCard() {
       rows.forEach(function (row, i) {
         out += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
           '<span class="scan-rank">' + (i + 1) + '</span>' +
-          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + scanNewPill(ix.key, row.t) + '</span></span>' +
+          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name) + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">\u26a0 Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">\u26a0 partial check</span>' : '') + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
           '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
       });
