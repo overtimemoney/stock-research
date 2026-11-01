@@ -622,17 +622,19 @@ function scoreStock(d) {
   function mathFor(display, bands, idx, ge, max, fmtL) {
     fmtL = fmtL || limFmt;
     var L = bands[idx][0], P = idx > 0 ? bands[idx - 1][0] : null, range;
+    /* Plain words, no jargon (Justin's call, 2026-11-01): users do
+     * not know what a "band" is, so the math reads as a sentence. */
     if (!ge) {
-      if (idx === 0) range = '\u2264 ' + fmtL(L);
-      else if (!isFinite(L)) range = '> ' + fmtL(P);
-      else range = '> ' + fmtL(P) + ' and \u2264 ' + fmtL(L);
+      if (idx === 0) range = fmtL(L) + ' or less';
+      else if (!isFinite(L)) range = 'more than ' + fmtL(P);
+      else range = 'more than ' + fmtL(P) + ', up to ' + fmtL(L);
     } else {
       var excl = bands[idx][2] === 'gt', pExcl = idx > 0 && bands[idx - 1][2] === 'gt';
-      if (idx === 0) range = (excl ? '> ' : '\u2265 ') + fmtL(L);
-      else if (!isFinite(L)) range = (pExcl ? '\u2264 ' : '< ') + fmtL(P);
-      else range = (excl ? '> ' : '\u2265 ') + fmtL(L) + ' and ' + (pExcl ? '\u2264 ' : '< ') + fmtL(P);
+      if (idx === 0) range = excl ? 'more than ' + fmtL(L) : fmtL(L) + ' or more';
+      else if (!isFinite(L)) range = pExcl ? fmtL(P) + ' or less' : 'under ' + fmtL(P);
+      else range = (excl ? 'more than ' + fmtL(L) : fmtL(L) + ' or more') + (pExcl ? ', up to ' : ', under ') + fmtL(P);
     }
-    return display + ' \u2192 ' + range + ' band \u2192 ' + bands[idx][1] + ' of ' + max + ' pts';
+    return display + ' \u2192 ' + range + ' \u2192 ' + bands[idx][1] + ' of ' + max + ' pts';
   }
   function add(name, value, display, max, pk, note, bands, ge, fmtL) {
     factors.push({ name: name, value: value, display: display, max: max, pts: pk.pts, note: note || '', math: mathFor(display, bands, pk.idx, ge, max, fmtL) });
@@ -1495,17 +1497,19 @@ function riskScore(d) {
   function mathFor(display, bands, idx, ge, max, fmtL) {
     fmtL = fmtL || limFmt;
     var L = bands[idx][0], P = idx > 0 ? bands[idx - 1][0] : null, range;
+    /* Plain words, no jargon (Justin's call, 2026-11-01): users do
+     * not know what a "band" is, so the math reads as a sentence. */
     if (!ge) {
-      if (idx === 0) range = '\u2264 ' + fmtL(L);
-      else if (!isFinite(L)) range = '> ' + fmtL(P);
-      else range = '> ' + fmtL(P) + ' and \u2264 ' + fmtL(L);
+      if (idx === 0) range = fmtL(L) + ' or less';
+      else if (!isFinite(L)) range = 'more than ' + fmtL(P);
+      else range = 'more than ' + fmtL(P) + ', up to ' + fmtL(L);
     } else {
       var excl = bands[idx][2] === 'gt', pExcl = idx > 0 && bands[idx - 1][2] === 'gt';
-      if (idx === 0) range = (excl ? '> ' : '\u2265 ') + fmtL(L);
-      else if (!isFinite(L)) range = (pExcl ? '\u2264 ' : '< ') + fmtL(P);
-      else range = (excl ? '> ' : '\u2265 ') + fmtL(L) + ' and ' + (pExcl ? '\u2264 ' : '< ') + fmtL(P);
+      if (idx === 0) range = excl ? 'more than ' + fmtL(L) : fmtL(L) + ' or more';
+      else if (!isFinite(L)) range = pExcl ? fmtL(P) + ' or less' : 'under ' + fmtL(P);
+      else range = (excl ? 'more than ' + fmtL(L) : fmtL(L) + ' or more') + (pExcl ? ', up to ' : ', under ') + fmtL(P);
     }
-    return display + ' \u2192 ' + range + ' band \u2192 ' + bands[idx][1] + ' of ' + max + ' pts';
+    return display + ' \u2192 ' + range + ' \u2192 ' + bands[idx][1] + ' of ' + max + ' pts';
   }
   function add(name, value, display, max, pk, note, bands, ge, fmtL) {
     factors.push({ name: name, value: value, display: display, max: max, pts: pk.pts, note: note || '', math: mathFor(display, bands, pk.idx, ge, max, fmtL) });
