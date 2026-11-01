@@ -194,7 +194,7 @@ button.screen-toggle { display: flex; align-items: baseline; flex-wrap: nowrap; 
 .screen-name, .screen-count { white-space: nowrap; }
 .screen-sum { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .screen-chev { margin-left: auto; color: var(--gold); font-size: 13px; transition: transform .25s var(--ease-out); }
-.screen-toggle.open .screen-chev { transform: rotate(90deg); }
+.screen-toggle.open .screen-chev { transform: rotate(180deg); }
 @media (max-width: 560px) { .screen-chips { grid-template-columns: 1fr; } }
 .chip {
   border-radius: 12px; padding: 10px 12px; font-size: 13px; font-weight: 700;
@@ -227,7 +227,7 @@ button.screen-toggle { display: flex; align-items: baseline; flex-wrap: nowrap; 
 .ceo-toggle { display: flex; justify-content: space-between; align-items: center; width: 100%; background: none; border: 0; padding: 0; margin: 2px 0 8px; cursor: pointer; font: inherit; text-align: left; }
 .ceo-toggle .ceo-line { margin: 0; }
 .ceo-chev { color: var(--gold); font-size: 12px; flex: none; margin-left: 10px; transition: transform 160ms ease-out; }
-.ceo-toggle[aria-expanded="true"] .ceo-chev { transform: rotate(90deg); }
+.ceo-toggle[aria-expanded="true"] .ceo-chev { transform: rotate(180deg); }
 .ceo-meta { font-size: 13px; font-weight: 700; color: var(--ink2); margin: 0 0 8px; }
 .ceo-body { margin-bottom: 2px; }
 .fv-labs { position: relative; height: 17px; }
@@ -296,7 +296,7 @@ table.factors.scen.micro { font-size: 10.5px; }
 table.factors.scen.micro td, table.factors.scen.micro th { padding: 7px 3px; }
 .pj-math-toggle { background: none; border: 0; color: var(--gold); font: inherit; font-size: 13px; font-weight: 700; padding: 8px 0 2px; cursor: pointer; }
 .pj-math-chev { display: inline-block; transition: transform 160ms ease-out; }
-.pj-math-toggle[aria-expanded="true"] .pj-math-chev { transform: rotate(90deg); }
+.pj-math-toggle[aria-expanded="true"] .pj-math-chev { transform: rotate(180deg); }
 .pj-math { display: none; }
 .pj-math.open { display: block; }
 .pj-math p { margin: 6px 0; font-size: 13px; line-height: 1.45; color: var(--muted); }
@@ -359,8 +359,8 @@ table.factors.scen.micro td, table.factors.scen.micro th { padding: 7px 3px; }
 /* Projection Builder: year-by-year EPS path editor */
 .pj-path-head { font-size: 12.5px; font-weight: 700; color: var(--ink2); margin: 2px 0 8px; }
 .pj-path-head span { font-weight: 500; }
-.pj-yrow { display: grid; grid-template-columns: 62px 1fr 1fr; gap: 8px; align-items: end; margin-bottom: 6px; }
-.pj-yrow .pj-ylab { font-size: 13.5px; font-weight: 800; color: var(--ink); padding-bottom: 11px; }
+.pj-yrow { display: grid; grid-template-columns: 78px 1fr 1fr; gap: 8px; align-items: end; margin-bottom: 6px; }
+.pj-yrow .pj-ylab { font-size: 13.5px; font-weight: 800; color: var(--ink); padding-bottom: 11px; white-space: nowrap; }
 .pj-yrow label { margin: 0; }
 
 /* SWOT grid (auto-generated from scorecard numbers) */

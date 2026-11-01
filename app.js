@@ -871,7 +871,7 @@ function ceoBlockHtml(d) {
     inner += '<p class="ceo-perf">Stock <span class="' + (pct >= 0 ? 'up' : 'down') + '">' + ptxt + '</span> since ' + esc(d.ceoStartLabel) + '</p>';
   }
   if (!inner) return '<p class="earn-line ceo-line">' + head + '</p>';
-  return '<button type="button" class="ceo-toggle" data-ceotoggle aria-expanded="false"><span class="earn-line ceo-line">' + head + '</span><span class="ceo-chev">\u25b8</span></button>' +
+  return '<button type="button" class="ceo-toggle" data-ceotoggle aria-expanded="false"><span class="earn-line ceo-line">' + head + '</span><span class="ceo-chev">\u25be</span></button>' +
     '<div class="ceo-body" hidden>' + inner + '</div>';
 }
 function parseSAAbout(html) {
@@ -2308,7 +2308,7 @@ function renderScorecard(d) {
   var vMiss = [];
   screen.forEach(function (s, i) { if (s.test === false) vMiss.push(['Market cap', 'Fwd P/E', 'PEG', 'Below high'][i]); });
   var vSum = vMiss.length ? ' \u00b7 misses ' + vMiss.join(', ') : (knownCount > 0 && passCount === knownCount ? ' \u00b7 all clear' : '');
-  html += '<button type="button" class="section-h screen-toggle" data-stoggle="vs"><span class="screen-name">Value screen \u2014</span> <span class="gold-text screen-count">' + passCount + ' of ' + knownCount + '</span><span class="screen-sum">' + vSum + '</span><span class="screen-chev">\u25b8</span></button>';
+  html += '<button type="button" class="section-h screen-toggle" data-stoggle="vs"><span class="screen-name">Value screen \u2014</span> <span class="gold-text screen-count">' + passCount + ' of ' + knownCount + '</span><span class="screen-sum">' + vSum + '</span><span class="screen-chev">\u25be</span></button>';
   html += '<div class="screen-chips" data-sbody="vs" hidden>';
   screen.forEach(function (s) {
     var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
@@ -2323,7 +2323,7 @@ function renderScorecard(d) {
   var rMiss = [];
   rScreen.forEach(function (s, i) { if (s.test === false) rMiss.push(['Debt/Eq', 'Profitability', 'Current ratio', 'Beta', 'EPS growth', 'Boom-bust'][i]); });
   var rSum = rMiss.length ? ' \u00b7 flags ' + rMiss.join(', ') : (rKnown > 0 && rPass === rKnown ? ' \u00b7 all clear' : '');
-  html += '<button type="button" class="section-h screen-toggle" data-stoggle="rs"><span class="screen-name">Risk screen \u2014</span> <span class="gold-text screen-count">' + rPass + ' of ' + rKnown + ' clear</span><span class="screen-sum">' + rSum + '</span><span class="screen-chev">\u25b8</span></button>';
+  html += '<button type="button" class="section-h screen-toggle" data-stoggle="rs"><span class="screen-name">Risk screen \u2014</span> <span class="gold-text screen-count">' + rPass + ' of ' + rKnown + ' clear</span><span class="screen-sum">' + rSum + '</span><span class="screen-chev">\u25be</span></button>';
   html += '<div class="screen-chips" data-sbody="rs" hidden>';
   rScreen.forEach(function (s) {
     var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
@@ -2584,7 +2584,7 @@ function pjSavedBase(T) {
   if (!s || !isNum(s.baseEps) || !isNum(s.mult) || !Array.isArray(s.path)) return null;
   var off = (s.path.length && s.path[0].ttm) ? 1 : 0;
   var feps = pjCaseEps(s.baseEps, s.path.slice(0, (s.years || 3) + off), 1);
-  return isNum(feps) ? feps * s.mult : null;
+  return isNum(feps) ? Math.max(0, feps * s.mult) : null;
 }
 /* Base-case CAGR of a saved projection: implied end price vs the price at
  * save time, annualized over the saved horizon -- comparable across
@@ -2645,7 +2645,7 @@ function renderPjSaved() {
   // Collapsible (Justin's call, 2026-10-25): the list only grows, and
   // restoring is occasional — collapsed by default, state remembered.
   var open = !!lsGet('sr_pjsaved_open', false);
-  box.innerHTML = '<button type="button" class="pj-saved-head" id="pj-saved-toggle"><span>Saved projections \u00b7 ' + ts.length + '</span><span class="pj-saved-chev">' + (open ? '\u25be' : '\u25b8') + '</span></button>' +
+  box.innerHTML = '<button type="button" class="pj-saved-head" id="pj-saved-toggle"><span>Saved projections \u00b7 ' + ts.length + '</span><span class="pj-saved-chev">' + (open ? '\u25b4' : '\u25be') + '</span></button>' +
     (open ? ts.map(function (T) {
       var base = pjSavedBase(T);
       return '<div class="pf-buy-row"><button class="pf-buy-txt" data-pj-open="' + esc(T) + '"><span>' + esc(T) + '</span><span>saved ' + esc(String(all[T].savedAt || '').slice(0, 10)) + (isNum(base) ? ' \u00b7 Base ' + fmtMoney(base) : '') + '</span></button><button class="link-btn danger" data-pj-del="' + esc(T) + '">\u2715</button></div>';
@@ -2714,7 +2714,14 @@ function pjGrowths(base, path) {
       prev = path[i].eps;
       continue;
     }
-    out.push(isNum(prev) && prev !== 0 && isNum(path[i].eps) ? (path[i].eps / prev - 1) * 100 : null);
+    /* A growth % needs two positive EPS figures. Across zero it lies:
+     * a shrinking loss (-4.97 -> -3.38) prints as -32%, a deepening one
+     * (+35.8%), and turning profitable (-1.48 -> +5.20) as -451% -- and
+     * chaining those fake rates in the case math compounds them into
+     * $0 and negative prices (the CoreWeave screenshot, 2026-11-01).
+     * Null = not meaningful: the grid leaves the box blank, the case
+     * math steps to the row's own EPS, and the trend fit skips it. */
+    out.push(isNum(prev) && prev > 0 && isNum(path[i].eps) && path[i].eps >= 0 ? (path[i].eps / prev - 1) * 100 : null);
     prev = path[i].eps;
   }
   return out;
@@ -2872,7 +2879,7 @@ function pjSetLoadedStatus(details) {
   var status = $('pj-status');
   status.className = 'status';
   status.innerHTML = 'Adjust the assumptions below, then build.' +
-    '<br><button type="button" class="pj-math-toggle" data-pjmore aria-expanded="false">More info <span class="pj-math-chev">\u25b8</span></button>' +
+    '<br><button type="button" class="pj-math-toggle" data-pjmore aria-expanded="false">More info <span class="pj-math-chev">\u25be</span></button>' +
     '<div class="pj-math"><p>' + esc(details) + '</p></div>';
 }
 var pjStatusHead = '', pjStatusBits = null;
@@ -2963,8 +2970,10 @@ function runProjection() {
       return;
     }
     var fp = feps * s.m;
+    if (fp < 0) fp = 0; // a share price cannot be negative
     var tot = fp > 0 ? (fp / price) * divF : fp / price;
     var ret = (tot - 1) * 100;
+    if (ret < -100) ret = -100; // a return cannot be worse than -100%
     var cagr = fp > 0 ? (Math.pow(tot, 1 / years) - 1) * 100 : -100;
     var eTxt = fmtMoney(feps), pTxt = fmtMoney(fp), rTxt = fmtPct(ret), cTxt = fmtPct(cagr), mTxt = fmtNum(s.m, 1) + '×';
     [eTxt, pTxt, rTxt, cTxt, mTxt].forEach(function (t) { if (t.length > maxLen) maxLen = t.length; });
@@ -2982,7 +2991,7 @@ function runProjection() {
       break;
     }
   }
-  html += '<div class="pj-math-wrap"><button type="button" class="pj-math-toggle" data-pjmath aria-expanded="false">Show math <span class="pj-math-chev">\u25b8</span></button>' +
+  html += '<div class="pj-math-wrap"><button type="button" class="pj-math-toggle" data-pjmath aria-expanded="false">Show math <span class="pj-math-chev">\u25be</span></button>' +
     '<div class="pj-math">' +
     '<p><strong>Growth:</strong> each year\u2019s growth is scaled \u2014 Bear \u00d7 0.8, Base as entered, Bull \u00d7 1.2.' + exLine + '</p>' +
     '<p><strong>Exit P/E:</strong> your ' + fmtNum(mult, 1) + '\u00d7, scaled \u2014 Bear ' + fmtNum(mult * 0.8, 1) + '\u00d7 (\u00d7 0.8) \u00b7 Bull ' + fmtNum(mult * 1.2, 1) + '\u00d7 (\u00d7 1.2).</p>' +
