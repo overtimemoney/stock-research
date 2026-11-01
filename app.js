@@ -913,8 +913,8 @@ function parseSAPeHistory(html) {
 }
 
 /* Same ratios table, but keeps each fiscal year's P/E: the raw
- * material for the growth-matched exit P/E (pair each year's P/E with
- * that year's revenue growth). */
+ * material for the EPS-matched exit P/E (pair each year's P/E with
+ * that year's EPS). */
 function parseSAPeByYear(html) {
   var out = [];
   if (!html) return out;
@@ -966,55 +966,53 @@ async function pjEnsurePe5y(d) {
   return d;
 }
 
-/* ---- growth-matched exit P/E (Justin's ask, 2026-10-29) ----
+/* ---- EPS-matched exit P/E (Justin's ask, 2026-11-01; was growth-matched 2026-10-29) ----
  * The plain 5-yr average P/E mixes years when the company grew at
- * very different rates. Instead: pair each historical year's P/E
- * with that year's REVENUE growth, then average the P/Es of the
- * years whose growth looks like the growth projected for the exit
- * year. Falls back to the plain average when history is too thin. */
+ * different amounts. Instead: pair each historical year's P/E with
+ * that year's EPS, then average the P/Es of the years whose EPS was
+ * closest to the EPS projected for the projection's final year --
+ * what the market paid last time earnings were at that level.
+ * Falls back to the plain average when history is too thin. */
 function pjPePairs(d) {
   var out = [];
-  if (!d || !d.peByYear || !d.revByYear) return out;
+  if (!d || !d.peByYear || !d.epsByYear) return out;
   d.peByYear.forEach(function (p) {
-    var rev = d.revByYear[p.fy], prev = d.revByYear[p.fy - 1];
-    var g = (isNum(rev) && isNum(prev) && prev > 0 && rev > 0) ? (rev / prev - 1) * 100 : null;
-    out.push({ fy: p.fy, pe: p.pe, revGrowth: g });
+    out.push({ fy: p.fy, pe: p.pe, eps: d.epsByYear[p.fy] });
   });
   return out;
 }
 
-function pjMatchPe(pairs, gStar) {
-  var cand = (pairs || []).filter(function (p) { return isNum(p.pe) && isNum(p.revGrowth); });
-  if (cand.length < 2 || !isNum(gStar)) return null;
-  var inBand = cand.filter(function (p) { return Math.abs(p.revGrowth - gStar) <= 5; });
-  var used = inBand.length ? inBand : cand.slice().sort(function (a, b) {
-    return Math.abs(a.revGrowth - gStar) - Math.abs(b.revGrowth - gStar);
-  }).slice(0, 2);
+function pjMatchPe(pairs, targetEps) {
+  var cand = (pairs || []).filter(function (p) { return isNum(p.pe) && p.pe > 0 && isNum(p.eps) && p.eps > 0; });
+  if (cand.length < 2 || !isNum(targetEps) || targetEps <= 0) return null;
+  function dist(p) { return Math.abs(p.eps - targetEps) / targetEps; }
+  var inBand = cand.filter(function (p) { return dist(p) <= 0.25; });
+  var used;
+  if (inBand.length >= 2) used = inBand;
+  else {
+    used = inBand.slice();
+    var rest = cand.filter(function (p) { return used.indexOf(p) === -1; }).sort(function (a, b) { return dist(a) - dist(b) || b.fy - a.fy; });
+    while (used.length < 2 && rest.length) used.push(rest.shift());
+  }
   return {
     mult: used.reduce(function (a, p) { return a + p.pe; }, 0) / used.length,
     years: used.map(function (p) { return p.fy; }),
-    avgGrowth: used.reduce(function (a, p) { return a + p.revGrowth; }, 0) / used.length
+    avgEps: used.reduce(function (a, p) { return a + p.eps; }, 0) / used.length
   };
 }
 
-/* The growth rate of the projection's final year -- the year at the
- * current horizon (the path can hold more rows than the horizon when
- * the year count was just lowered). Analyst years + faded
- * extrapolation, as currently built. */
-function pjExitGrowth() {
-  var growths = pjGrowths(pjBaseEps(), pjPath);
-  var idx = pjTtmOffset() + pjYearsWanted() - 1;
-  if (idx >= pjPath.length) idx = pjPath.length - 1;
-  for (var i = idx; i >= 0; i--) {
-    if (pjPath[i].ttm) continue;
-    if (isNum(growths[i])) return growths[i];
-  }
-  return null;
+/* The EPS projected for the projection's final year at the current
+ * horizon (Base case: the path as entered) -- the level the exit
+ * P/E match is keyed to. */
+function pjExitEps() {
+  var path = pjPath.slice(0, pjYearsWanted() + pjTtmOffset());
+  if (!path.length) return null;
+  return pjCaseEps(pjBaseEps(), path, 1);
 }
 
 /* The stock record behind the builder, kept so the auto exit P/E can
- * be re-matched when the horizon (or the path) changes the exit
- * year's growth. Null for saved-projection restores: those keep
+ * be re-matched when the horizon (or the path) changes the final
+ * year's projected EPS. Null for saved-projection restores: those keep
  * their exact saved assumptions. */
 var pjLoaded = null;
 
@@ -1028,12 +1026,12 @@ function pjRefreshAutoMult() {
   var T = ($('pj-ticker').value || '').trim().toUpperCase();
   if (!T || pjLoaded.ticker !== T) return;
   if (String($('pj-mult').value) !== String(pjMultAuto)) return;
-  var gStar = pjExitGrowth();
-  var match = isNum(gStar) ? pjMatchPe(pjPePairs(pjLoaded), gStar) : null;
+  var targetEps = pjExitEps();
+  var match = isNum(targetEps) ? pjMatchPe(pjPePairs(pjLoaded), targetEps) : null;
   var val = null, note = '';
   if (match) {
     val = Math.round(match.mult * 10) / 10;
-    note = pjMatchNote(match, gStar);
+    note = pjMatchNote(match, targetEps);
   } else if (isNum(pjLoaded.pe5yAvg) && pjLoaded.pe5yAvg > 0) {
     val = Math.round(pjLoaded.pe5yAvg * 10) / 10;
     note = 'exit P/E = ' + (pjLoaded.pe5yYears >= 5 ? '5-yr' : pjLoaded.pe5yYears + '-yr') + ' avg P/E ' + fmtNum(pjLoaded.pe5yAvg, 1) + '\u00d7';
@@ -1046,20 +1044,21 @@ function pjRefreshAutoMult() {
   pjMultAuto = $('pj-mult').value;
   if (note && note !== pjPeNote) {
     pjPeNote = note;
-    $('pj-status').textContent = 'Loaded ' + T + ' \u2014 ' + note + '.';
+    if (pjStatusBits && pjStatusBits.length) { pjStatusBits[0] = note; pjRenderLoadedStatus(); }
+    else pjSetLoadedStatus('Loaded ' + T + ' \u2014 ' + note + '.');
   }
 }
 
-function pjMatchNote(match, gStar) {
+function pjMatchNote(match, targetEps) {
   return 'exit P/E = ' + fmtNum(match.mult, 1) + '\u00d7 \u2014 avg P/E in ' +
     match.years.slice().sort(function (x, y) { return x - y; }).map(function (y) { return 'FY' + String(y).slice(2); }).join(', ') +
-    ', when revenue grew ~' + fmtNum(match.avgGrowth, 0) + '% (exit-yr growth ' + fmtNum(gStar, 0) + '%)';
+    ', when EPS was ~' + fmtMoney(match.avgEps) + ' (projected final-yr EPS ' + fmtMoney(targetEps) + ')';
 }
 
-/* Attach yearly revenue (for the growth pairing) to a stock record
+/* Attach yearly revenue + EPS (EPS feeds the exit P/E pairing) to a stock record
  * from the Charts tool's annual statements, best-effort. */
 async function pjEnsureRevByYear(d) {
-  if (!d || !d.ticker || d.revByYear) return d;
+  if (!d || !d.ticker || (d.revByYear && d.epsByYear)) return d;
   try {
     var qm = await fetchQMetrics(d.ticker, 'y');
     if (qm && qm.revenue) {
@@ -1069,6 +1068,14 @@ async function pjEnsureRevByYear(d) {
         if (m && isNum(qm.revenue[i])) map[parseInt(m[1], 10)] = qm.revenue[i];
       });
       if (Object.keys(map).length) d.revByYear = map;
+    }
+    if (qm && qm.eps) {
+      var emap = {};
+      qm.periods.forEach(function (p, i) {
+        var m = String(p).match(/(\d{4})/);
+        if (m && isNum(qm.eps[i])) emap[parseInt(m[1], 10)] = qm.eps[i];
+      });
+      if (Object.keys(emap).length) d.epsByYear = emap;
     }
   } catch (e) {}
   return d;
@@ -2157,21 +2164,21 @@ function renderScorecard(d) {
     $('pj-ticker').value = d.ticker;
     fillProjection(d);
     runProjection();
-    if (!isNum(d.pe5yAvg) || !d.revByYear) {
+    if (!isNum(d.pe5yAvg) || !d.epsByYear) {
       pjEnsurePe5y(d).then(function () { return pjEnsureRevByYear(d); }).then(function () {
         if (String($('pj-mult').value) !== String(pjMultAuto) || ($('pj-ticker').value || '').trim().toUpperCase() !== d.ticker) return;
-        var gStar = pjExitGrowth();
-        var match = isNum(gStar) ? pjMatchPe(pjPePairs(d), gStar) : null;
+        var targetEps = pjExitEps();
+        var match = isNum(targetEps) ? pjMatchPe(pjPePairs(d), targetEps) : null;
         if (match) {
           $('pj-mult').value = Math.round(match.mult * 10) / 10;
           pjMultAuto = $('pj-mult').value;
-          pjPeNote = pjMatchNote(match, gStar);
+          pjPeNote = pjMatchNote(match, targetEps);
         } else if (isNum(d.pe5yAvg)) {
           $('pj-mult').value = Math.round(d.pe5yAvg * 10) / 10;
           pjMultAuto = $('pj-mult').value;
           pjPeNote = 'exit P/E = ' + (d.pe5yYears >= 5 ? '5-yr' : d.pe5yYears + '-yr') + ' avg P/E ' + fmtNum(d.pe5yAvg, 1) + '\u00d7';
         } else return;
-        pjSetLoadedStatus('Loaded ' + d.ticker + ' from the scorecard \u2014 ' + pjPeNote + '.');
+        pjSetLoadedStatusParts('Loaded ' + d.ticker + ' from the scorecard', [pjPeNote]);
         runProjection();
       });
     }
@@ -2355,6 +2362,7 @@ function pjRestore(T) {
   renderPjPath();
   runProjection();
   var st = $('pj-status');
+  pjStatusBits = null;
   st.className = 'status';
   st.textContent = 'Showing your saved projection for ' + T + ' (saved ' + String(s.savedAt || '').slice(0, 10) + '). Price and EPS are as saved -- load the ticker again any time for live numbers.';
 }
@@ -2400,10 +2408,22 @@ function pjFlatGrowth() {
 /* Extrapolated years fade from the last known growth toward the long-run
  * rate (the flat-growth box), closing half the remaining gap per year --
  * so a one-year spike like +84.6% cools off instead of repeating forever. */
-function pjFadeGrowth(lastG, anchor) {
-  if (!isNum(lastG)) return anchor;
-  if (!isNum(anchor)) return lastG;
-  return anchor + (lastG - anchor) / 2;
+/* Extrapolated growth from the TREND of the EPS growth series
+ * (Justin's ask, 2026-11-01 -- replaces fading the last growth rate
+ * toward the flat fallback). Least-squares line over the forecast
+ * years' growth rates, in path order; series[i] sits at x = i, and
+ * extrapolated years continue along the line at x = series.length,
+ * series.length + 1, ... One point: no trend to fit, hold it flat.
+ * No points: null, and the caller uses the flat fallback rate. */
+function pjTrendGrowthAt(series, x) {
+  if (!series || !series.length) return null;
+  if (series.length === 1) return series[0];
+  var k = series.length, sx = 0, sy = 0, sxx = 0, sxy = 0;
+  for (var i = 0; i < k; i++) { sx += i; sy += series[i]; sxx += i * i; sxy += i * series[i]; }
+  var den = k * sxx - sx * sx;
+  var b = den ? (k * sxy - sx * sy) / den : 0;
+  var a = (sy - b * sx) / k;
+  return a + b * x;
 }
 /* Growth % of each path year vs the prior year's EPS (year 1 vs base). */
 function pjGrowths(base, path) {
@@ -2440,11 +2460,17 @@ function pjCaseEps(base, path, factor) {
  * year at that year's growth (or the flat fallback rate). */
 function pjEnsureYears(n) {
   var base = pjBaseEps(), guard = 0;
+  // Fit the growth trend ONCE, on the real forecast years only --
+  // extrapolated rows never feed the fit.
+  var gAll = pjGrowths(base, pjPath), series = [];
+  pjPath.forEach(function (r, i) { if (!r.ttm && !r.extrapolated && isNum(gAll[i])) series.push(gAll[i]); });
+  var added = 0;
   while (pjPath.length < n && guard++ < 5) {
     var prevEps = pjPath.length ? pjPath[pjPath.length - 1].eps : base;
-    var growths = pjGrowths(base, pjPath);
-    var lastG = growths.length ? growths[growths.length - 1] : null;
-    var g = pjFadeGrowth(lastG, pjFlatGrowth());
+    var g = pjTrendGrowthAt(series, series.length + added);
+    if (!isNum(g)) g = pjFlatGrowth();
+    g = Math.max(g, -99);
+    added++;
     var yr = null;
     if (pjPath.length) {
       var m = String(pjPath[pjPath.length - 1].label).match(/(\d{4})/);
@@ -2539,18 +2565,18 @@ function fillProjection(d) {
     pjSynthPath(ttmRow);
   }
   renderPjPath();
-  // Exit P/E (Justin's growth-matched rule, 2026-10-29): extend the
-  // path to the full horizon, read the exit year's growth, and set
-  // the multiple to the average P/E of the historical years whose
-  // revenue growth matched it. Fallbacks: the plain 5-yr average
-  // P/E, then the current trailing P/E. Always editable.
+  // Exit P/E (Justin's EPS-matched rule, 2026-11-01): extend the
+  // path to the full horizon, read the final year's projected EPS,
+  // and set the multiple to the average P/E of the historical years
+  // whose EPS was closest to that level. Fallbacks: the plain 5-yr
+  // average P/E, then the current trailing P/E. Always editable.
   pjEnsureYears(pjYearsWanted() + pjTtmOffset());
-  var gStar = pjExitGrowth();
-  var match = isNum(gStar) ? pjMatchPe(pjPePairs(d), gStar) : null;
+  var targetEps = pjExitEps();
+  var match = isNum(targetEps) ? pjMatchPe(pjPePairs(d), targetEps) : null;
   if (match) {
     $('pj-mult').value = Math.round(match.mult * 10) / 10;
     pjMultAuto = $('pj-mult').value;
-    pjPeNote = pjMatchNote(match, gStar);
+    pjPeNote = pjMatchNote(match, targetEps);
   } else if (isNum(d.pe5yAvg) && d.pe5yAvg > 0) {
     $('pj-mult').value = Math.round(d.pe5yAvg * 10) / 10;
     pjMultAuto = $('pj-mult').value;
@@ -2570,6 +2596,15 @@ function pjSetLoadedStatus(details) {
   status.innerHTML = 'Adjust the assumptions below, then build.' +
     '<br><button type="button" class="pj-math-toggle" data-pjmore aria-expanded="false">More info <span class="pj-math-chev">\u25b8</span></button>' +
     '<div class="pj-math"><p>' + esc(details) + '</p></div>';
+}
+var pjStatusHead = '', pjStatusBits = null;
+function pjRenderLoadedStatus() {
+  pjSetLoadedStatus(pjStatusHead + (pjStatusBits && pjStatusBits.length ? ' \u2014 ' + pjStatusBits.join(' \u00b7 ') : '') + '.');
+}
+function pjSetLoadedStatusParts(head, bits) {
+  pjStatusHead = head;
+  pjStatusBits = bits && bits.length ? bits.slice() : null;
+  pjRenderLoadedStatus();
 }
 async function loadProjectionTicker() {
   var T = ($('pj-ticker').value || '').trim().toUpperCase();
@@ -2591,6 +2626,14 @@ async function loadProjectionTicker() {
         if (m && isNum(qm.revenue[i])) rmap[parseInt(m[1], 10)] = qm.revenue[i];
       });
       if (Object.keys(rmap).length) d.revByYear = rmap;
+      if (qm.eps) {
+        var emap = {};
+        qm.periods.forEach(function (p, i) {
+          var m = String(p).match(/(\d{4})/);
+          if (m && isNum(qm.eps[i])) emap[parseInt(m[1], 10)] = qm.eps[i];
+        });
+        if (Object.keys(emap).length) d.epsByYear = emap;
+      }
     }
     fillProjection(d);
     var bits = [];
@@ -2602,7 +2645,7 @@ async function loadProjectionTicker() {
     if (isNum(d.epsGrowth5Y)) bits.push('analyst 5-yr EPS growth ' + fmtNum(d.epsGrowth5Y, 1) + '%/yr');
     else if (isNum(d.epsGrowthNextY)) bits.push('next-yr EPS growth ' + fmtNum(d.epsGrowthNextY, 1) + '%');
     pjDivYieldTicker = T; pjDivYield = isNum(d.divYield) ? d.divYield : null;
-    pjSetLoadedStatus('Loaded ' + T + (bits.length ? ' — ' + bits.join(' · ') : '') + '.');
+    pjSetLoadedStatusParts('Loaded ' + T, bits);
     runProjection();
   } catch (e) {
     status.className = 'status err';
@@ -7181,5 +7224,5 @@ if (typeof document !== 'undefined' && document.getElementById) {
 
 /* Node export for offline pipeline tests (ignored in the browser). */
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr, buildSwot: buildSwot, tickerSuggestions: tickerSuggestions, pjFadeGrowth: pjFadeGrowth, pfPaletteColors: pfPaletteColors, parseSAPeHistory: parseSAPeHistory, fetchPe5yAvg: fetchPe5yAvg };
+  module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr, buildSwot: buildSwot, tickerSuggestions: tickerSuggestions, pfPaletteColors: pfPaletteColors, parseSAPeHistory: parseSAPeHistory, fetchPe5yAvg: fetchPe5yAvg };
 }
