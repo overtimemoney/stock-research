@@ -554,6 +554,12 @@ table.factors.scen.micro td, table.factors.scen.micro th { padding: 7px 3px; }
 .scan-id { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .scan-id b { font-size: 15px; font-weight: 900; }
 .scan-id span { color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Name line is a flex row: the name keeps its full text but truncates
+   with an ellipsis to whatever room the pills leave (Justin's call,
+   2026-11-01: never drop or clip the NEW / cyclical pills). */
+.scan-id .scan-sub { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: visible; }
+.scan-id .scan-nm { min-width: 0; }
+.scan-row .scan-new, .scan-row .scan-cyc { flex: none; }
 .scan-px { font-weight: 800; font-size: 13px; }
 .scan-score { font-size: 11.5px; font-weight: 900; border: 1px solid var(--line); border-radius: 999px; padding: 3px 8px; white-space: nowrap; }
 .scan-foot { margin-top: 10px; font-size: 12px; color: var(--muted); font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
