@@ -1388,17 +1388,18 @@ function riskScore(d) {
   }
   var got = factors.reduce(function (s, f) { return s + f.pts; }, 0);
   var maxAvailable = factors.reduce(function (s, f) { return s + f.max; }, 0);
-  var base = maxAvailable > 0 ? Math.round(got / maxAvailable * 100) : null;
+  // The denominator keeps the removed boom-bust factor's 20 pts
+  // (maxAvailable + 20): Justin's call, 2026-11-01 -- no rescale, so
+  // a stock with no cyclical overlay keeps exactly the score and
+  // label it had before the overlay existed.
+  var base = maxAvailable > 0 ? Math.round(got / (maxAvailable + 20) * 100) : null;
   // Cyclical overlay (2026-11-01): final = base + (100 - base) x
   // severity x 0.6. Severity 0 leaves the base untouched, exactly.
-  // Band cutoffs are the old 25/45/65 scaled by 1.25 (the six base
-  // factors total 80 pts where the old seven totalled 100), so a
-  // stock with no cyclical overlay keeps the label it had.
   var cyc = cyclicalSeverity(d);
   var score = base;
   if (base != null && cyc.severity > 0) score = Math.round(base + (100 - base) * cyc.severity * 0.6);
   var verdict = null;
-  if (score != null) verdict = score <= 31.25 ? 'Low risk' : score <= 56.25 ? 'Moderate risk' : score <= 81.25 ? 'Elevated risk' : 'High risk';
+  if (score != null) verdict = score <= 25 ? 'Low risk' : score <= 45 ? 'Moderate risk' : score <= 65 ? 'Elevated risk' : 'High risk';
   return { factors: factors, got: got, maxAvailable: maxAvailable, base: base, score: score, verdict: verdict, cyc: cyc, cycAdj: base != null ? score - base : null };
 }
 
@@ -2177,7 +2178,7 @@ function renderScorecard(d) {
 
   var rk = riskScore(d);
   if (rk.score != null) {
-    var rClass = rk.score <= 31.25 ? 'risk-low' : rk.score <= 56.25 ? 'risk-mod' : rk.score <= 81.25 ? 'risk-elev' : 'risk-high';
+    var rClass = rk.score <= 25 ? 'risk-low' : rk.score <= 45 ? 'risk-mod' : rk.score <= 65 ? 'risk-elev' : 'risk-high';
     html += '<div class="verdict ' + rClass + '"><div><div class="v-label">Risk score</div>' +
       '<div class="v-word">' + esc(rk.verdict) + '</div></div>' +
       '<div class="v-score">' + rk.score + '<small> / 100</small></div></div>';
@@ -4510,7 +4511,7 @@ function renderOverview(d, item) {
     html += '<div class="score-bar"><div style="width:' + sc.score + '%"></div></div>';
   }
   if (rk.score != null) {
-    var rClass = rk.score <= 31.25 ? 'risk-low' : rk.score <= 56.25 ? 'risk-mod' : rk.score <= 81.25 ? 'risk-elev' : 'risk-high';
+    var rClass = rk.score <= 25 ? 'risk-low' : rk.score <= 45 ? 'risk-mod' : rk.score <= 65 ? 'risk-elev' : 'risk-high';
     html += '<div class="verdict ' + rClass + '"><div><div class="v-label">Risk score</div>' +
       '<div class="v-word">' + esc(rk.verdict) + '</div></div>' +
       '<div class="v-score">' + rk.score + '<small> / 100</small></div></div>';
