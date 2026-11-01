@@ -2306,7 +2306,7 @@ function pjSavedBase(T) {
   var s = getProjections()[T];
   if (!s || !isNum(s.baseEps) || !isNum(s.mult) || !Array.isArray(s.path)) return null;
   var off = (s.path.length && s.path[0].ttm) ? 1 : 0;
-  var feps = pjCaseEps(s.baseEps, s.path.slice(0, (s.years || 3) + off), 0);
+  var feps = pjCaseEps(s.baseEps, s.path.slice(0, (s.years || 3) + off), 1);
   return isNum(feps) ? feps * s.mult : null;
 }
 /* Base-case CAGR of a saved projection: implied end price vs the price at
@@ -2424,14 +2424,14 @@ function pjGrowths(base, path) {
 function pjTtmOffset() { return (pjPath.length && pjPath[0].ttm) ? 1 : 0; }
 /* Pure case math: chain the EPS path with every year's growth shifted by
  * deltaPts and return the exit-year EPS. Exported for testing. */
-function pjCaseEps(base, path, deltaPts) {
+function pjCaseEps(base, path, factor) {
   var growths = pjGrowths(base, path);
   var eps = base;
   for (var i = 0; i < path.length; i++) {
     if (path[i].ttm) { if (isNum(path[i].eps)) eps = path[i].eps; continue; }
     var g = growths[i];
     if (!isNum(g) || !isNum(eps)) { eps = path[i].eps; continue; }
-    eps = eps * (1 + (g + deltaPts) / 100);
+    eps = eps * (1 + (g * factor) / 100);
   }
   return eps;
 }
@@ -2617,16 +2617,16 @@ function runProjection() {
   renderPjPath();
   var path = pjPath.slice(0, years + pjTtmOffset());
   var scen = [
-    { name: 'Bear', d: -5, m: mult * 0.8 },
-    { name: 'Base', d: 0, m: mult },
-    { name: 'Bull', d: 5, m: mult * 1.2 }
+    { name: 'Bear', f: 0.8, m: mult * 0.8 },
+    { name: 'Base', f: 1, m: mult },
+    { name: 'Bull', f: 1.2, m: mult * 1.2 }
   ];
   var pjT = ($('pj-ticker').value || '').trim().toUpperCase();
   var divY = (pjT && pjT === pjDivYieldTicker && isNum(pjDivYield) && pjDivYield > 0) ? pjDivYield : 0;
   var divF = divY > 0 ? Math.pow(1 + divY / 100, years) : 1;
   var rows = '', maxLen = 0;
   scen.forEach(function (s) {
-    var feps = pjCaseEps(base, path, s.d);
+    var feps = pjCaseEps(base, path, s.f);
     if (!isNum(feps)) {
       rows += '<tr><td><strong>' + s.name + '</strong></td><td>—</td><td>' + fmtNum(s.m, 1) + '×</td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>';
       return;
@@ -2644,6 +2644,19 @@ function runProjection() {
   var curT = ($('pj-ticker').value || '').trim().toUpperCase();
   var savedPj = curT ? getProjections()[curT] : null;
   html += '</table>';
+  var growths = pjGrowths(base, path), exLine = '';
+  for (var gi = 0; gi < path.length; gi++) {
+    if (!path[gi].ttm && isNum(growths[gi])) {
+      exLine = ' ' + esc(path[gi].label || '') + ': ' + fmtNum(growths[gi], 1) + '% \u2192 Bear ' + fmtNum(growths[gi] * 0.8, 1) + '% \u00b7 Bull ' + fmtNum(growths[gi] * 1.2, 1) + '%.';
+      break;
+    }
+  }
+  html += '<div class="pj-math-wrap"><button type="button" class="pj-math-toggle" data-pjmath aria-expanded="false">Show math <span class="pj-math-chev">\u25b8</span></button>' +
+    '<div class="pj-math">' +
+    '<p><strong>Growth:</strong> each year\u2019s growth is scaled \u2014 Bear \u00d7 0.8, Base as entered, Bull \u00d7 1.2.' + exLine + '</p>' +
+    '<p><strong>Exit P/E:</strong> your ' + fmtNum(mult, 1) + '\u00d7, scaled \u2014 Bear ' + fmtNum(mult * 0.8, 1) + '\u00d7 (\u00d7 0.8) \u00b7 Bull ' + fmtNum(mult * 1.2, 1) + '\u00d7 (\u00d7 1.2).</p>' +
+    '<p><strong>Implied price</strong> = final-year EPS \u00d7 that case\u2019s exit P/E.</p>' +
+    '</div></div>';
   if (divY > 0) html += '<p class="fineprint">Return and CAGR include dividends at the current ' + fmtNum(divY, 2) + '% yield, reinvested.</p>';
   html += '<div class="pj-save-row"><button class="btn-gold" id="pj-save" type="button">' + (savedPj ? 'Update saved projection' : 'Save projection') + '</button>' +
     (savedPj
@@ -2651,6 +2664,8 @@ function runProjection() {
       : '<span class="factor-note">' + (curT ? 'Saves these exact assumptions on this device. Open it later from the Watchlist or the saved list below.' : 'Load a stock above first -- saving needs a ticker.') + '</span>') + '</div>';
   out.innerHTML = html;
   var svB = $('pj-save'); if (svB) svB.addEventListener('click', pjSaveCurrent);
+  var mtB = out.querySelector('[data-pjmath]');
+  if (mtB) mtB.addEventListener('click', function () { var b = mtB.nextElementSibling; if (!b) return; var open = b.classList.toggle('open'); mtB.setAttribute('aria-expanded', open ? 'true' : 'false'); });
   var dlB = $('pj-del'); if (dlB) dlB.addEventListener('click', function () { var all = getProjections(); delete all[curT]; setProjections(all); renderPjSaved(); runProjection(); });
 }
 /* ================= Quarterly metrics tool =================
