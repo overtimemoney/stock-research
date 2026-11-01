@@ -2621,7 +2621,7 @@ function runProjection() {
   var pjT = ($('pj-ticker').value || '').trim().toUpperCase();
   var divY = (pjT && pjT === pjDivYieldTicker && isNum(pjDivYield) && pjDivYield > 0) ? pjDivYield : 0;
   var divF = divY > 0 ? Math.pow(1 + divY / 100, years) : 1;
-  var html = '<div class="tbl-scroll"><table class="factors scen"><tr><th>Case</th><th>EPS in ' + years + 'y</th><th>Exit P/E</th><th class="num">Implied price</th><th class="num">Return</th><th class="num">CAGR</th></tr>';
+  var html = '<table class="factors scen"><tr><th>Case</th><th>EPS in ' + years + 'y</th><th>Exit P/E</th><th class="num">Implied price</th><th class="num">Return</th><th class="num">CAGR</th></tr>';
   scen.forEach(function (s) {
     var feps = pjCaseEps(base, path, s.d);
     if (!isNum(feps)) {
@@ -2637,7 +2637,7 @@ function runProjection() {
   });
   var curT = ($('pj-ticker').value || '').trim().toUpperCase();
   var savedPj = curT ? getProjections()[curT] : null;
-  html += '</table></div>';
+  html += '</table>';
   if (divY > 0) html += '<p class="fineprint">Return and CAGR include dividends at the current ' + fmtNum(divY, 2) + '% yield, reinvested.</p>';
   html += '<div class="pj-save-row"><button class="btn-gold" id="pj-save" type="button">' + (savedPj ? 'Update saved projection' : 'Save projection') + '</button>' +
     (savedPj

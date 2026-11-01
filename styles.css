@@ -571,14 +571,8 @@ table.scen td { padding: 8px 6px; }
 .qm-opt.on { color: var(--gold); }
 .qm-opt.on::after { content: '\u2713'; font-weight: 800; }
 /* Factor tables: fixed layout so the points column never wraps mid-number ("25 / 25" splitting across lines) — Justin flagged the right column 2026-10-26. */
-/* Horizontal-scroll wrapper: a wide table can never push content
- * off-screen again (Projection Builder results overflow, 2026-10-30). */
+/* Horizontal-scroll wrapper for genuinely wide tables (Compare). */
 .tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-@media (max-width: 480px) {
-  table.factors.scen { font-size: 13px; }
-  table.factors.scen td, table.factors.scen th { padding: 8px 6px; white-space: nowrap; }
-  table.factors.scen th { font-size: 10.5px; }
-}
 table.factors:not(.scen) { table-layout: fixed; }
 table.factors:not(.scen) th:nth-child(2), table.factors:not(.scen) td:nth-child(2) { width: 100px; }
 table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; white-space: nowrap; }
