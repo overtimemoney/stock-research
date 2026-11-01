@@ -2599,6 +2599,9 @@ async function loadProjectionTicker() {
     status.textContent = e.message || 'Could not load that ticker.';
   }
 }
+function pjScenClass(maxLen) {
+  return 'factors scen' + (maxLen >= 11 ? ' micro' : maxLen >= 9 ? ' tight' : '');
+}
 function runProjection() {
   var price = parseFloat($('pj-price').value);
   var base = pjBaseEps();
@@ -2621,20 +2624,23 @@ function runProjection() {
   var pjT = ($('pj-ticker').value || '').trim().toUpperCase();
   var divY = (pjT && pjT === pjDivYieldTicker && isNum(pjDivYield) && pjDivYield > 0) ? pjDivYield : 0;
   var divF = divY > 0 ? Math.pow(1 + divY / 100, years) : 1;
-  var html = '<table class="factors scen"><tr><th>Case</th><th>EPS in ' + years + 'y</th><th>Exit P/E</th><th class="num">Implied price</th><th class="num">Return</th><th class="num">CAGR</th></tr>';
+  var rows = '', maxLen = 0;
   scen.forEach(function (s) {
     var feps = pjCaseEps(base, path, s.d);
     if (!isNum(feps)) {
-      html += '<tr><td><strong>' + s.name + '</strong></td><td>—</td><td>' + fmtNum(s.m, 1) + '×</td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>';
+      rows += '<tr><td><strong>' + s.name + '</strong></td><td>—</td><td>' + fmtNum(s.m, 1) + '×</td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>';
       return;
     }
     var fp = feps * s.m;
     var tot = fp > 0 ? (fp / price) * divF : fp / price;
     var ret = (tot - 1) * 100;
     var cagr = fp > 0 ? (Math.pow(tot, 1 / years) - 1) * 100 : -100;
-    html += '<tr><td><strong>' + s.name + '</strong></td><td>' + fmtMoney(feps) + '</td><td>' + fmtNum(s.m, 1) + '×</td>' +
-      '<td class="num"><strong>' + fmtMoney(fp) + '</strong></td><td class="num ' + (ret >= 0 ? 'up' : 'down') + '">' + fmtPct(ret) + '</td><td class="num">' + fmtPct(cagr) + '</td></tr>';
+    var eTxt = fmtMoney(feps), pTxt = fmtMoney(fp), rTxt = fmtPct(ret), cTxt = fmtPct(cagr), mTxt = fmtNum(s.m, 1) + '×';
+    [eTxt, pTxt, rTxt, cTxt, mTxt].forEach(function (t) { if (t.length > maxLen) maxLen = t.length; });
+    rows += '<tr><td><strong>' + s.name + '</strong></td><td>' + eTxt + '</td><td>' + mTxt + '</td>' +
+      '<td class="num"><strong>' + pTxt + '</strong></td><td class="num ' + (ret >= 0 ? 'up' : 'down') + '">' + rTxt + '</td><td class="num">' + cTxt + '</td></tr>';
   });
+  var html = '<table class="' + pjScenClass(maxLen) + '"><tr><th>Case</th><th>EPS in ' + years + 'y</th><th>Exit P/E</th><th class="num">Implied price</th><th class="num">Return</th><th class="num">CAGR</th></tr>' + rows;
   var curT = ($('pj-ticker').value || '').trim().toUpperCase();
   var savedPj = curT ? getProjections()[curT] : null;
   html += '</table>';
