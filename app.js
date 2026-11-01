@@ -2410,20 +2410,28 @@ function pjFlatGrowth() {
  * so a one-year spike like +84.6% cools off instead of repeating forever. */
 /* Extrapolated growth from the TREND of the EPS growth series
  * (Justin's ask, 2026-11-01 -- replaces fading the last growth rate
- * toward the flat fallback). Least-squares line over the forecast
- * years' growth rates, in path order; series[i] sits at x = i, and
- * extrapolated years continue along the line at x = series.length,
- * series.length + 1, ... One point: no trend to fit, hold it flat.
- * No points: null, and the caller uses the flat fallback rate. */
-function pjTrendGrowthAt(series, x) {
+ * toward the flat fallback). Least-squares line over the LAST 5
+ * years of growth rates only; extrapolated years continue along the
+ * line, but the result is capped at that window's highest growth
+ * and floored at its lowest -- the trend can never project a growth
+ * rate outside the range of the past 5 years. One point: no trend
+ * to fit, hold it flat. No points: null, and the caller uses the
+ * flat fallback rate. stepsAhead is 0 for the first added year. */
+function pjTrendGrowthAt(series, stepsAhead) {
   if (!series || !series.length) return null;
-  if (series.length === 1) return series[0];
-  var k = series.length, sx = 0, sy = 0, sxx = 0, sxy = 0;
-  for (var i = 0; i < k; i++) { sx += i; sy += series[i]; sxx += i * i; sxy += i * series[i]; }
+  var win = series.slice(-5);
+  if (win.length === 1) return win[0];
+  var k = win.length, sx = 0, sy = 0, sxx = 0, sxy = 0, lo = Infinity, hi = -Infinity;
+  for (var i = 0; i < k; i++) {
+    sx += i; sy += win[i]; sxx += i * i; sxy += i * win[i];
+    if (win[i] < lo) lo = win[i];
+    if (win[i] > hi) hi = win[i];
+  }
   var den = k * sxx - sx * sx;
   var b = den ? (k * sxy - sx * sy) / den : 0;
   var a = (sy - b * sx) / k;
-  return a + b * x;
+  var g = a + b * (k + stepsAhead);
+  return Math.min(hi, Math.max(lo, g));
 }
 /* Growth % of each path year vs the prior year's EPS (year 1 vs base). */
 function pjGrowths(base, path) {
@@ -2467,7 +2475,7 @@ function pjEnsureYears(n) {
   var added = 0;
   while (pjPath.length < n && guard++ < 5) {
     var prevEps = pjPath.length ? pjPath[pjPath.length - 1].eps : base;
-    var g = pjTrendGrowthAt(series, series.length + added);
+    var g = pjTrendGrowthAt(series, added);
     if (!isNum(g)) g = pjFlatGrowth();
     g = Math.max(g, -99);
     added++;
