@@ -256,7 +256,9 @@ function fillFromFinviz(d, fvHtml) {
   d.marketCap = parseCapStr(p['Market Cap']);
   d.pe = parseNum(p['P/E']);
   d.forwardPE = parseNum(p['Forward P/E']);
+  if (isNum(d.forwardPE)) d.forwardPECalc = false;
   d.peg = parseNum(p['PEG']);
+  if (isNum(d.peg)) d.pegCalc = false;
   d.ps = parseNum(p['P/S']);
   d.pb = parseNum(p['P/B']);
   d.pfcf = parseNum(p['P/FCF']);
@@ -554,9 +556,12 @@ async function fetchStock(ticker, opts) {
   } else {
     d.epsGrowthNextY = null;
   }
-  // Forward P/E fallback: price / next-FY consensus EPS (labelled calc.)
+  // Forward P/E fallback: price / next fiscal year's consensus EPS
+  // (labelled calc.) -- the Nasdaq FY pair, same source as the EPS
+  // growth factor above, so the calculated values tie out. Finviz's
+  // own EPS-next-Y figure is the last resort.
   if (!isNum(d.forwardPE) && isNum(d.price)) {
-    var fyEps = isNum(d.epsNextY) ? d.epsNextY : (nextFY ? nextFY.eps : null);
+    var fyEps = (f1 && isNum(f1.eps)) ? f1.eps : (nextFY ? nextFY.eps : (isNum(d.epsNextY) ? d.epsNextY : null));
     if (isNum(fyEps) && fyEps > 0) { d.forwardPE = d.price / fyEps; d.forwardPECalc = true; }
   }
   // PEG fallback: forward P/E / next-year EPS growth % (labelled calc.)
