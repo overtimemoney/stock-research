@@ -1432,7 +1432,7 @@ function cyclicalSeverity(d) {
     }
   }
   var avail = [sig.margin, sig.epsDD, sig.epsGrowth, sig.revSurge].filter(isNum);
-  var out = { signals: sig, detail: det, severity: 0, raw: null, gatePassed: false, sectorBoost: false, limitedHistory: limited };
+  var out = { signals: sig, detail: det, severity: 0, raw: null, gatePassed: false, sectorBoost: false, limitedHistory: limited, sigCount: 0, capped: false };
   if (!avail.length) return out;
   out.raw = avail.reduce(function (a, b) { return a + b; }, 0) / avail.length;
   if (avail.filter(function (v) { return v >= 0.25; }).length < 2) return out;
@@ -1440,6 +1440,14 @@ function cyclicalSeverity(d) {
   var sev = out.raw;
   var txt = ((d.industry || '') + ' ' + (d.sector || '')).toLowerCase();
   if (CYC_SECTOR_RE.test(txt)) { sev = Math.min(1, sev * 1.15); out.sectorBoost = true; }
+  /* Thin evidence caps confidence (Justin's call, 2026-11-01): with
+   * fewer than three signals carrying data, severity cannot max out
+   * -- it caps at 0.80. Two screaming signals on a short history
+   * (SNDK: +786% growth and a revenue surge, with no margin or
+   * drawdown record) still flag and cap the verdict, just not at a
+   * perfect 1.00. */
+  out.sigCount = avail.length;
+  if (avail.length < 3 && sev > 0.8) { sev = 0.8; out.capped = true; }
   out.severity = sev;
   return out;
 }
@@ -1740,7 +1748,7 @@ var lastStock = null;
  * next to a label and a plain-English explainer smoothly unfolds
  * under it. One delegated listener handles every dot. */
 var INFO_TEXT = {
-  cycsev: 'Severity runs 0 to 1: how peak-cycle today\'s numbers look vs the company\'s own history \u2014 margin vs its long-run average, worst EPS drawdown, trailing EPS growth, revenue surge. 0 = nothing unusual; 1 = textbook cycle peak. Needs 2 strong signals to count; then it lifts the risk score toward 100.',
+  cycsev: 'Severity runs 0 to 1: how peak-cycle today\'s numbers look vs the company\'s own history \u2014 margin vs its long-run average, worst EPS drawdown, trailing EPS growth, revenue surge. 0 = nothing unusual; 1 = textbook cycle peak. Needs 2 strong signals to count; then it lifts the risk score toward 100. With fewer than 3 signals carrying data, severity caps at 0.8.',
   fwpe: 'Forward P/E = today\'s price divided by next year\'s expected earnings per share. It prices the stock against where earnings are heading, not where they have been. Rough guide: under 15 is cheap for most stocks, over 30 is expensive.',
   pe: 'P/E (trailing) = today\'s price divided by the last twelve months\' actual earnings per share. Higher means investors pay more for each $1 of profit the company already makes.',
   peg: 'PEG = the forward P/E divided by the expected earnings growth rate. It checks whether the price is fair for the growth you are getting. Under 1 is the classic \u201cgrowth at a reasonable price\u201d zone; under 0.75 is rare.',
@@ -2298,6 +2306,7 @@ function renderScorecard(d) {
       if (isNum(rk.cyc.signals.epsGrowth)) cParts.push('EPS ' + fmtPct(cd.epsG, 0) + ' in a year');
       if (isNum(rk.cyc.signals.revSurge)) cParts.push('revenue ' + fmtNum(cd.revRatio, 1) + '\u00d7 in 2 yrs');
       if (rk.cyc.sectorBoost) cParts.push('cyclical sector \u00d71.15');
+      if (rk.cyc.capped) cParts.push('capped at 0.80 \u2014 only ' + rk.cyc.sigCount + ' signals have data');
       if (rk.cyc.limitedHistory) cParts.push('limited history (<5 yrs) \u2014 margin & drawdown signals skipped');
       // Short one-line note on the row; the full signal breakdown
       // lives behind the (i), with the explainer (Justin's ask,
