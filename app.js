@@ -489,6 +489,7 @@ async function fetchStock(ticker, opts) {
     var rows = parseMBEarnings(html);
     if (rows.length >= 4) {
       d.epsRecord = epsRecordStats(rows);
+      d.epsHistQ = rows;
       d.sources.push('MarketBeat');
     }
     // Latest quarter's revenue growth: newest quarter vs the same
@@ -1122,13 +1123,37 @@ function epsPoints(d) {
   return pts;
 }
 
-/* Possible cliff (Justin's rule, 2026-10-27): with ONLY 2 projected
- * years, an explosive first year followed by a hard growth deceleration
- * is the classic pre-cliff shape — the peak likely sits just past the
- * forecast window, so it counts as a cliff even though no fall is
- * visible inside the window. Fires only when ALL hold: exactly 2
- * projected years beyond TTM; TTM EPS > 0; FY1 growth vs TTM >= +75%;
- * FY2 growth rate <= half the FY1 growth rate. */
+/* EPS levels 1-2 years ago, rebuilt from the quarterly reported EPS
+ * (MarketBeat, newest first): the TTM that ended 4 quarters back
+ * (needs 8 quarters of history) and the one that ended 8 quarters
+ * back (needs 12). Non-positive or unbuildable bases drop out. */
+function epsHistBases(d) {
+  var rows = d.epsHistQ || [], out = [];
+  function ttmEndingAt(idx) {
+    var sum = 0;
+    for (var i = idx; i < idx + 4; i++) {
+      if (!rows[i] || !isNum(rows[i].reported)) return null;
+      sum += rows[i].reported;
+    }
+    return sum;
+  }
+  var b2 = rows.length >= 12 ? ttmEndingAt(8) : null;
+  if (isNum(b2) && b2 > 0) out.push({ base: b2, label: '2 yrs ago' });
+  var b1 = rows.length >= 8 ? ttmEndingAt(4) : null;
+  if (isNum(b1) && b1 > 0) out.push({ base: b1, label: '1 yr ago' });
+  return out;
+}
+
+/* Possible cliff (Justin's rule, 2026-10-27; lookback added
+ * 2026-11-01): with ONLY 2 projected years, an explosive run-up
+ * followed by a hard growth deceleration is the classic pre-cliff
+ * shape — the peak likely sits just past the forecast window, so it
+ * counts as a cliff even though no fall is visible inside the
+ * window. Fires only when ALL hold: exactly 2 projected years beyond
+ * TTM; TTM EPS > 0; FY2 growth rate <= half the FY1 growth rate; and
+ * an explosion of >= +75% measured EITHER as FY1 growth vs TTM or as
+ * TTM growth vs the TTM of up to 2 years ago (the explosion may
+ * already have happened into the current TTM). */
 function epsPossibleCliff(d) {
   var pts = epsPoints(d);
   if (pts.length !== 3) return null;
@@ -1137,9 +1162,14 @@ function epsPossibleCliff(d) {
   if (!isNum(ttm) || !isNum(f1) || !isNum(f2) || ttm <= 0 || f1 <= 0) return null;
   var g1 = (f1 / ttm - 1) * 100;
   var g2 = (f2 / f1 - 1) * 100;
-  if (g1 < 75) return null;
   if (g2 > g1 * 0.5) return null;
-  return { fy1Label: pts[1].label, fy2Label: pts[2].label, g1: g1, g2: g2 };
+  if (g1 >= 75) return { fy1Label: pts[1].label, fy2Label: pts[2].label, g1: g1, g2: g2 };
+  var bases = epsHistBases(d);
+  for (var bi = 0; bi < bases.length; bi++) {
+    var gB = (ttm / bases[bi].base - 1) * 100;
+    if (gB >= 75) return { fy1Label: pts[1].label, fy2Label: pts[2].label, g1: g1, g2: g2, lookback: bases[bi].label, gB: gB };
+  }
+  return null;
 }
 
 /* No-profit warning (Justin's rule, 2026-10-27): a company losing money
@@ -1296,8 +1326,10 @@ function epsTrajectory(d) {
     if (!warning) {
       var pc = epsPossibleCliff(d);
       if (pc) {
-        warning = 'Possible cliff — only 2 years of estimates. EPS explodes ' + fmtPct(pc.g1, 0) + ' next year (' + pc.fy1Label +
-          '), then growth slows to ' + fmtPct(pc.g2, 0) + ' (' + pc.fy2Label + '). The peak may sit just past the forecast window, so this counts as a cliff.';
+        warning = pc.lookback
+          ? 'Possible cliff — only 2 years of estimates. EPS already exploded ' + fmtPct(pc.gB, 0) + ' vs ' + pc.lookback + ', and growth inside the window is fading (' + fmtPct(pc.g1, 0) + ' next year, then ' + fmtPct(pc.g2, 0) + '). The peak may sit just past the forecast window, so this counts as a cliff.'
+          : 'Possible cliff — only 2 years of estimates. EPS explodes ' + fmtPct(pc.g1, 0) + ' next year (' + pc.fy1Label +
+            '), then growth slows to ' + fmtPct(pc.g2, 0) + ' (' + pc.fy2Label + '). The peak may sit just past the forecast window, so this counts as a cliff.';
       }
     }
     if (!warning && pts[1].eps < pts[0].eps) {
