@@ -594,7 +594,7 @@ function scoreStock(d) {
   if (isNum(d.peg) && d.peg > 0) {
     add('PEG ratio', d.peg, fmtNum(d.peg, 2) + (d.pegCalc ? ' (calc.)' : ''), 20,
       band(d.peg, [[0.3, 20], [0.5, 18], [0.75, 15], [1, 12], [1.5, 8], [2, 4], [Infinity, 0]]),
-      'Price vs growth — under 0.5 is rare air');
+      'Price vs growth — under 0.75 is rare air');
   }
   if (isNum(d.pctBelowHigh)) {
     add('Below 52-wk high', d.pctBelowHigh, fmtNum(d.pctBelowHigh, 1) + '%', 15,
@@ -1475,7 +1475,7 @@ var lastStock = null;
 var INFO_TEXT = {
   fwpe: 'Forward P/E = today\'s price divided by next year\'s expected earnings per share. It prices the stock against where earnings are heading, not where they have been. Rough guide: under 15 is cheap for most stocks, over 30 is expensive.',
   pe: 'P/E (trailing) = today\'s price divided by the last twelve months\' actual earnings per share. Higher means investors pay more for each $1 of profit the company already makes.',
-  peg: 'PEG = the forward P/E divided by the expected earnings growth rate. It checks whether the price is fair for the growth you are getting. Under 1 is the classic \u201cgrowth at a reasonable price\u201d zone; under 0.5 is rare.',
+  peg: 'PEG = the forward P/E divided by the expected earnings growth rate. It checks whether the price is fair for the growth you are getting. Under 1 is the classic \u201cgrowth at a reasonable price\u201d zone; under 0.75 is rare.',
   epsttm: 'Earnings per share over the last twelve months (TTM = trailing twelve months) \u2014 the profit already reported, per share.',
   epsgrowth: 'How much analysts expect earnings per share to grow next fiscal year versus this one. Growing earnings are what ultimately pull a stock\'s price upward.',
   epstrend: 'Whether analysts expect earnings per share to grow or shrink next year. Shrinking earnings are a risk because prices tend to follow earnings down.',
@@ -5368,7 +5368,7 @@ function renderJournal() {
 var GLOSSARY = [
   ['P/E ratio', 'The price of one share of stock divided by the earnings per one share of stock (EPS). What you pay for $1 of yearly profit. 20× means $20 per $1 of earnings.'],
   ['Forward P/E', 'The price of one share of stock divided by next year\'s expected earnings per one share of stock (EPS). Uses analyst estimates, so it\'s a guess about the future — cheaper-looking, but the estimate can be wrong.'],
-  ['PEG ratio', 'P/E divided by the expected earnings growth rate. Tries to answer "am I overpaying for this growth?" Under 1 is traditionally "fair", under 0.5 is unusually cheap — or a warning that growth is about to fall off a cliff.'],
+  ['PEG ratio', 'P/E divided by the expected earnings growth rate. Tries to answer "am I overpaying for this growth?" Under 1 is traditionally "fair", under 0.75 is unusually cheap — or a warning that growth is about to fall off a cliff.'],
   ['Market cap', 'Share price × shares outstanding. The total price tag on the whole company. Your screen only looks at companies over $5B (large enough to be established).'],
   ['52-week high', 'The highest price in the last year. A stock 30% below it is on sale relative to recent sentiment — or something broke. Your screen wants 25%+ below, then the research decides which.'],
   ['EPS (earnings per share)', 'Company profits divided by all outstanding shares — how much of the profit belongs to each one share of stock. The single number most valuation math is built on. "TTM" = trailing twelve months (actual past). "Consensus" = the average of analyst estimates (guessed future).'],
