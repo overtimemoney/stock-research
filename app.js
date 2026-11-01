@@ -1573,7 +1573,6 @@ function valueScreen(d) {
  * where a pass means the check is CLEAR. Same chip treatment; unknown
  * data shows '?' and never guesses. (Justin's ask, 2026-10-26.) */
 function riskScreen(d) {
-  var bb = boomBust(d);
   var cyc = cyclicalSeverity(d);
   var cycTestable = !!(cyc && cyc.raw !== null && cyc.raw !== undefined);
   return [
@@ -1582,7 +1581,6 @@ function riskScreen(d) {
     { label: 'Current ratio at or above 1', test: isNum(d.currentRatio) ? (d.currentRatio >= 1) : null, value: isNum(d.currentRatio) ? fmtNum(d.currentRatio, 2) : '\u2014' },
     { label: 'Beta at or under 1.5', test: isNum(d.beta) ? (d.beta <= 1.5) : null, value: isNum(d.beta) ? fmtNum(d.beta, 2) : '\u2014' },
     { label: 'EPS growing next year', test: isNum(d.epsGrowthNextY) ? (d.epsGrowthNextY >= 0) : null, value: isNum(d.epsGrowthNextY) ? fmtPct(d.epsGrowthNextY) : '\u2014' },
-    { label: 'No boom-bust pattern', test: (bb && bb.testable) ? !bb.fires : null, value: (bb && bb.testable) ? (bb.fires ? 'Pattern present' : 'None detected') : '\u2014' },
     { label: 'No cyclical earnings peak', test: cycTestable ? (cyc.severity < 0.5) : null, value: cycTestable ? 'Severity ' + fmtNum(cyc.severity, 2) + ' of 1' : '\u2014' }
   ];
 }
@@ -2404,7 +2402,7 @@ function renderScorecard(d) {
   var rKnown = rScreen.filter(function (s) { return s.test !== null; }).length;
   var rPass = rScreen.filter(function (s) { return s.test === true; }).length;
   var rMiss = [];
-  rScreen.forEach(function (s, i) { if (s.test === false) rMiss.push(['Debt/Eq', 'Profitability', 'Current ratio', 'Beta', 'EPS growth', 'Boom-bust', 'Cyclical'][i]); });
+  rScreen.forEach(function (s, i) { if (s.test === false) rMiss.push(['Debt/Eq', 'Profitability', 'Current ratio', 'Beta', 'EPS growth', 'Cyclical'][i]); });
   var rSum = rMiss.length ? ' \u00b7 flags ' + rMiss.join(', ') : (rKnown > 0 && rPass === rKnown ? ' \u00b7 all clear' : '');
   html += '<button type="button" class="section-h screen-toggle" data-stoggle="rs"><span class="screen-name">Risk screen \u2014</span> <span class="gold-text screen-count">' + rPass + ' of ' + rKnown + ' clear</span><span class="screen-sum">' + rSum + '</span><span class="screen-chev">\u25be</span></button>';
   html += '<div class="screen-chips" data-sbody="rs" hidden>';
