@@ -595,6 +595,14 @@ async function fetchStock(ticker, opts) {
 
 /* ============================== scoring ============================== */
 /* Transparent rubric — every factor's points are shown to the user. */
+/* The cheap-P/E trap, shared by the valuation score and the value
+ * screen (so the page can never contradict itself): a single-digit
+ * forward P/E on earnings that just exploded is usually peak
+ * earnings, not a bargain. */
+function cheapPeTrap(d) {
+  return isNum(d.forwardPE) && d.forwardPE > 0 && d.forwardPE < 8 && isNum(d.epsGrowthTTM) && d.epsGrowthTTM > 200;
+}
+
 function scoreStock(d) {
   var factors = [];
   function band(v, bands) { // bands: [[limitInclusive, points], ...] ascending
@@ -649,7 +657,7 @@ function scoreStock(d) {
   // every scanned stock); the verdict cap below stays gated on
   // severity >= 0.5.
   var cyc = cyclicalSeverity(d);
-  var trap = isNum(d.forwardPE) && d.forwardPE > 0 && d.forwardPE < 8 && isNum(d.epsGrowthTTM) && d.epsGrowthTTM > 200;
+  var trap = cheapPeTrap(d);
   if (trap) {
     factors.forEach(function (f) {
       if (f.name === 'Forward P/E' || f.name === 'PEG ratio') {
@@ -1451,23 +1459,23 @@ function riskScore(d) {
       'How hard the stock swings vs the market');
   }
   if (isNum(d.debtEq) && d.debtEq >= 0) {
-    add('Debt / Equity', d.debtEq, fmtNum(d.debtEq, 2), 20,
-      band(d.debtEq, [[0.1, 0], [0.4, 4], [0.8, 8], [1.5, 12], [3, 15], [Infinity, 20]]),
+    add('Debt / Equity', d.debtEq, fmtNum(d.debtEq, 2), 25,
+      band(d.debtEq, [[0.1, 0], [0.4, 5], [0.8, 10], [1.5, 15], [3, 19], [Infinity, 25]]),
       'More debt = less room when things go wrong');
   }
   if (isNum(d.profitMargin)) {
-    add('Profit margin', d.profitMargin, fmtNum(d.profitMargin, 1) + '%', 15,
-      band(d.profitMargin, [[-10, 15], [0, 13], [5, 10], [10, 7], [15, 3], [25, 2], [Infinity, 0]]),
+    add('Profit margin', d.profitMargin, fmtNum(d.profitMargin, 1) + '%', 20,
+      band(d.profitMargin, [[-10, 20], [0, 17], [5, 13], [10, 9], [15, 4], [25, 3], [Infinity, 0]]),
       'Loss-making means no cushion');
   }
   if (isNum(d.marketCap) && d.marketCap > 0) {
-    add('Company size', d.marketCap, fmtCap(d.marketCap), 10,
-      band(d.marketCap, [[2e9, 10], [1e10, 8], [5e10, 5], [2e11, 2], [Infinity, 0]]),
+    add('Company size', d.marketCap, fmtCap(d.marketCap), 15,
+      band(d.marketCap, [[2e9, 15], [1e10, 12], [5e10, 8], [2e11, 3], [Infinity, 0]]),
       'Small companies fail more often than giants');
   }
   if (isNum(d.epsGrowthNextY)) {
-    add('EPS trend, next yr', d.epsGrowthNextY, fmtPct(d.epsGrowthNextY), 15,
-      band(d.epsGrowthNextY, [[-25, 15], [-10, 12], [0, 8], [10, 3], [25, 1], [Infinity, 0]]),
+    add('EPS trend, next yr', d.epsGrowthNextY, fmtPct(d.epsGrowthNextY), 20,
+      band(d.epsGrowthNextY, [[-25, 20], [-10, 16], [0, 11], [10, 4], [25, 1], [Infinity, 0]]),
       'Falling earnings are where the danger starts');
   }
   if (isNum(d.currentRatio) && d.currentRatio > 0) {
@@ -1477,11 +1485,12 @@ function riskScore(d) {
   }
   var got = factors.reduce(function (s, f) { return s + f.pts; }, 0);
   var maxAvailable = factors.reduce(function (s, f) { return s + f.max; }, 0);
-  // The denominator keeps the removed boom-bust factor's 20 pts
-  // (maxAvailable + 20): Justin's call, 2026-11-01 -- no rescale, so
-  // a stock with no cyclical overlay keeps exactly the score and
-  // label it had before the overlay existed.
-  var base = maxAvailable > 0 ? Math.round(got / (maxAvailable + 20) * 100) : null;
+  // The six factors' weights sum to a true 100 (Justin's call,
+  // 2026-11-01, superseding the morning's keep-the-dead-20 choice):
+  // Beta 10, Debt/Equity 25, Profit margin 20, Company size 15,
+  // EPS trend 20, Current ratio 10. The denominator is simply the
+  // points available from the factors that have data.
+  var base = maxAvailable > 0 ? Math.round(got / maxAvailable * 100) : null;
   // Cyclical overlay (2026-11-01): final = base + (100 - base) x
   // severity x 0.6. Severity 0 leaves the base untouched, exactly.
   var cyc = cyclicalSeverity(d);
@@ -1497,7 +1506,8 @@ function valueScreen(d) {
     { label: 'Market cap over $5B', test: isNum(d.marketCap) ? (d.marketCap > 5e9) : null, value: fmtCap(d.marketCap) },
     { label: 'Forward P/E under 10', test: isNum(d.forwardPE) ? (d.forwardPE < 10) : null, value: isNum(d.forwardPE) ? fmtNum(d.forwardPE, 2) : '—' },
     { label: 'PEG under 0.75', test: isNum(d.peg) ? (d.peg < 0.75) : null, value: isNum(d.peg) ? fmtNum(d.peg, 2) : '—' },
-    { label: '25%+ below 52-wk high', test: isNum(d.pctBelowHigh) ? (d.pctBelowHigh >= 25) : null, value: isNum(d.pctBelowHigh) ? fmtNum(d.pctBelowHigh, 1) + '% below' : '—' }
+    { label: '25%+ below 52-wk high', test: isNum(d.pctBelowHigh) ? (d.pctBelowHigh >= 25) : null, value: isNum(d.pctBelowHigh) ? fmtNum(d.pctBelowHigh, 1) + '% below' : '—' },
+    { label: 'Not a cheap-P/E trap', test: (isNum(d.forwardPE) && isNum(d.epsGrowthTTM)) ? !cheapPeTrap(d) : null, value: cheapPeTrap(d) ? 'Fwd P/E ' + fmtNum(d.forwardPE, 1) + ' \u00b7 EPS +' + fmtNum(d.epsGrowthTTM, 0) + '% \u2014 peak earnings?' : ((isNum(d.forwardPE) && isNum(d.epsGrowthTTM)) ? 'No trap pattern' : '—') }
   ];
 }
 
@@ -1506,13 +1516,16 @@ function valueScreen(d) {
  * data shows '?' and never guesses. (Justin's ask, 2026-10-26.) */
 function riskScreen(d) {
   var bb = boomBust(d);
+  var cyc = cyclicalSeverity(d);
+  var cycTestable = !!(cyc && cyc.raw !== null && cyc.raw !== undefined);
   return [
     { label: 'Debt / Equity at or under 1', test: isNum(d.debtEq) ? (d.debtEq <= 1) : null, value: isNum(d.debtEq) ? fmtNum(d.debtEq, 2) : '\u2014' },
     { label: 'Profitable (margin above 0)', test: isNum(d.profitMargin) ? (d.profitMargin > 0) : null, value: isNum(d.profitMargin) ? fmtNum(d.profitMargin, 1) + '%' : '\u2014' },
     { label: 'Current ratio at or above 1', test: isNum(d.currentRatio) ? (d.currentRatio >= 1) : null, value: isNum(d.currentRatio) ? fmtNum(d.currentRatio, 2) : '\u2014' },
     { label: 'Beta at or under 1.5', test: isNum(d.beta) ? (d.beta <= 1.5) : null, value: isNum(d.beta) ? fmtNum(d.beta, 2) : '\u2014' },
     { label: 'EPS growing next year', test: isNum(d.epsGrowthNextY) ? (d.epsGrowthNextY >= 0) : null, value: isNum(d.epsGrowthNextY) ? fmtPct(d.epsGrowthNextY) : '\u2014' },
-    { label: 'No boom-bust pattern', test: (bb && bb.testable) ? !bb.fires : null, value: (bb && bb.testable) ? (bb.fires ? 'Pattern present' : 'None detected') : '\u2014' }
+    { label: 'No boom-bust pattern', test: (bb && bb.testable) ? !bb.fires : null, value: (bb && bb.testable) ? (bb.fires ? 'Pattern present' : 'None detected') : '\u2014' },
+    { label: 'No cyclical earnings peak', test: cycTestable ? (cyc.severity < 0.5) : null, value: cycTestable ? 'Severity ' + fmtNum(cyc.severity, 2) + ' of 1' : '\u2014' }
   ];
 }
 
@@ -2306,7 +2319,7 @@ function renderScorecard(d) {
   html += radarCardHtml(d);
 
   var vMiss = [];
-  screen.forEach(function (s, i) { if (s.test === false) vMiss.push(['Market cap', 'Fwd P/E', 'PEG', 'Below high'][i]); });
+  screen.forEach(function (s, i) { if (s.test === false) vMiss.push(['Market cap', 'Fwd P/E', 'PEG', 'Below high', 'P/E trap'][i]); });
   var vSum = vMiss.length ? ' \u00b7 misses ' + vMiss.join(', ') : (knownCount > 0 && passCount === knownCount ? ' \u00b7 all clear' : '');
   html += '<button type="button" class="section-h screen-toggle" data-stoggle="vs"><span class="screen-name">Value screen \u2014</span> <span class="gold-text screen-count">' + passCount + ' of ' + knownCount + '</span><span class="screen-sum">' + vSum + '</span><span class="screen-chev">\u25be</span></button>';
   html += '<div class="screen-chips" data-sbody="vs" hidden>';
@@ -2321,7 +2334,7 @@ function renderScorecard(d) {
   var rKnown = rScreen.filter(function (s) { return s.test !== null; }).length;
   var rPass = rScreen.filter(function (s) { return s.test === true; }).length;
   var rMiss = [];
-  rScreen.forEach(function (s, i) { if (s.test === false) rMiss.push(['Debt/Eq', 'Profitability', 'Current ratio', 'Beta', 'EPS growth', 'Boom-bust'][i]); });
+  rScreen.forEach(function (s, i) { if (s.test === false) rMiss.push(['Debt/Eq', 'Profitability', 'Current ratio', 'Beta', 'EPS growth', 'Boom-bust', 'Cyclical'][i]); });
   var rSum = rMiss.length ? ' \u00b7 flags ' + rMiss.join(', ') : (rKnown > 0 && rPass === rKnown ? ' \u00b7 all clear' : '');
   html += '<button type="button" class="section-h screen-toggle" data-stoggle="rs"><span class="screen-name">Risk screen \u2014</span> <span class="gold-text screen-count">' + rPass + ' of ' + rKnown + ' clear</span><span class="screen-sum">' + rSum + '</span><span class="screen-chev">\u25be</span></button>';
   html += '<div class="screen-chips" data-sbody="rs" hidden>';
@@ -3743,7 +3756,7 @@ function scanRankAll(idxs) {
     // carry, so it never counts here). Require at least 60% of those
     // 80 — 48 points — mirroring the valuation side's 60-of-100 rule.
     var rk = riskScore(rec);
-    if (!(rk && isNum(rk.score) && rk.maxAvailable >= 48)) return;
+    if (!(rk && isNum(rk.score) && rk.maxAvailable >= 60)) return;
     // One score for the daily list (Justin's ask, 2026-10-27):
     // 60% how cheap it is + 40% how safe it is.
     var combined = Math.round(0.6 * s.score + 0.4 * (100 - rk.score));
