@@ -258,7 +258,7 @@ button.screen-toggle { display: flex; align-items: baseline; flex-wrap: nowrap; 
 .radar-leg-num { font-weight: 900; font-variant-numeric: tabular-nums; }
 .radar-cliff-tag { color: var(--bad); font-size: 10px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
 .radar-flex.mini .radar-leg-row { font-size: 12px; padding: 2.5px 0; }
-.scan-new { background: var(--gold-grad); color: #141414; font-size: 9px; font-weight: 900; letter-spacing: .06em; padding: 1.5px 6px; border-radius: 999px; vertical-align: 2px; white-space: nowrap; }
+.scan-row .scan-new { background: var(--gold-grad); color: #141414; font-size: 9px; font-weight: 900; letter-spacing: .06em; padding: 1.5px 6px; border-radius: 999px; vertical-align: 2px; white-space: nowrap; }
 /* Custom screener panel (2026-10-30) */
 .scr-saved { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .scr-chip { display: inline-flex; align-items: center; border: 1px solid var(--line); background: var(--chip-bg); border-radius: 999px; overflow: hidden; }
