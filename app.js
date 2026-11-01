@@ -1727,7 +1727,7 @@ var lastStock = null;
  * next to a label and a plain-English explainer smoothly unfolds
  * under it. One delegated listener handles every dot. */
 var INFO_TEXT = {
-  cycsev: 'How peak-cycle the current numbers look vs the company\'s own history: margin vs its long-run average, worst EPS drawdown, trailing EPS growth, and revenue surge. Needs 2 strong signals to count; it then lifts the risk score toward 100. Detail in the row note.',
+  cycsev: 'Severity runs 0 to 1: how peak-cycle today\'s numbers look vs the company\'s own history \u2014 margin vs its long-run average, worst EPS drawdown, trailing EPS growth, revenue surge. 0 = nothing unusual; 1 = textbook cycle peak. Needs 2 strong signals to count; then it lifts the risk score toward 100.',
   fwpe: 'Forward P/E = today\'s price divided by next year\'s expected earnings per share. It prices the stock against where earnings are heading, not where they have been. Rough guide: under 15 is cheap for most stocks, over 30 is expensive.',
   pe: 'P/E (trailing) = today\'s price divided by the last twelve months\' actual earnings per share. Higher means investors pay more for each $1 of profit the company already makes.',
   peg: 'PEG = the forward P/E divided by the expected earnings growth rate. It checks whether the price is fair for the growth you are getting. Under 1 is the classic \u201cgrowth at a reasonable price\u201d zone; under 0.75 is rare.',
