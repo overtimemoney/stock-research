@@ -2386,10 +2386,13 @@ function renderScorecard(d) {
 
   html += radarCardHtml(d);
 
-  var vMiss = [];
-  screen.forEach(function (s, i) { if (s.test === false) vMiss.push(['Market cap', 'Fwd P/E', 'PEG', 'Below high', 'P/E trap'][i]); });
-  var vSum = vMiss.length ? ' \u00b7 misses ' + vMiss.join(', ') : (knownCount > 0 && passCount === knownCount ? ' \u00b7 all clear' : '');
-  html += '<button type="button" class="section-h screen-toggle" data-stoggle="vs"><span class="screen-name">Value screen \u2014</span> <span class="gold-text screen-count">' + passCount + ' of ' + knownCount + '</span><span class="screen-sum">' + vSum + '</span><span class="screen-chev">\u25be</span></button>';
+  var vNames = ['Market cap', 'Fwd P/E', 'PEG', 'Below high', 'P/E trap'];
+  var vLabels = screen.map(function (s2, i2) {
+    var m2 = s2.test === null ? '?' : s2.test ? '\u2713' : '\u2717';
+    var c2 = s2.test === null ? 'unk' : s2.test ? 'pass' : 'fail';
+    return '<span class="slab ' + c2 + '">' + m2 + ' ' + vNames[i2] + '</span>';
+  }).join(' <span class="slab-dot">\u00b7</span> ');
+  html += '<button type="button" class="section-h screen-toggle" data-stoggle="vs"><span class="screen-name">Value screen \u2014</span> <span class="gold-text screen-count">' + passCount + ' of ' + knownCount + '</span><span class="screen-chev">\u25be</span><span class="screen-labels">' + vLabels + '</span></button>';
   html += '<div class="screen-chips" data-sbody="vs" hidden>';
   screen.forEach(function (s) {
     var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
@@ -2401,10 +2404,13 @@ function renderScorecard(d) {
   var rScreen = riskScreen(d);
   var rKnown = rScreen.filter(function (s) { return s.test !== null; }).length;
   var rPass = rScreen.filter(function (s) { return s.test === true; }).length;
-  var rMiss = [];
-  rScreen.forEach(function (s, i) { if (s.test === false) rMiss.push(['Debt/Eq', 'Profitability', 'Current ratio', 'Beta', 'EPS growth', 'Cyclical'][i]); });
-  var rSum = rMiss.length ? ' \u00b7 flags ' + rMiss.join(', ') : (rKnown > 0 && rPass === rKnown ? ' \u00b7 all clear' : '');
-  html += '<button type="button" class="section-h screen-toggle" data-stoggle="rs"><span class="screen-name">Risk screen \u2014</span> <span class="gold-text screen-count">' + rPass + ' of ' + rKnown + ' clear</span><span class="screen-sum">' + rSum + '</span><span class="screen-chev">\u25be</span></button>';
+  var rNames = ['Debt/Eq', 'Profitability', 'Current ratio', 'Beta', 'EPS growth', 'Cyclical'];
+  var rLabels = rScreen.map(function (s2, i2) {
+    var m2 = s2.test === null ? '?' : s2.test ? '\u2713' : '\u2717';
+    var c2 = s2.test === null ? 'unk' : s2.test ? 'pass' : 'fail';
+    return '<span class="slab ' + c2 + '">' + m2 + ' ' + rNames[i2] + '</span>';
+  }).join(' <span class="slab-dot">\u00b7</span> ');
+  html += '<button type="button" class="section-h screen-toggle" data-stoggle="rs"><span class="screen-name">Risk screen \u2014</span> <span class="gold-text screen-count">' + rPass + ' of ' + rKnown + ' clear</span><span class="screen-chev">\u25be</span><span class="screen-labels">' + rLabels + '</span></button>';
   html += '<div class="screen-chips" data-sbody="rs" hidden>';
   rScreen.forEach(function (s) {
     var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
