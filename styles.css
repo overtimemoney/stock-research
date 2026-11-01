@@ -781,3 +781,12 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
   .tool-page.active { animation: none; }
   .radar-svg { animation: none; }
 }
+
+/* Tappable points: exact math behind every factor score */
+.pts-btn { background: none; border: 0; border-bottom: 1px dotted rgba(248,199,61,.55); color: inherit; font: inherit; cursor: pointer; padding: 0 0 1px; text-align: inherit; }
+.pts-btn[aria-expanded="true"] { border-bottom: 1px solid var(--gold); color: var(--gold); }
+button.v-score.pts-btn { border-bottom: 1px dotted rgba(0,0,0,.35); }
+button.v-score.pts-btn[aria-expanded="true"] { border-bottom: 1px solid currentColor; color: inherit; }
+table.factors tr.math-row td { border-bottom: 1px solid var(--row-line); padding: 2px 6px 10px; }
+.math-box { background: var(--field); border-radius: 10px; padding: 9px 11px; font-size: 12.5px; line-height: 1.55; }
+.banner-math { margin: 10px 0 4px; }

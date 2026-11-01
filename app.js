@@ -605,49 +605,73 @@ function cheapPeTrap(d) {
 
 function scoreStock(d) {
   var factors = [];
-  function band(v, bands) { // bands: [[limitInclusive, points], ...] ascending
-    for (var i = 0; i < bands.length; i++) { if (v <= bands[i][0]) return bands[i][1]; }
-    return 0;
+  /* pick(): first matching band wins. 'le' tables ascend (v <= limit);
+   * 'ge' tables descend (v >= limit, or v > limit on a 'gt' row).
+   * Returns the points AND which band matched, so the UI can show
+   * the exact math behind every factor's points. mathFor() renders
+   * that band as a sentence from the same table -- the words can
+   * never drift from the numbers. */
+  function pick(v, bands, ge) {
+    for (var i = 0; i < bands.length; i++) {
+      var hit = bands[i][2] === 'gt' ? v > bands[i][0] : (ge ? v >= bands[i][0] : v <= bands[i][0]);
+      if (hit) return { pts: bands[i][1], idx: i };
+    }
+    return { pts: bands[bands.length - 1][1], idx: bands.length - 1 };
   }
-  function add(name, value, display, max, pts, note) {
-    factors.push({ name: name, value: value, display: display, max: max, pts: pts, note: note || '' });
+  function limFmt(x) { return String(Math.round(x * 100) / 100); }
+  function mathFor(display, bands, idx, ge, max, fmtL) {
+    fmtL = fmtL || limFmt;
+    var L = bands[idx][0], P = idx > 0 ? bands[idx - 1][0] : null, range;
+    if (!ge) {
+      if (idx === 0) range = '\u2264 ' + fmtL(L);
+      else if (!isFinite(L)) range = '> ' + fmtL(P);
+      else range = '> ' + fmtL(P) + ' and \u2264 ' + fmtL(L);
+    } else {
+      var excl = bands[idx][2] === 'gt', pExcl = idx > 0 && bands[idx - 1][2] === 'gt';
+      if (idx === 0) range = (excl ? '> ' : '\u2265 ') + fmtL(L);
+      else if (!isFinite(L)) range = (pExcl ? '\u2264 ' : '< ') + fmtL(P);
+      else range = (excl ? '> ' : '\u2265 ') + fmtL(L) + ' and ' + (pExcl ? '\u2264 ' : '< ') + fmtL(P);
+    }
+    return display + ' \u2192 ' + range + ' band \u2192 ' + bands[idx][1] + ' of ' + max + ' pts';
   }
+  function add(name, value, display, max, pk, note, bands, ge, fmtL) {
+    factors.push({ name: name, value: value, display: display, max: max, pts: pk.pts, note: note || '', math: mathFor(display, bands, pk.idx, ge, max, fmtL) });
+  }
+  function pctL(x) { return limFmt(x) + '%'; }
   if (isNum(d.forwardPE) && d.forwardPE > 0) {
+    var bFpe = [[6, 25], [8, 22], [10, 19], [13, 15], [18, 11], [25, 7], [35, 3], [Infinity, 0]];
     add('Forward P/E', d.forwardPE, fmtNum(d.forwardPE, 2) + (d.forwardPECalc ? ' (calc.)' : ''), 25,
-      band(d.forwardPE, [[6, 25], [8, 22], [10, 19], [13, 15], [18, 11], [25, 7], [35, 3], [Infinity, 0]]),
-      'Cheaper earnings = more points');
+      pick(d.forwardPE, bFpe, false), 'Cheaper earnings = more points', bFpe, false);
   }
   if (isNum(d.peg) && d.peg > 0) {
+    var bPeg = [[0.3, 20], [0.5, 18], [0.75, 15], [1, 12], [1.5, 8], [2, 4], [Infinity, 0]];
     add('PEG ratio', d.peg, fmtNum(d.peg, 2) + (d.pegCalc ? ' (calc.)' : ''), 20,
-      band(d.peg, [[0.3, 20], [0.5, 18], [0.75, 15], [1, 12], [1.5, 8], [2, 4], [Infinity, 0]]),
-      'Price vs growth — under 0.75 is rare air');
+      pick(d.peg, bPeg, false), 'Price vs growth \u2014 under 0.75 is rare air', bPeg, false);
   }
   if (isNum(d.pctBelowHigh)) {
+    var bBh = [[40, 15], [30, 13], [25, 11], [15, 8], [5, 4], [-Infinity, 1]];
     add('Below 52-wk high', d.pctBelowHigh, fmtNum(d.pctBelowHigh, 1) + '%', 15,
-      d.pctBelowHigh >= 40 ? 15 : d.pctBelowHigh >= 30 ? 13 : d.pctBelowHigh >= 25 ? 11 :
-      d.pctBelowHigh >= 15 ? 8 : d.pctBelowHigh >= 5 ? 4 : 1,
-      'Bigger discount to the high = more points');
+      pick(d.pctBelowHigh, bBh, true), 'Bigger discount to the high = more points', bBh, true, pctL);
   }
   if (isNum(d.epsGrowthNextY)) {
+    var bGr = [[50, 15], [25, 13], [15, 10], [8, 7], [0, 3], [-Infinity, 0]];
     add('EPS growth, next yr', d.epsGrowthNextY, fmtPct(d.epsGrowthNextY), 15,
-      d.epsGrowthNextY >= 50 ? 15 : d.epsGrowthNextY >= 25 ? 13 : d.epsGrowthNextY >= 15 ? 10 :
-      d.epsGrowthNextY >= 8 ? 7 : d.epsGrowthNextY >= 0 ? 3 : 0,
-      'Consensus EPS, next fiscal year vs this fiscal year');
+      pick(d.epsGrowthNextY, bGr, true), 'Consensus EPS, next fiscal year vs this fiscal year', bGr, true, pctL);
   }
   if (isNum(d.profitMargin)) {
+    var bPm = [[25, 10], [15, 8], [10, 6], [5, 4], [0, 2, 'gt'], [-Infinity, 0]];
     add('Profit margin', d.profitMargin, fmtNum(d.profitMargin, 1) + '%', 10,
-      d.profitMargin >= 25 ? 10 : d.profitMargin >= 15 ? 8 : d.profitMargin >= 10 ? 6 :
-      d.profitMargin >= 5 ? 4 : d.profitMargin > 0 ? 2 : 0, 'Net margin, trailing');
+      pick(d.profitMargin, bPm, true), 'Net margin, trailing', bPm, true, pctL);
   }
   if (isNum(d.grossMargin)) {
+    var bGm = [[60, 5], [45, 4], [30, 3], [15, 1], [-Infinity, 0]];
     add('Gross margin', d.grossMargin, fmtNum(d.grossMargin, 1) + '%', 5,
-      d.grossMargin >= 60 ? 5 : d.grossMargin >= 45 ? 4 : d.grossMargin >= 30 ? 3 :
-      d.grossMargin >= 15 ? 1 : 0, 'Pricing power proxy');
+      pick(d.grossMargin, bGm, true), 'Pricing power proxy', bGm, true, pctL);
   }
   if (isNum(d.debtEq)) {
+    var bDe = [[0.1, 10], [0.4, 8], [0.8, 6], [1.5, 3], [3, 1], [Infinity, 0]];
     add('Debt / Equity', d.debtEq, fmtNum(d.debtEq, 2), 10,
-      d.debtEq <= 0.1 ? 10 : d.debtEq <= 0.4 ? 8 : d.debtEq <= 0.8 ? 6 :
-      d.debtEq <= 1.5 ? 3 : d.debtEq <= 3 ? 1 : 0, 'Lower leverage = more points');
+      pick(d.debtEq, bDe, false), 'Lower leverage = more points', bDe, false);
   }
   // Cyclical overlays (Justin's spec, 2026-11-01). Cheap-P/E trap:
   // Forward P/E under 8 with TTM EPS growth over 200% means the
@@ -662,7 +686,7 @@ function scoreStock(d) {
     factors.forEach(function (f) {
       if (f.name === 'Forward P/E' || f.name === 'PEG ratio') {
         var capPts = f.max / 2;
-        if (f.pts > capPts) { f.pts = capPts; f.note += ' \u2014 capped at half: cheap-P/E trap (peak earnings)'; }
+        if (f.pts > capPts) { f.pts = capPts; f.note += ' \u2014 capped at half: cheap-P/E trap (peak earnings)'; f.math += ' \u2192 capped at half by the cheap-P/E trap (forward P/E under 8, EPS up over 200% in a year) \u2192 ' + capPts + ' pts'; }
       }
     });
   }
@@ -1454,42 +1478,68 @@ function cyclicalSeverity(d) {
 
 function riskScore(d) {
   var factors = [];
-  function band(v, bands) { // [[limitInclusive, riskPts], ...] ascending limits
-    for (var i = 0; i < bands.length; i++) { if (v <= bands[i][0]) return bands[i][1]; }
-    return 0;
+  /* pick(): first matching band wins. 'le' tables ascend (v <= limit);
+   * 'ge' tables descend (v >= limit, or v > limit on a 'gt' row).
+   * Returns the points AND which band matched, so the UI can show
+   * the exact math behind every factor's points. mathFor() renders
+   * that band as a sentence from the same table -- the words can
+   * never drift from the numbers. */
+  function pick(v, bands, ge) {
+    for (var i = 0; i < bands.length; i++) {
+      var hit = bands[i][2] === 'gt' ? v > bands[i][0] : (ge ? v >= bands[i][0] : v <= bands[i][0]);
+      if (hit) return { pts: bands[i][1], idx: i };
+    }
+    return { pts: bands[bands.length - 1][1], idx: bands.length - 1 };
   }
-  function add(name, value, display, max, pts, note) {
-    factors.push({ name: name, value: value, display: display, max: max, pts: pts, note: note || '' });
+  function limFmt(x) { return String(Math.round(x * 100) / 100); }
+  function mathFor(display, bands, idx, ge, max, fmtL) {
+    fmtL = fmtL || limFmt;
+    var L = bands[idx][0], P = idx > 0 ? bands[idx - 1][0] : null, range;
+    if (!ge) {
+      if (idx === 0) range = '\u2264 ' + fmtL(L);
+      else if (!isFinite(L)) range = '> ' + fmtL(P);
+      else range = '> ' + fmtL(P) + ' and \u2264 ' + fmtL(L);
+    } else {
+      var excl = bands[idx][2] === 'gt', pExcl = idx > 0 && bands[idx - 1][2] === 'gt';
+      if (idx === 0) range = (excl ? '> ' : '\u2265 ') + fmtL(L);
+      else if (!isFinite(L)) range = (pExcl ? '\u2264 ' : '< ') + fmtL(P);
+      else range = (excl ? '> ' : '\u2265 ') + fmtL(L) + ' and ' + (pExcl ? '\u2264 ' : '< ') + fmtL(P);
+    }
+    return display + ' \u2192 ' + range + ' band \u2192 ' + bands[idx][1] + ' of ' + max + ' pts';
   }
+  function add(name, value, display, max, pk, note, bands, ge, fmtL) {
+    factors.push({ name: name, value: value, display: display, max: max, pts: pk.pts, note: note || '', math: mathFor(display, bands, pk.idx, ge, max, fmtL) });
+  }
+  function pctL(x) { return limFmt(x) + '%'; }
   if (isNum(d.beta) && d.beta > 0) {
+    var bBeta = [[0.5, 1], [0.8, 3], [1, 4], [1.3, 6], [1.6, 8], [2, 9], [Infinity, 10]];
     add('Beta (volatility)', d.beta, fmtNum(d.beta, 2), 10,
-      band(d.beta, [[0.5, 1], [0.8, 3], [1, 4], [1.3, 6], [1.6, 8], [2, 9], [Infinity, 10]]),
-      'How hard the stock swings vs the market');
+      pick(d.beta, bBeta, false), 'How hard the stock swings vs the market', bBeta, false);
   }
   if (isNum(d.debtEq) && d.debtEq >= 0) {
+    var bDe = [[0.1, 0], [0.4, 5], [0.8, 10], [1.5, 15], [3, 19], [Infinity, 25]];
     add('Debt / Equity', d.debtEq, fmtNum(d.debtEq, 2), 25,
-      band(d.debtEq, [[0.1, 0], [0.4, 5], [0.8, 10], [1.5, 15], [3, 19], [Infinity, 25]]),
-      'More debt = less room when things go wrong');
+      pick(d.debtEq, bDe, false), 'More debt = less room when things go wrong', bDe, false);
   }
   if (isNum(d.profitMargin)) {
+    var bPm = [[-10, 20], [0, 17], [5, 13], [10, 9], [15, 4], [25, 3], [Infinity, 0]];
     add('Profit margin', d.profitMargin, fmtNum(d.profitMargin, 1) + '%', 20,
-      band(d.profitMargin, [[-10, 20], [0, 17], [5, 13], [10, 9], [15, 4], [25, 3], [Infinity, 0]]),
-      'Loss-making means no cushion');
+      pick(d.profitMargin, bPm, false), 'Loss-making means no cushion', bPm, false, pctL);
   }
   if (isNum(d.marketCap) && d.marketCap > 0) {
+    var bSize = [[2e9, 15], [1e10, 12], [5e10, 8], [2e11, 3], [Infinity, 0]];
     add('Company size', d.marketCap, fmtCap(d.marketCap), 15,
-      band(d.marketCap, [[2e9, 15], [1e10, 12], [5e10, 8], [2e11, 3], [Infinity, 0]]),
-      'Small companies fail more often than giants');
+      pick(d.marketCap, bSize, false), 'Small companies fail more often than giants', bSize, false, fmtCap);
   }
   if (isNum(d.epsGrowthNextY)) {
+    var bEps = [[-25, 20], [-10, 16], [0, 11], [10, 4], [25, 1], [Infinity, 0]];
     add('EPS trend, next yr', d.epsGrowthNextY, fmtPct(d.epsGrowthNextY), 20,
-      band(d.epsGrowthNextY, [[-25, 20], [-10, 16], [0, 11], [10, 4], [25, 1], [Infinity, 0]]),
-      'Falling earnings are where the danger starts');
+      pick(d.epsGrowthNextY, bEps, false), 'Falling earnings are where the danger starts', bEps, false, pctL);
   }
   if (isNum(d.currentRatio) && d.currentRatio > 0) {
+    var bCr = [[0.8, 10], [1, 8], [1.5, 5], [2, 3], [Infinity, 0]];
     add('Current ratio', d.currentRatio, fmtNum(d.currentRatio, 2), 10,
-      band(d.currentRatio, [[0.8, 10], [1, 8], [1.5, 5], [2, 3], [Infinity, 0]]),
-      'Can it pay its near-term bills?');
+      pick(d.currentRatio, bCr, false), 'Can it pay its near-term bills?', bCr, false);
   }
   var got = factors.reduce(function (s, f) { return s + f.pts; }, 0);
   var maxAvailable = factors.reduce(function (s, f) { return s + f.max; }, 0);
@@ -2271,12 +2321,16 @@ function renderScorecard(d) {
   if (sc.score != null) {
     html += '<div class="verdict ' + vClass + '"><div><div class="v-label">Valuation verdict</div>' +
       '<div class="v-word">' + esc(sc.verdict) + '</div></div>' +
-      '<div class="v-score">' + sc.score + '<small> / 100</small></div></div>';
+      '<button type="button" class="v-score pts-btn" data-mathbtn data-mathtarget="math-vscore" aria-expanded="false">' + sc.score + '<small> / 100</small></button></div>';
     html += '<div class="score-bar"><div style="width:' + sc.score + '%"></div></div>';
+    var scMath = 'Score = ' + sc.got + ' pts earned \u00f7 ' + sc.maxAvailable + ' pts available \u00d7 100 = ' + sc.rawScore + '.';
+    if (sc.cycCapped) scMath += ' Capped at 70: cyclical severity ' + fmtNum(sc.severity, 2) + ' is 0.5 or higher (peak-earnings risk).';
+    html += '<div class="math-box banner-math" id="math-vscore" hidden>' + esc(scMath) + '</div>';
     html += '<table class="factors"><tr><th>Factor</th><th>Value</th><th class="num">Points</th></tr>';
-    sc.factors.forEach(function (f) {
+    sc.factors.forEach(function (f, fi) {
       var ik = FACTOR_INFO[f.name];
-      html += '<tr><td><strong>' + esc(f.name) + '</strong>' + (ik ? infoDot(ik) : '') + '<div class="factor-note">' + esc(f.note) + '</div>' + (ik ? infoText(ik) : '') + '</td><td>' + esc(f.display) + '</td><td class="num"><strong>' + f.pts + '</strong> / ' + f.max + '</td></tr>';
+      html += '<tr><td><strong>' + esc(f.name) + '</strong>' + (ik ? infoDot(ik) : '') + '<div class="factor-note">' + esc(f.note) + '</div>' + (ik ? infoText(ik) : '') + '</td><td>' + esc(f.display) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-v' + fi + '" aria-expanded="false"><strong>' + f.pts + '</strong> / ' + f.max + '</button></td></tr>';
+      html += '<tr class="math-row" id="math-v' + fi + '" hidden><td colspan="3"><div class="math-box">' + esc(f.math) + '</div></td></tr>';
     });
     html += '</table>';
     if (sc.maxAvailable < 100) {
@@ -2291,12 +2345,16 @@ function renderScorecard(d) {
     var rClass = rk.score <= 25 ? 'risk-low' : rk.score <= 45 ? 'risk-mod' : rk.score <= 65 ? 'risk-elev' : 'risk-high';
     html += '<div class="verdict ' + rClass + '"><div><div class="v-label">Risk score</div>' +
       '<div class="v-word">' + esc(rk.verdict) + '</div></div>' +
-      '<div class="v-score">' + rk.score + '<small> / 100</small></div></div>';
+      '<button type="button" class="v-score pts-btn" data-mathbtn data-mathtarget="math-rscore" aria-expanded="false">' + rk.score + '<small> / 100</small></button></div>';
     html += '<div class="score-bar risk-bar"><div style="width:' + rk.score + '%"></div></div>';
+    var rkMath = 'Base = ' + rk.got + ' pts \u00f7 ' + rk.maxAvailable + ' pts available \u00d7 100 = ' + rk.base + '.';
+    if (rk.cyc && rk.cyc.severity > 0) rkMath += ' Cyclical overlay: ' + rk.base + ' + (100 \u2212 ' + rk.base + ') \u00d7 ' + fmtNum(rk.cyc.severity, 2) + ' \u00d7 0.6 = ' + rk.score + '.';
+    html += '<div class="math-box banner-math" id="math-rscore" hidden>' + esc(rkMath) + '</div>';
     html += '<table class="factors"><tr><th>Risk factor</th><th>Value</th><th class="num">Risk pts</th></tr>';
-    rk.factors.forEach(function (f) {
+    rk.factors.forEach(function (f, fi) {
       var ik = FACTOR_INFO[f.name];
-      html += '<tr><td><strong>' + esc(f.name) + '</strong>' + (ik ? infoDot(ik) : '') + '<div class="factor-note">' + esc(f.note) + '</div>' + (ik ? infoText(ik) : '') + '</td><td>' + esc(f.display) + '</td><td class="num"><strong>' + f.pts + '</strong> / ' + f.max + '</td></tr>';
+      html += '<tr><td><strong>' + esc(f.name) + '</strong>' + (ik ? infoDot(ik) : '') + '<div class="factor-note">' + esc(f.note) + '</div>' + (ik ? infoText(ik) : '') + '</td><td>' + esc(f.display) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-r' + fi + '" aria-expanded="false"><strong>' + f.pts + '</strong> / ' + f.max + '</button></td></tr>';
+      html += '<tr class="math-row" id="math-r' + fi + '" hidden><td colspan="3"><div class="math-box">' + esc(f.math) + '</div></td></tr>';
     });
     var cycSig = rk.cyc ? [rk.cyc.signals.margin, rk.cyc.signals.epsDD, rk.cyc.signals.epsGrowth, rk.cyc.signals.revSurge].filter(isNum) : [];
     if (rk.cyc && cycSig.length) {
@@ -2315,7 +2373,10 @@ function renderScorecard(d) {
       if (!rk.cyc.gatePassed) cNote += ' \u00b7 gate not met, no adjustment';
       else if (rk.cyc.limitedHistory) cNote += ' \u00b7 limited history';
       var cDetail = INFO_TEXT.cycsev + (cParts.length ? '<br><br>This stock: ' + esc(cParts.join(' \u00b7 ')) + '.' : '');
-      html += '<tr><td><strong>Cyclical earnings risk</strong>' + infoDot('cycsev') + '<div class="factor-note">' + esc(cNote) + '</div>' + '<span class="info-text" data-info-text="cycsev">' + cDetail + '</span>' + '</td><td>Severity ' + fmtNum(rk.cyc.severity, 2) + '</td><td class="num"><strong>+' + rk.cycAdj + '</strong></td></tr>';
+      html += '<tr><td><strong>Cyclical earnings risk</strong>' + infoDot('cycsev') + '<div class="factor-note">' + esc(cNote) + '</div>' + '<span class="info-text" data-info-text="cycsev">' + cDetail + '</span>' + '</td><td>Severity ' + fmtNum(rk.cyc.severity, 2) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-cyc" aria-expanded="false"><strong>+' + rk.cycAdj + '</strong></button></td></tr>';
+      var cycMath = 'Risk added = (100 \u2212 base ' + rk.base + ') \u00d7 severity ' + fmtNum(rk.cyc.severity, 2) + ' \u00d7 0.6 = +' + rk.cycAdj + ' \u2192 final ' + rk.score + '.';
+      if (cParts.length) cycMath = 'Severity ' + fmtNum(rk.cyc.severity, 2) + ': ' + cParts.join(' \u00b7 ') + '.<br>' + cycMath;
+      html += '<tr class="math-row" id="math-cyc" hidden><td colspan="3"><div class="math-box">' + cycMath + '</div></td></tr>';
     }
     html += '</table>';
     if (rk.cyc && cycSig.length) {
@@ -4747,15 +4808,21 @@ function renderOverview(d, item) {
     var vClass = sc.verdict === 'Undervalued' ? 'undervalued' : (sc.verdict === 'Fairly valued' || sc.verdict === 'Value (cyclical peak risk)') ? 'fair' : 'overpriced';
     html += '<div class="verdict ' + vClass + '"><div><div class="v-label">Valuation verdict</div>' +
       '<div class="v-word">' + esc(sc.verdict) + '</div></div>' +
-      '<div class="v-score">' + sc.score + '<small> / 100</small></div></div>';
+      '<button type="button" class="v-score pts-btn" data-mathbtn data-mathtarget="math-ovv" aria-expanded="false">' + sc.score + '<small> / 100</small></button></div>';
     html += '<div class="score-bar"><div style="width:' + sc.score + '%"></div></div>';
+    var ovScMath = 'Score = ' + sc.got + ' pts earned \u00f7 ' + sc.maxAvailable + ' pts available \u00d7 100 = ' + sc.rawScore + '.';
+    if (sc.cycCapped) ovScMath += ' Capped at 70: cyclical severity ' + fmtNum(sc.severity, 2) + ' is 0.5 or higher (peak-earnings risk).';
+    html += '<div class="math-box banner-math" id="math-ovv" hidden>' + esc(ovScMath) + '</div>';
   }
   if (rk.score != null) {
     var rClass = rk.score <= 25 ? 'risk-low' : rk.score <= 45 ? 'risk-mod' : rk.score <= 65 ? 'risk-elev' : 'risk-high';
     html += '<div class="verdict ' + rClass + '"><div><div class="v-label">Risk score</div>' +
       '<div class="v-word">' + esc(rk.verdict) + '</div></div>' +
-      '<div class="v-score">' + rk.score + '<small> / 100</small></div></div>';
+      '<button type="button" class="v-score pts-btn" data-mathbtn data-mathtarget="math-ovr" aria-expanded="false">' + rk.score + '<small> / 100</small></button></div>';
     html += '<div class="score-bar risk-bar"><div style="width:' + rk.score + '%"></div></div>';
+    var ovRkMath = 'Base = ' + rk.got + ' pts \u00f7 ' + rk.maxAvailable + ' pts available \u00d7 100 = ' + rk.base + '.';
+    if (rk.cyc && rk.cyc.severity > 0) ovRkMath += ' Cyclical overlay: ' + rk.base + ' + (100 \u2212 ' + rk.base + ') \u00d7 ' + fmtNum(rk.cyc.severity, 2) + ' \u00d7 0.6 = ' + rk.score + '.';
+    html += '<div class="math-box banner-math" id="math-ovr" hidden>' + esc(ovRkMath) + '</div>';
   }
   var ovAxes = radarAxes(d);
   if (radarCount(ovAxes) >= 3) {
@@ -6538,6 +6605,14 @@ function initApp() {
           node.nextElementSibling.getAttribute('data-info-text') === key) txt = node.nextElementSibling;
     }
     if (txt) txt.classList.toggle('open');
+  });
+  document.addEventListener('click', function (e) {
+    var mb = e.target && e.target.closest ? e.target.closest('[data-mathbtn]') : null;
+    if (!mb) return;
+    var mt = document.getElementById(mb.getAttribute('data-mathtarget'));
+    if (!mt) return;
+    mt.hidden = !mt.hidden;
+    mb.setAttribute('aria-expanded', mt.hidden ? 'false' : 'true');
   });
   document.addEventListener('click', function (e) {
     var b = e.target && e.target.closest ? e.target.closest('[data-ceotoggle]') : null;
