@@ -1335,6 +1335,33 @@ async function cycLoadYearly(T) {
   } catch (e) { return null; }
 }
 
+/* True trailing EPS growth (the Finviz stock page's 'EPS Y/Y TTM')
+ * for the scan's top-25 enrichment (Justin's call, 2026-11-01): the
+ * screener's epsYoY is current-fiscal-year growth -- a different,
+ * much smaller number -- while the severity growth signal and the
+ * cheap-P/E trap are calibrated to the TTM figure the scorecard
+ * uses. Fetching it for the 25 finalists makes the list and the
+ * scorecard agree. Day-cached in the same sr_cyc_v1 entry. */
+async function cycLoadTtmGrowth(T) {
+  var all0 = lsGet(CYC_KEY, {});
+  var hit = all0 && all0[T];
+  if (hit && hit.day === new Date().toDateString() && isNum(hit.epsG)) return hit.epsG;
+  try {
+    var html = await relayFetch('https://finviz.com/stock?t=' + encodeURIComponent(T), {
+      timeout: 20000,
+      validate: function (t) { return t.indexOf('snapshot-td-label') !== -1; }
+    });
+    var g = parseNum(parseFinviz(html)['EPS Y/Y TTM']);
+    if (!isNum(g)) return null;
+    var all = lsGet(CYC_KEY, {});
+    var cur = all[T] || { day: new Date().toDateString() };
+    cur.epsG = g;
+    all[T] = cur;
+    lsSet(CYC_KEY, all);
+    return g;
+  } catch (e) { return null; }
+}
+
 function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 
 /* Cyclical severity overlay (Justin's spec, 2026-11-01): how
@@ -3734,6 +3761,8 @@ async function scanEnrichTop(fullByIx) {
       for (var i = 0; i < top.length; i += 4) {
         await Promise.all(top.slice(i, i + 4).map(async function (entry) {
           var data = await cycLoadYearly(entry.t);
+          var g = await cycLoadTtmGrowth(entry.t);
+          if (isNum(g)) entry.rec.epsGrowthTTM = g;
           if (data) {
             entry.rec.yearly = data.yearly;
             if (data.revPath) entry.rec.revPath = data.revPath;
@@ -3743,6 +3772,7 @@ async function scanEnrichTop(fullByIx) {
               entry.sev = rk.cyc ? rk.cyc.severity : 0;
             }
             entry.full = true;
+            if (!isNum(g)) entry.partial = true; // yearly loaded, TTM basis unverified
           } else {
             entry.partial = true;
           }
