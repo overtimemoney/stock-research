@@ -1690,6 +1690,7 @@ function swotBox(letter, title, items, cls) {
  * already fetched; the worker adds recent Yahoo headlines and returns
  * the four lists. Saved on-device per ticker so it persists. */
 var AI_SWOT_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/swot';
+var AI_SWOT_CACHE_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/swot-cache';
 var AI_SWOT_KEY = 'sr_aiswot_v1';
 
 function getAiSwot(ticker) {
@@ -1782,6 +1783,48 @@ async function runAiSwot(d) {
       bindAiSwotBtn(d);
     }
   }
+}
+
+function aiSwotSharedHtml(swot, generatedAt) {
+  var day = generatedAt ? String(generatedAt).slice(0, 10) : '';
+  return '<p class="fineprint">Shared analysis' + (day ? ' · generated ' + esc(day) : '') +
+    ' — written by AI, the same for everyone viewing this ticker today. Generate your own for a fresh take on the latest numbers.</p>' +
+    '<div class="swot-grid">' +
+    swotBox('S', 'Strengths', swot.S, 'sw-s') + swotBox('W', 'Weaknesses', swot.W, 'sw-w') +
+    swotBox('O', 'Opportunities', swot.O, 'sw-o') + swotBox('T', 'Threats', swot.T, 'sw-t') + '</div>' +
+    '<div style="margin-top:8px"><button class="btn-ghost" id="ai-swot-btn" type="button">✦ Generate my own</button></div>';
+}
+
+/* Shared-cache display: the Worker keeps the first AI SWOT generated
+ * for each ticker each day, so if anyone already had one written, show
+ * it here at zero extra AI cost. Display-only — a shared hit is never
+ * written into sr_aiswot_v1, and a personal saved SWOT always wins (in
+ * that case the cache isn't even fetched). Any miss or error leaves
+ * today's empty state untouched, silently. */
+async function maybeShowSharedSwot(d) {
+  try {
+    if (!d || !d.ticker) return;
+    if (getAiSwot(d.ticker)) return;
+    var zoneAtStart = $('ai-swot-zone');
+    if (!zoneAtStart) return;
+    var ctrl = ('AbortController' in window) ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 6000) : null;
+    var resp = await fetch(AI_SWOT_CACHE_URL + '?ticker=' + encodeURIComponent(d.ticker), {
+      signal: ctrl ? ctrl.signal : undefined
+    });
+    if (timer) clearTimeout(timer);
+    if (!resp || !resp.ok) return;
+    var data = await resp.json();
+    if (!data || !data.hit || !data.text) return;
+    var sw = data.text;
+    if (!sw.S || !sw.W || !sw.O || !sw.T) return;
+    var zone = $('ai-swot-zone');
+    if (!zone || zone !== zoneAtStart) return; /* card re-rendered meanwhile */
+    if (getAiSwot(d.ticker)) return;           /* a personal one landed meanwhile */
+    if (!zone.querySelector('#ai-swot-btn')) return; /* user already started generating */
+    zone.innerHTML = aiSwotSharedHtml(sw, data.generatedAt);
+    bindAiSwotBtn(d);
+  } catch (e) { /* silent: the empty state stays */ }
 }
 
 /* Analyst target used across the card: Nasdaq's 1-yr target when it
@@ -2086,6 +2129,7 @@ function renderScorecard(d) {
   $('score-empty').style.display = 'none';
 
   bindAiSwotBtn(d);
+  maybeShowSharedSwot(d);
   document.querySelectorAll('[data-scrange]').forEach(function (b) {
     b.addEventListener('click', function () { scRange = b.getAttribute('data-scrange'); renderScChart(d); });
   });
