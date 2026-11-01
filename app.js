@@ -2714,14 +2714,15 @@ function pjGrowths(base, path) {
       prev = path[i].eps;
       continue;
     }
-    /* A growth % needs two positive EPS figures. Across zero it lies:
-     * a shrinking loss (-4.97 -> -3.38) prints as -32%, a deepening one
-     * (+35.8%), and turning profitable (-1.48 -> +5.20) as -451% -- and
-     * chaining those fake rates in the case math compounds them into
-     * $0 and negative prices (the CoreWeave screenshot, 2026-11-01).
-     * Null = not meaningful: the grid leaves the box blank, the case
-     * math steps to the row's own EPS, and the trend fit skips it. */
-    out.push(isNum(prev) && prev > 0 && isNum(path[i].eps) && path[i].eps >= 0 ? (path[i].eps / prev - 1) * 100 : null);
+    /* Growth % is always shown, measured against |prev| so the sign
+     * tells the truth even when EPS is negative (Justin's call,
+     * 2026-11-01): the change divided by the SIZE of last year's EPS.
+     * A shrinking loss (-4.97 -> -3.38) is +32%, a deepening one
+     * (-3.66 -> -4.97) is -35.8%, turning profitable (-1.48 -> +5.20)
+     * is +451%. For positive pairs this is the ordinary formula.
+     * pjCaseEps and the growth edit box use the matching construction
+     * (prev + |prev| x g), so displayed values chain back exactly. */
+    out.push(isNum(prev) && prev !== 0 && isNum(path[i].eps) ? ((path[i].eps - prev) / Math.abs(prev)) * 100 : null);
     prev = path[i].eps;
   }
   return out;
@@ -2732,12 +2733,23 @@ function pjTtmOffset() { return (pjPath.length && pjPath[0].ttm) ? 1 : 0; }
  * Exported for testing. */
 function pjCaseEps(base, path, factor) {
   var growths = pjGrowths(base, path);
-  var eps = base;
+  var eps = base, pPrev = base;
   for (var i = 0; i < path.length; i++) {
-    if (path[i].ttm) { if (isNum(path[i].eps)) eps = path[i].eps; continue; }
+    if (path[i].ttm) { if (isNum(path[i].eps)) { eps = path[i].eps; pPrev = path[i].eps; } continue; }
     var g = growths[i];
-    if (!isNum(g) || !isNum(eps)) { eps = path[i].eps; continue; }
-    eps = eps * (1 + (g * factor) / 100);
+    if (!isNum(g) || !isNum(eps) || !isNum(path[i].eps)) { eps = path[i].eps; }
+    else if (pPrev <= 0) {
+      /* While EPS is at or below zero a % cannot compound (and scaling
+       * a negative growth rate inverts Bear/Bull -- Bull came out below
+       * Base on CoreWeave). Scale the year's DOLLAR step instead: the
+       * recovery (or slide) shrinks in Bear, stretches in Bull, and the
+       * cases stay ordered. Once EPS is positive, growth scaling (the
+       * documented rule) takes over. */
+      eps = eps + (path[i].eps - pPrev) * factor;
+    } else {
+      eps = eps + Math.abs(eps) * ((g * factor) / 100);
+    }
+    if (isNum(path[i].eps)) pPrev = path[i].eps;
   }
   return eps;
 }
@@ -2747,8 +2759,11 @@ function pjEnsureYears(n) {
   var base = pjBaseEps(), guard = 0;
   // Fit the growth trend ONCE, on the real forecast years only --
   // extrapolated rows never feed the fit.
-  var gAll = pjGrowths(base, pjPath), series = [];
-  pjPath.forEach(function (r, i) { if (!r.ttm && !r.extrapolated && isNum(gAll[i])) series.push(gAll[i]); });
+  var gAll = pjGrowths(base, pjPath), series = [], prevEps = base;
+  pjPath.forEach(function (r, i) {
+    if (!r.ttm && !r.extrapolated && isNum(gAll[i]) && isNum(prevEps) && prevEps > 0 && isNum(r.eps) && r.eps > 0) series.push(gAll[i]);
+    if (isNum(r.eps)) prevEps = r.eps;
+  });
   var added = 0;
   while (pjPath.length < n && guard++ < 5) {
     var prevEps = pjPath.length ? pjPath[pjPath.length - 1].eps : base;
@@ -2816,7 +2831,7 @@ function onPjPathEdit(e) {
     }
     var prev = j === 0 ? base : (pjPath[j - 1] ? pjPath[j - 1].eps : null);
     if (isNum(gv) && isNum(prev) && pjPath[j]) {
-      pjPath[j].eps = +(prev * (1 + gv / 100)).toFixed(4);
+      pjPath[j].eps = +(prev + Math.abs(prev) * (gv / 100)).toFixed(4);
       pjPath[j].extrapolated = false;
       renderPjPath();
     }
@@ -2984,13 +2999,15 @@ function runProjection() {
   var curT = ($('pj-ticker').value || '').trim().toUpperCase();
   var savedPj = curT ? getProjections()[curT] : null;
   html += '</table>';
-  var growths = pjGrowths(base, path), exLine = '';
+  var growths = pjGrowths(base, path), exLine = '', gPrev = base, hasNeg = isNum(base) && base <= 0;
   for (var gi = 0; gi < path.length; gi++) {
-    if (!path[gi].ttm && isNum(growths[gi])) {
+    if (isNum(path[gi].eps) && path[gi].eps <= 0 && !path[gi].ttm) hasNeg = true;
+    if (!exLine && !path[gi].ttm && isNum(growths[gi]) && isNum(gPrev) && gPrev > 0) {
       exLine = ' ' + esc(path[gi].label || '') + ': ' + fmtNum(growths[gi], 1) + '% \u2192 Bear ' + fmtNum(growths[gi] * 0.8, 1) + '% \u00b7 Bull ' + fmtNum(growths[gi] * 1.2, 1) + '%.';
-      break;
     }
+    if (isNum(path[gi].eps)) gPrev = path[gi].eps;
   }
+  if (hasNeg) exLine += ' Years at or below $0 EPS can\u2019t compound a %, so Bear/Bull scale those years\u2019 dollar step by the same \u00d7 0.8 / \u00d7 1.2.';
   html += '<div class="pj-math-wrap"><button type="button" class="pj-math-toggle" data-pjmath aria-expanded="false">Show math <span class="pj-math-chev">\u25be</span></button>' +
     '<div class="pj-math">' +
     '<p><strong>Growth:</strong> each year\u2019s growth is scaled \u2014 Bear \u00d7 0.8, Base as entered, Bull \u00d7 1.2.' + exLine + '</p>' +
