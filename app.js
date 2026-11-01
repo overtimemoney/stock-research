@@ -2171,7 +2171,7 @@ function renderScorecard(d) {
           pjMultAuto = $('pj-mult').value;
           pjPeNote = 'exit P/E = ' + (d.pe5yYears >= 5 ? '5-yr' : d.pe5yYears + '-yr') + ' avg P/E ' + fmtNum(d.pe5yAvg, 1) + '\u00d7';
         } else return;
-        $('pj-status').textContent = 'Loaded ' + d.ticker + ' from the scorecard \u2014 ' + pjPeNote + '.';
+        pjSetLoadedStatus('Loaded ' + d.ticker + ' from the scorecard \u2014 ' + pjPeNote + '.');
         runProjection();
       });
     }
@@ -2422,8 +2422,9 @@ function pjGrowths(base, path) {
   return out;
 }
 function pjTtmOffset() { return (pjPath.length && pjPath[0].ttm) ? 1 : 0; }
-/* Pure case math: chain the EPS path with every year's growth shifted by
- * deltaPts and return the exit-year EPS. Exported for testing. */
+/* Pure case math: chain the EPS path with every year's growth scaled by
+ * factor (1 = Base, 0.8 = Bear, 1.2 = Bull) and return the exit-year EPS.
+ * Exported for testing. */
 function pjCaseEps(base, path, factor) {
   var growths = pjGrowths(base, path);
   var eps = base;
@@ -2561,6 +2562,15 @@ function fillProjection(d) {
   }
   renderPjPath();
 }
+/* The loaded blurb: one visible line, everything else (what was
+ * loaded, where the exit P/E came from) behind a More info dropdown. */
+function pjSetLoadedStatus(details) {
+  var status = $('pj-status');
+  status.className = 'status';
+  status.innerHTML = 'Adjust the assumptions below, then build.' +
+    '<br><button type="button" class="pj-math-toggle" data-pjmore aria-expanded="false">More info <span class="pj-math-chev">\u25b8</span></button>' +
+    '<div class="pj-math"><p>' + esc(details) + '</p></div>';
+}
 async function loadProjectionTicker() {
   var T = ($('pj-ticker').value || '').trim().toUpperCase();
   var status = $('pj-status');
@@ -2592,7 +2602,7 @@ async function loadProjectionTicker() {
     if (isNum(d.epsGrowth5Y)) bits.push('analyst 5-yr EPS growth ' + fmtNum(d.epsGrowth5Y, 1) + '%/yr');
     else if (isNum(d.epsGrowthNextY)) bits.push('next-yr EPS growth ' + fmtNum(d.epsGrowthNextY, 1) + '%');
     pjDivYieldTicker = T; pjDivYield = isNum(d.divYield) ? d.divYield : null;
-    status.textContent = 'Loaded ' + T + (bits.length ? ' — ' + bits.join(' · ') : '') + '. Adjust the assumptions below, then build.';
+    pjSetLoadedStatus('Loaded ' + T + (bits.length ? ' — ' + bits.join(' · ') : '') + '.');
     runProjection();
   } catch (e) {
     status.className = 'status err';
@@ -6070,6 +6080,14 @@ function initApp() {
     if (!body || !body.classList.contains('ceo-body')) return;
     body.hidden = !body.hidden;
     b.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
+  });
+  document.addEventListener('click', function (e) {
+    var t = e.target && e.target.closest ? e.target.closest('[data-pjmore]') : null;
+    if (!t) return;
+    var body = t.nextElementSibling;
+    if (!body) return;
+    var open = body.classList.toggle('open');
+    t.setAttribute('aria-expanded', open ? 'true' : 'false');
   });
   $('set-clear-ai').addEventListener('click', function () {
     if (!window.confirm('Are you sure you\u2019d like to clear saved AI SWOTs?')) return;
