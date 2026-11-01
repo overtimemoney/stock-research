@@ -412,6 +412,13 @@ async function fetchStock(ticker, opts) {
     if (rp.length >= 3) { d.revPath = rp; d.sources.push('StockAnalysis'); }
   } catch (e) { d.errors.push('Revenue path: ' + e.message); } };
 
+  // --- StockAnalysis annual statements: yearly EPS + margins for
+  // --- the cyclical severity overlay (day-cached via fetchQMetrics).
+  var srcYearly = async function () { try {
+    var qm = await fetchQMetrics(T, 'y');
+    if (qm) { buildYearly(d, qm); if (d.yearly) d.sources.push('StockAnalysis'); }
+  } catch (e) { d.errors.push('Yearly statements: ' + e.message); } };
+
   // --- StockAnalysis main page: the "About" company description ---
   var srcAbout = async function () { try {
     var html = await relayFetch('https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/', {
@@ -532,7 +539,7 @@ async function fetchStock(ticker, opts) {
   }
   // Slow stage: Finviz fundamentals + MarketBeat EPS-surprise history in
   // parallel — both are big HTML pages through the relays.
-  await Promise.all([srcFinviz(), srcSurprise(), srcRevPath(), srcAbout(), srcCeo()]);
+  await Promise.all([srcFinviz(), srcSurprise(), srcRevPath(), srcAbout(), srcCeo(), srcYearly()]);
   deriveValues(d);
   d.partial = false;
 
@@ -629,12 +636,30 @@ function scoreStock(d) {
       d.debtEq <= 0.1 ? 10 : d.debtEq <= 0.4 ? 8 : d.debtEq <= 0.8 ? 6 :
       d.debtEq <= 1.5 ? 3 : d.debtEq <= 3 ? 1 : 0, 'Lower leverage = more points');
   }
+  // Cyclical overlays (Justin's spec, 2026-11-01) -- only when
+  // severity >= 0.5. Cheap-P/E trap: Forward P/E under 8 with TTM EPS
+  // growth over 200% means the multiple is printed on peak earnings,
+  // so the Forward P/E and PEG factors earn at most half their max.
+  var cyc = cyclicalSeverity(d);
+  var trap = cyc.severity >= 0.5 && isNum(d.forwardPE) && d.forwardPE > 0 && d.forwardPE < 8 && isNum(d.epsGrowthTTM) && d.epsGrowthTTM > 200;
+  if (trap) {
+    factors.forEach(function (f) {
+      if (f.name === 'Forward P/E' || f.name === 'PEG ratio') {
+        var capPts = f.max / 2;
+        if (f.pts > capPts) { f.pts = capPts; f.note += ' \u2014 capped at half: cheap-P/E trap (peak earnings)'; }
+      }
+    });
+  }
   var got = factors.reduce(function (s, f) { return s + f.pts; }, 0);
   var maxAvailable = factors.reduce(function (s, f) { return s + f.max; }, 0);
   var score = maxAvailable > 0 ? Math.round(got / maxAvailable * 100) : null;
   var verdict = null;
   if (score != null) verdict = score >= 70 ? 'Undervalued' : score >= 45 ? 'Fairly valued' : 'Overpriced';
-  return { factors: factors, got: got, maxAvailable: maxAvailable, score: score, verdict: verdict };
+  var rawScore = score, cycCapped = false;
+  if (score != null && cyc.severity >= 0.5 && score > 70) {
+    score = 70; verdict = 'Value (cyclical peak risk)'; cycCapped = true;
+  }
+  return { factors: factors, got: got, maxAvailable: maxAvailable, score: score, verdict: verdict, rawScore: rawScore, cycCapped: cycCapped, trap: trap, severity: cyc.severity };
 }
 
 /* Risk score: the mirror image of the valuation score. Same 0-100
@@ -1225,6 +1250,103 @@ function boomBust(d) {
   };
 }
 
+/* Yearly fundamentals on the record, from the Charts tool's annual
+ * statements (day-cached): one entry per fiscal year, ascending, with
+ * EPS and gross/operating margin derived from the statements. Feeds
+ * the cyclical severity overlay. */
+function buildYearly(d, qm) {
+  if (!qm || !qm.periods) return;
+  var byYear = {};
+  qm.periods.forEach(function (p, i) {
+    var m = String(p).match(/(\d{4})/);
+    if (!m) return;
+    var rev = qm.revenue ? qm.revenue[i] : null;
+    var yr = parseInt(m[1], 10);
+    byYear[yr] = {
+      year: yr, rev: rev,
+      eps: qm.eps ? qm.eps[i] : null,
+      gm: (qm.grossProfit && isNum(qm.grossProfit[i]) && isNum(rev) && rev > 0) ? qm.grossProfit[i] / rev * 100 : null,
+      om: (qm.operIncome && isNum(qm.operIncome[i]) && isNum(rev) && rev > 0) ? qm.operIncome[i] / rev * 100 : null
+    };
+  });
+  var yrs = Object.keys(byYear).map(function (k) { return byYear[k]; }).sort(function (a, b) { return a.year - b.year; });
+  if (yrs.length) d.yearly = yrs;
+}
+
+function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+
+/* Cyclical severity overlay (Justin's spec, 2026-11-01): how
+ * peak-cycle the current numbers look versus the company's own
+ * history. Four 0-1 signals, averaged over those with data:
+ * (a) current gross (or operating) margin vs its 5-10yr average --
+ *     0 at <=1.5x, 1 at >=2.5x;
+ * (b) worst peak-to-trough annual EPS drawdown -- 0 at none, 1 at
+ *     >=50% (down-year count kept for display);
+ * (c) trailing EPS growth -- 0 at <=100%, 1 at >=300%;
+ * (d) revenue surge -- path top vs 2 years before it, 0 at <=1.5x,
+ *     1 at >=2x (replaces the old boom-bust revenue test).
+ * GATE: severity counts only when at least two signals are >= 0.25.
+ * A cyclical-sector industry (memory, semicap, energy, materials,
+ * shipping, autos) multiplies a gated severity by 1.15 (cap 1); the
+ * sector flag alone never creates severity. Under 5 years of EPS
+ * history drops signals (a) and (b) and flags limited history. */
+var CYC_SECTOR_RE = /memory|semiconductor equipment|oil|petroleum|energy|coal|shipping|marine|automotive|auto manufacturers|auto parts|steel|metals|metal|mining|chemical|materials|aluminum|copper|gold|silver/;
+function cyclicalSeverity(d) {
+  var yrs = d.yearly || [];
+  var epsYrs = yrs.filter(function (y) { return isNum(y.eps); });
+  var limited = epsYrs.length < 5;
+  var sig = { margin: null, epsDD: null, epsGrowth: null, revSurge: null };
+  var det = { limitedHistory: limited, histYears: epsYrs.length };
+  if (!limited) {
+    var gmS = yrs.filter(function (y) { return isNum(y.gm); }).map(function (y) { return y.gm; });
+    var cur = isNum(d.grossMargin) ? d.grossMargin : (gmS.length ? gmS[gmS.length - 1] : null);
+    var series = gmS, kind = 'gross';
+    if (series.length < 3 || !isNum(cur)) {
+      var omS = yrs.filter(function (y) { return isNum(y.om); }).map(function (y) { return y.om; });
+      if (omS.length >= 3) { series = omS; cur = omS[omS.length - 1]; kind = 'operating'; }
+    }
+    if (series.length >= 3 && isNum(cur)) {
+      var win = series.slice(-10);
+      var avg = win.reduce(function (a, b) { return a + b; }, 0) / win.length;
+      if (avg > 0) {
+        det.marginRatio = cur / avg; det.marginCur = cur; det.marginAvg = avg; det.marginKind = kind;
+        sig.margin = clamp01((det.marginRatio - 1.5) / 1.0);
+      }
+    }
+    if (epsYrs.length >= 3) {
+      var peak = -Infinity, worst = 0, down = 0;
+      epsYrs.forEach(function (y, i) {
+        if (i > 0 && y.eps < epsYrs[i - 1].eps) down++;
+        if (y.eps > peak) peak = y.eps;
+        else if (peak > 0) worst = Math.max(worst, (peak - y.eps) / peak);
+      });
+      det.ddPct = worst * 100; det.downYears = down;
+      sig.epsDD = clamp01(worst / 0.5);
+    }
+  }
+  if (isNum(d.epsGrowthTTM)) { det.epsG = d.epsGrowthTTM; sig.epsGrowth = clamp01((d.epsGrowthTTM - 100) / 200); }
+  var rp = d.revPath || [];
+  if (rp.length >= 3) {
+    var top = 0;
+    for (var ti = 1; ti < rp.length; ti++) { if (rp[ti].rev > rp[top].rev) top = ti; }
+    if (top >= 2 && rp[top - 2].rev > 0) {
+      det.revRatio = rp[top].rev / rp[top - 2].rev;
+      sig.revSurge = clamp01((det.revRatio - 1.5) / 0.5);
+    }
+  }
+  var avail = [sig.margin, sig.epsDD, sig.epsGrowth, sig.revSurge].filter(isNum);
+  var out = { signals: sig, detail: det, severity: 0, raw: null, gatePassed: false, sectorBoost: false, limitedHistory: limited };
+  if (!avail.length) return out;
+  out.raw = avail.reduce(function (a, b) { return a + b; }, 0) / avail.length;
+  if (avail.filter(function (v) { return v >= 0.25; }).length < 2) return out;
+  out.gatePassed = true;
+  var sev = out.raw;
+  var txt = ((d.industry || '') + ' ' + (d.sector || '')).toLowerCase();
+  if (CYC_SECTOR_RE.test(txt)) { sev = Math.min(1, sev * 1.15); out.sectorBoost = true; }
+  out.severity = sev;
+  return out;
+}
+
 function riskScore(d) {
   var factors = [];
   function band(v, bands) { // [[limitInclusive, riskPts], ...] ascending limits
@@ -1264,22 +1386,20 @@ function riskScore(d) {
       band(d.currentRatio, [[0.8, 10], [1, 8], [1.5, 5], [2, 3], [Infinity, 0]]),
       'Can it pay its near-term bills?');
   }
-  var bb = boomBust(d);
-  if (bb && bb.testable) {
-    add('Boom-bust pattern', bb.ratio, isNum(bb.ratio) ? fmtNum(bb.ratio, 1) + '\u00d7 in 2 yrs' : '\u2014', 20,
-      bb.fires ? 20 : 0,
-      bb.fires
-        ? 'Revenue ' + (bb.projected ? 'is projected to top' : 'topped') + ' at ' + bb.topLabel + ' after doubling in 2 yrs, and EPS ' + (bb.cliff
-            ? 'falls off a cliff after ' + bb.cliff.peakLabel
-            : 'has a possible cliff after ' + bb.possibleCliff.fy2Label + ' (growth explodes, then decelerates hard, so the peak may sit just past the estimates)') + ' \u2014 the classic peak-cycle trap'
-        : 'No doubling-into-a-cliff pattern in the revenue path');
-  }
   var got = factors.reduce(function (s, f) { return s + f.pts; }, 0);
   var maxAvailable = factors.reduce(function (s, f) { return s + f.max; }, 0);
-  var score = maxAvailable > 0 ? Math.round(got / maxAvailable * 100) : null;
+  var base = maxAvailable > 0 ? Math.round(got / maxAvailable * 100) : null;
+  // Cyclical overlay (2026-11-01): final = base + (100 - base) x
+  // severity x 0.6. Severity 0 leaves the base untouched, exactly.
+  // Band cutoffs are the old 25/45/65 scaled by 1.25 (the six base
+  // factors total 80 pts where the old seven totalled 100), so a
+  // stock with no cyclical overlay keeps the label it had.
+  var cyc = cyclicalSeverity(d);
+  var score = base;
+  if (base != null && cyc.severity > 0) score = Math.round(base + (100 - base) * cyc.severity * 0.6);
   var verdict = null;
-  if (score != null) verdict = score <= 25 ? 'Low risk' : score <= 45 ? 'Moderate risk' : score <= 65 ? 'Elevated risk' : 'High risk';
-  return { factors: factors, got: got, maxAvailable: maxAvailable, score: score, verdict: verdict };
+  if (score != null) verdict = score <= 31.25 ? 'Low risk' : score <= 56.25 ? 'Moderate risk' : score <= 81.25 ? 'Elevated risk' : 'High risk';
+  return { factors: factors, got: got, maxAvailable: maxAvailable, base: base, score: score, verdict: verdict, cyc: cyc, cycAdj: base != null ? score - base : null };
 }
 
 function valueScreen(d) {
@@ -1517,6 +1637,7 @@ var lastStock = null;
  * next to a label and a plain-English explainer smoothly unfolds
  * under it. One delegated listener handles every dot. */
 var INFO_TEXT = {
+  cycsev: 'How peak-cycle the current numbers look vs the company\'s own history: margin vs its long-run average, worst EPS drawdown, trailing EPS growth, and revenue surge. Needs 2 strong signals to count; it then lifts the risk score toward 100. Detail in the row note.',
   fwpe: 'Forward P/E = today\'s price divided by next year\'s expected earnings per share. It prices the stock against where earnings are heading, not where they have been. Rough guide: under 15 is cheap for most stocks, over 30 is expensive.',
   pe: 'P/E (trailing) = today\'s price divided by the last twelve months\' actual earnings per share. Higher means investors pay more for each $1 of profit the company already makes.',
   peg: 'PEG = the forward P/E divided by the expected earnings growth rate. It checks whether the price is fair for the growth you are getting. Under 1 is the classic \u201cgrowth at a reasonable price\u201d zone; under 0.75 is rare.',
@@ -2018,7 +2139,7 @@ function renderScorecard(d) {
   var traj = epsTrajectory(d);
   var passCount = screen.filter(function (s) { return s.test === true; }).length;
   var knownCount = screen.filter(function (s) { return s.test !== null; }).length;
-  var vClass = sc.verdict === 'Undervalued' ? 'undervalued' : sc.verdict === 'Fairly valued' ? 'fair' : 'overpriced';
+  var vClass = sc.verdict === 'Undervalued' ? 'undervalued' : (sc.verdict === 'Fairly valued' || sc.verdict === 'Value (cyclical peak risk)') ? 'fair' : 'overpriced';
   var chgCls = isNum(d.dayChangePct) ? (d.dayChangePct >= 0 ? 'up' : 'down') : '';
   var html = '<div class="card">';
   html += '<div class="sc-head"><div class="sc-head-l">' + logoTile(d.ticker, 'lg') + '<div><div class="sc-name">' + esc(d.companyName || d.ticker) + ' <span class="gold-text">' + esc(d.ticker) + '</span></div>' +
@@ -2056,7 +2177,7 @@ function renderScorecard(d) {
 
   var rk = riskScore(d);
   if (rk.score != null) {
-    var rClass = rk.score <= 25 ? 'risk-low' : rk.score <= 45 ? 'risk-mod' : rk.score <= 65 ? 'risk-elev' : 'risk-high';
+    var rClass = rk.score <= 31.25 ? 'risk-low' : rk.score <= 56.25 ? 'risk-mod' : rk.score <= 81.25 ? 'risk-elev' : 'risk-high';
     html += '<div class="verdict ' + rClass + '"><div><div class="v-label">Risk score</div>' +
       '<div class="v-word">' + esc(rk.verdict) + '</div></div>' +
       '<div class="v-score">' + rk.score + '<small> / 100</small></div></div>';
@@ -2066,8 +2187,24 @@ function renderScorecard(d) {
       var ik = FACTOR_INFO[f.name];
       html += '<tr><td><strong>' + esc(f.name) + '</strong>' + (ik ? infoDot(ik) : '') + '<div class="factor-note">' + esc(f.note) + '</div>' + (ik ? infoText(ik) : '') + '</td><td>' + esc(f.display) + '</td><td class="num"><strong>' + f.pts + '</strong> / ' + f.max + '</td></tr>';
     });
+    var cycSig = rk.cyc ? [rk.cyc.signals.margin, rk.cyc.signals.epsDD, rk.cyc.signals.epsGrowth, rk.cyc.signals.revSurge].filter(isNum) : [];
+    if (rk.cyc && cycSig.length) {
+      var cd = rk.cyc.detail, cParts = [];
+      if (isNum(rk.cyc.signals.margin)) cParts.push('Margin ' + fmtNum(cd.marginRatio, 1) + '\u00d7 its long-run average');
+      if (isNum(rk.cyc.signals.epsDD)) cParts.push('worst EPS drawdown \u2212' + fmtNum(cd.ddPct, 0) + '% (' + cd.downYears + ' down yrs)');
+      if (isNum(rk.cyc.signals.epsGrowth)) cParts.push('EPS ' + fmtPct(cd.epsG, 0) + ' in a year');
+      if (isNum(rk.cyc.signals.revSurge)) cParts.push('revenue ' + fmtNum(cd.revRatio, 1) + '\u00d7 in 2 yrs');
+      if (!rk.cyc.gatePassed) cParts.push('gate not met \u2014 needs 2 strong signals');
+      if (rk.cyc.sectorBoost) cParts.push('cyclical sector \u00d71.15');
+      if (rk.cyc.limitedHistory) cParts.push('limited history (<5 yrs) \u2014 margin & drawdown signals skipped');
+      html += '<tr><td><strong>Cyclical earnings risk</strong>' + infoDot('cycsev') + '<div class="factor-note">' + esc(cParts.join(' \u00b7 ')) + '</div>' + infoText('cycsev') + '</td><td>Severity ' + fmtNum(rk.cyc.severity, 2) + '</td><td class="num"><strong>+' + rk.cycAdj + '</strong></td></tr>';
+    }
     html += '</table>';
-    html += '<p class="fineprint">Higher = riskier \u00b7 scaled to 100 over factors with data (' + rk.maxAvailable + ' pts).</p>';
+    if (rk.cyc && cycSig.length) {
+      html += '<p class="fineprint">Base risk ' + rk.base + ' \u00b7 cyclical adjustment +' + rk.cycAdj + ' \u00b7 final ' + rk.score + '. Higher = riskier \u00b7 base scaled to 100 over factors with data (' + rk.maxAvailable + ' pts).</p>';
+    } else {
+      html += '<p class="fineprint">Higher = riskier \u00b7 scaled to 100 over factors with data (' + rk.maxAvailable + ' pts).</p>';
+    }
   }
 
   html += radarCardHtml(d);
@@ -4366,14 +4503,14 @@ function renderOverview(d, item) {
   }
   html += fvBarHtml(d);
   if (sc.score != null) {
-    var vClass = sc.verdict === 'Undervalued' ? 'undervalued' : sc.verdict === 'Fairly valued' ? 'fair' : 'overpriced';
+    var vClass = sc.verdict === 'Undervalued' ? 'undervalued' : (sc.verdict === 'Fairly valued' || sc.verdict === 'Value (cyclical peak risk)') ? 'fair' : 'overpriced';
     html += '<div class="verdict ' + vClass + '"><div><div class="v-label">Valuation verdict</div>' +
       '<div class="v-word">' + esc(sc.verdict) + '</div></div>' +
       '<div class="v-score">' + sc.score + '<small> / 100</small></div></div>';
     html += '<div class="score-bar"><div style="width:' + sc.score + '%"></div></div>';
   }
   if (rk.score != null) {
-    var rClass = rk.score <= 25 ? 'risk-low' : rk.score <= 45 ? 'risk-mod' : rk.score <= 65 ? 'risk-elev' : 'risk-high';
+    var rClass = rk.score <= 31.25 ? 'risk-low' : rk.score <= 56.25 ? 'risk-mod' : rk.score <= 81.25 ? 'risk-elev' : 'risk-high';
     html += '<div class="verdict ' + rClass + '"><div><div class="v-label">Risk score</div>' +
       '<div class="v-word">' + esc(rk.verdict) + '</div></div>' +
       '<div class="v-score">' + rk.score + '<small> / 100</small></div></div>';
