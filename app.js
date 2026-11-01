@@ -2195,10 +2195,16 @@ function renderScorecard(d) {
       if (isNum(rk.cyc.signals.epsDD)) cParts.push('worst EPS drawdown \u2212' + fmtNum(cd.ddPct, 0) + '% (' + cd.downYears + ' down yrs)');
       if (isNum(rk.cyc.signals.epsGrowth)) cParts.push('EPS ' + fmtPct(cd.epsG, 0) + ' in a year');
       if (isNum(rk.cyc.signals.revSurge)) cParts.push('revenue ' + fmtNum(cd.revRatio, 1) + '\u00d7 in 2 yrs');
-      if (!rk.cyc.gatePassed) cParts.push('gate not met \u2014 needs 2 strong signals');
       if (rk.cyc.sectorBoost) cParts.push('cyclical sector \u00d71.15');
       if (rk.cyc.limitedHistory) cParts.push('limited history (<5 yrs) \u2014 margin & drawdown signals skipped');
-      html += '<tr><td><strong>Cyclical earnings risk</strong>' + infoDot('cycsev') + '<div class="factor-note">' + esc(cParts.join(' \u00b7 ')) + '</div>' + infoText('cycsev') + '</td><td>Severity ' + fmtNum(rk.cyc.severity, 2) + '</td><td class="num"><strong>+' + rk.cycAdj + '</strong></td></tr>';
+      // Short one-line note on the row; the full signal breakdown
+      // lives behind the (i), with the explainer (Justin's ask,
+      // 2026-11-01: the blurb was too long out in the open).
+      var cNote = 'Peak-cycle check vs its own history';
+      if (!rk.cyc.gatePassed) cNote += ' \u00b7 gate not met, no adjustment';
+      else if (rk.cyc.limitedHistory) cNote += ' \u00b7 limited history';
+      var cDetail = INFO_TEXT.cycsev + (cParts.length ? '<br><br>This stock: ' + esc(cParts.join(' \u00b7 ')) + '.' : '');
+      html += '<tr><td><strong>Cyclical earnings risk</strong>' + infoDot('cycsev') + '<div class="factor-note">' + esc(cNote) + '</div>' + '<span class="info-text" data-info-text="cycsev">' + cDetail + '</span>' + '</td><td>Severity ' + fmtNum(rk.cyc.severity, 2) + '</td><td class="num"><strong>+' + rk.cycAdj + '</strong></td></tr>';
     }
     html += '</table>';
     if (rk.cyc && cycSig.length) {
