@@ -1827,7 +1827,7 @@ var INFO_TEXT = {
   size: 'Company size by market cap (price \u00d7 shares). Smaller companies tend to swing harder, get less analyst coverage, and can be harder to sell in a panic \u2014 so small size adds risk points here.',
   currentratio: 'Current ratio = short-term assets \u00f7 short-term bills. Above 1 means the company can cover what it owes within the year. Below 1 can mean cash stress if business dips.',
   boombust: 'Some businesses boom then bust in cycles (memory chips are the classic case). This flags it when the forecast shows a big earnings peak followed by a cliff, after revenue roughly doubled into the peak \u2014 peak earnings make a stock look deceptively cheap.',
-  scanscore: 'Every stock in the index gets two 0\u2013100 scores: a Value score (cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt) and a Risk score (debt, volatility, size, earnings trend, boom-bust pattern). The Score on this list = 60% Value + 40% safety, where safety = 100 \u2212 Risk. Only stocks with enough data to score fairly can appear, and it shows the Top 10 for each index. Scores refresh when a company reports earnings, and the full index is rescanned about once a week. Scans fetch gently to stay under Finviz\'s rate limit, so a full scan takes a few minutes \u2014 you can close the app and it resumes where it left off.',
+  scanscore: 'Every stock in the index gets two 0\u2013100 scores: a Value score (cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt) and a Risk score (debt, volatility, size, earnings trend, boom-bust pattern). The Score on this list = 60% Value + 40% safety, where safety = 100 \u2212 Risk. Only stocks with enough data to score fairly can appear, and it shows the Top 10 for each index. Scores refresh when a company reports earnings, and the full index is rescanned about once a week. The list is computed once a day on the server, so every phone shows the same scores; tapping Rescan still runs a fresh scan on this phone.',
   radar: 'Five 0\u2013100 measures drawn as a snowflake: Value (the valuation score), Future (forecast EPS growth), Past (recent revenue growth), Health (debt, liquidity, margins) and Dividend (the yield). The further a point reaches, the stronger that measure \u2014 a big, even snowflake is strong all round. If the Future point is red, the cliff check fired \u2014 earnings are forecast to fall off a peak.',
 };
 var FACTOR_INFO = {
@@ -2018,6 +2018,7 @@ function swotBox(letter, title, items, cls) {
  * already fetched; the worker adds recent Yahoo headlines and returns
  * the four lists. Saved on-device per ticker so it persists. */
 var AI_SWOT_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/swot';
+var SCAN_SHARED_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/scan';
 var AI_SWOT_CACHE_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/swot-cache';
 var AI_SWOT_KEY = 'sr_aiswot_v1';
 
@@ -4395,12 +4396,98 @@ async function scanBootstrapFromHosted() {
   scanPump();
 }
 
+/* ---------- shared scan adoption (2026-11-01) ----------
+ * The Worker runs the full scan centrally (chunked cron, same
+ * scoring code as this app) and publishes finished results. A phone
+ * that finds a fresh published pass adopts it wholesale -- dataset,
+ * Top-10 lists, NEW badges -- so a stock's Score is identical for
+ * everyone instead of depending on when each phone last scanned.
+ * Anything missing or stale leaves the on-device scan untouched. */
+var scanSharedBusy = false;
+var scanSharedAt = 0; // last adoption attempt, this session
+async function scanFetchShared(ixKey) {
+  try {
+    var resp = await fetch(SCAN_SHARED_URL + '?ix=' + ixKey + '&cb=' + Date.now(),
+      { cache: 'no-store', signal: AbortSignal.timeout(9000) });
+    if (!resp.ok) return null;
+    var p = await resp.json();
+    if (!p || !p.asOf || !p.recs || !Array.isArray(p.top)) return null;
+    if (Date.now() - Date.parse(p.asOf) > 48 * 3600 * 1000) return null; // stale
+    var n = Object.keys(p.recs).length;
+    if (n < (ixKey === 'rut' ? 500 : 100)) return null;
+    return p;
+  } catch (e) { return null; }
+}
+async function scanAdoptShared() {
+  if (scanSharedBusy) return false;
+  if (Date.now() - scanSharedAt < 30 * 60 * 1000) return false; // throttle
+  scanSharedBusy = true;
+  scanSharedAt = Date.now();
+  try {
+    if (scanRunning) return false;
+    var cur = getScan();
+    if (cur && cur.date === scanTodayKey() && (cur.done || cur.partial || cur.fromData)) return false; // today's list already settled on-device
+    var spx = await scanFetchShared('spx');
+    if (!spx) return false;
+    var rut = await scanFetchShared('rut');
+    var asOfDay = pfKeyToISO(pfDkey(new Date(spx.asOf)));
+    if (asOfDay !== scanTodayKey()) {
+      // Yesterday's pass: refresh the stored dataset only (if newer),
+      // then let the usual on-device day flow rank today from it.
+      var ds0 = getScanData();
+      if (!ds0 || !ds0.asOf || ds0.asOf < asOfDay) {
+        scanPersistIdx('spx', spx.recs);
+        if (rut) scanPersistIdx('rut', rut.recs);
+        var ds1 = getScanData();
+        if (ds1) { ds1.asOf = asOfDay; setScanData(ds1); }
+        return 'data';
+      }
+      return false;
+    }
+    var s = scanFreshState();
+    s.done = true;
+    s.shared = true;
+    s.sharedAsOf = rut && Date.parse(rut.asOf) > Date.parse(spx.asOf) ? rut.asOf : spx.asOf;
+    s.results = { spx: spx.top, rut: rut ? rut.top : [] };
+    var counts = { spx: 0, rut: 0 };
+    [spx, rut].forEach(function (p) {
+      if (!p) return;
+      Object.keys(p.recs).forEach(function (t) { if (p.recs[t].ix) counts[p.recs[t].ix] = (counts[p.recs[t].ix] || 0) + 1; });
+    });
+    s.idx.spx.started = true;
+    s.idx.spx.scored = counts.spx;
+    if (rut) { s.idx.rut.started = true; s.idx.rut.scored = counts.rut; }
+    else { s.idx.rut = scanFreshIdx(false); }
+    setScan(s);
+    scanPersistIdx('spx', spx.recs);
+    if (rut) scanPersistIdx('rut', rut.recs);
+    scanUpdateNewBadges(s.results);
+    scanDiag('shared scan adopted: spx ' + spx.top.length + ' rows, asOf ' + spx.asOf);
+    renderScanCard();
+    return true;
+  } catch (e) { return false; }
+  finally { scanSharedBusy = false; }
+}
+
 function scanRestart() {
   if (getScanData()) { setScan(scanFreshState()); renderScanCard(); scanPump(); return; }
   scanBootstrapFromHosted();
 }
 
 function maybeStartScan() {
+  var existing = getScan();
+  if (!(existing && existing.date === scanTodayKey() && (existing.done || existing.partial || existing.fromData))) {
+    scanAdoptShared().then(function (adopted) {
+      if (adopted === true) { renderScanCard(); return; }
+      if (adopted === 'data') { scanRefreshReporters(); return; }
+      maybeStartScanCore();
+    });
+    return;
+  }
+  maybeStartScanCore();
+}
+
+function maybeStartScanCore() {
   var s = getScan();
   var today = scanTodayKey();
   if (s && s.date === today) {
@@ -4548,7 +4635,9 @@ function renderScanCard() {
   if (s.done && s.results) {
     html += listsHtml();
     html += '<div class="scan-foot">' +
-      (s.fromData
+      (s.shared
+        ? 'Shared scan \u00b7 ' + esc(new Date(s.sharedAsOf).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })) + ' \u00b7 same for everyone'
+        : s.fromData
         ? 'Data from ' + esc(s.dataAsOf || '') + (s.refreshed === null ? ' \u00b7 refreshing\u2026' : ' \u00b7 ' + (s.refreshed || 0) + ' refreshed today')
         : 'Full scan \u00b7 today') +
       '<button type="button" class="btn-mini" id="scan-rescan">Rescan</button></div>';
