@@ -3252,16 +3252,30 @@ function qmBarsSVG(pts, fmt) {
   var min = Math.min.apply(null, pts.map(function (p) { return p.value; }).concat([0]));
   var span = (max - min) || 1;
   var vfsEarly = pts.length <= 8 ? 16.5 : pts.length <= 13 ? 14.5 : 12.5;
+  var bw = (w - padX * 2) / pts.length;
+  /* Legibility fitting (Justin's screenshots, 2026-11-01: 12 bars of
+   * "$794.1M" / "108.0M" ran together into one unreadable string).
+   * Measure the widest label against its bar slot; if it cannot fit,
+   * first compact the labels (794.1M -> 794M, 108.0M -> 108M, 67.0% ->
+   * 67%), then shrink the label font just enough, floored at 10.5.
+   * Small values (EPS $3.25, $1.2B) are never compacted. */
+  var labs = pts.map(function (p) { return String(fmt(p.value)); });
+  function qmCompact(t) {
+    return t.replace(/(\d{3,})\.(\d)([MBK])(?!\d)/, function (m, a, b, u) { return String(parseInt(a, 10) + (parseInt(b, 10) >= 5 ? 1 : 0)) + u; })
+            .replace(/\.0([MBK%])/, '$1');
+  }
+  function widest(ls) { return ls.reduce(function (a, t) { return Math.max(a, t.length); }, 0); }
+  var vfs = vfsEarly;
+  if (widest(labs) * vfs * 0.64 > bw * 0.98) {
+    labs = labs.map(qmCompact);
+    var est = widest(labs) * vfs * 0.64;
+    if (est > bw * 0.98) vfs = Math.max(10.5, Math.floor(vfs * (bw * 0.98 / est) * 2) / 2);
+  }
   // Negative bars carry their value label BELOW the bar; reserve enough
   // bottom room that it can never land on the axis labels (TSLA FCF
   // screenshot, 2026-10-31).
-  var padB = min < 0 ? Math.ceil(vfsEarly * 1.25) + 24 : 34;
-  var bw = (w - padX * 2) / pts.length;
+  var padB = min < 0 ? Math.ceil(vfs * 1.25) + 24 : 34;
   var zeroY = padT + (max / span) * (h - padT - padB);
-  // Value labels scale with density: big and readable on sparse
-  // charts, tighter when 17 bars share the width (Justin's ask,
-  // 2026-10-26). Bars nearly touch for the same reason.
-  var vfs = vfsEarly;
   var out = '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Metric chart">';
   out += '<line x1="' + padX + '" y1="' + zeroY + '" x2="' + (w - padX) + '" y2="' + zeroY + '" stroke="#3a372d" stroke-width="1"/>';
   pts.forEach(function (p, i) {
@@ -3276,7 +3290,7 @@ function qmBarsSVG(pts, fmt) {
       : 'fill:' + col + ';filter:drop-shadow(0 0 6px ' + col + ')';
     out += '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bwid.toFixed(1) + '" height="' + Math.max(1.5, bot - top).toFixed(1) + '" rx="1.5" style="' + fill + '"/>';
     var ly = p.value >= 0 ? top - 8 : bot + vfs + 3;
-    out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="middle" font-size="' + vfs + '" font-weight="800" style="fill:var(--chart-val)">' + esc(fmt(p.value)) + '</text>';
+    out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="middle" font-size="' + vfs + '" font-weight="800" style="fill:var(--chart-val)">' + esc(labs[i]) + '</text>';
     if (p.axis) {
       out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#8a8271">' + esc(p.axis) + '</text>';
     }
