@@ -797,3 +797,8 @@ table.factors tr.math-row td { border-bottom: 1px solid var(--row-line); padding
 .slab.fail { color: #ff7a6e; }
 .slab.unk { color: var(--muted); }
 .slab-dot { color: var(--muted); }
+
+/* Projection headline: one big glanceable line under the cases table */
+.pj-headline { text-align: center; font-size: 25px; font-weight: 800; letter-spacing: .01em; margin: 16px 0 4px; }
+.pj-headline.sm { font-size: 20px; }
+.pj-hl-price { color: var(--gold); }

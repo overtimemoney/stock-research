@@ -3069,7 +3069,7 @@ function runProjection() {
   var pjT = ($('pj-ticker').value || '').trim().toUpperCase();
   var divY = (pjT && pjT === pjDivYieldTicker && isNum(pjDivYield) && pjDivYield > 0) ? pjDivYield : 0;
   var divF = divY > 0 ? Math.pow(1 + divY / 100, years) : 1;
-  var rows = '', maxLen = 0;
+  var rows = '', maxLen = 0, baseFp = null;
   scen.forEach(function (s) {
     var feps = pjCaseEps(base, path, s.f);
     if (!isNum(feps)) {
@@ -3078,6 +3078,7 @@ function runProjection() {
     }
     var fp = feps * s.m;
     if (fp < 0) fp = 0; // a share price cannot be negative
+    if (s.name === 'Base') baseFp = fp;
     var tot = fp > 0 ? (fp / price) * divF : fp / price;
     var ret = (tot - 1) * 100;
     if (ret < -100) ret = -100; // a return cannot be worse than -100%
@@ -3091,6 +3092,20 @@ function runProjection() {
   var curT = ($('pj-ticker').value || '').trim().toUpperCase();
   var savedPj = curT ? getProjections()[curT] : null;
   html += '</table>';
+  /* Glanceable headline (Justin's ask, 2026-11-02): the base case in
+   * one big line under the Bear/Base/Bull table — "NFLX AT $222 BY
+   * 2030" — so the expected outcome reads at a glance. Base implied
+   * price matches the table ($222.66 there, cents dropped here);
+   * the year is the path's final fiscal year. Only with a ticker
+   * loaded and a real base price. */
+  if (pjT && isNum(baseFp) && baseFp > 0) {
+    var lastLbl = '';
+    for (var li = path.length - 1; li >= 0; li--) { if (!path[li].ttm && path[li].label) { lastLbl = path[li].label; break; } }
+    var ym = String(lastLbl).match(/(\d{4})/);
+    var hpTxt = baseFp >= 10 ? '$' + Math.floor(baseFp).toLocaleString('en-US') : fmtMoney(baseFp);
+    var hlTxt = pjT + ' AT ' + hpTxt + (ym ? ' BY ' + ym[1] : '');
+    html += '<div class="pj-headline' + (hlTxt.length > 22 ? ' sm' : '') + '">' + esc(pjT) + ' AT <span class="pj-hl-price">' + esc(hpTxt) + '</span>' + (ym ? ' BY ' + ym[1] : '') + '</div>';
+  }
   var growths = pjGrowths(base, path), exLine = '', gPrev = base, hasNeg = isNum(base) && base <= 0;
   for (var gi = 0; gi < path.length; gi++) {
     if (isNum(path[gi].eps) && path[gi].eps <= 0 && !path[gi].ttm) hasNeg = true;
