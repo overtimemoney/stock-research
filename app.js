@@ -2666,6 +2666,7 @@ async function runCompare() {
 var pjPath = [];            // [{label:'FY2026', eps:1.42, extrapolated:bool}]
 var pjPathFromForecast = false;
 var pjDivYield = null, pjDivYieldTicker = null; /* dividend yield (%) captured for the builder's ticker at load/restore */
+var pjCurPe = null, pjCurPeTicker = null; /* current trailing P/E captured the same way, for the bear-case rule */
 var PJ_KEY = 'sr_projections_v1';
 function getProjections() { return lsGet(PJ_KEY, {}); }
 function setProjections(p) { lsSet(PJ_KEY, p); }
@@ -2701,6 +2702,7 @@ function pjSaveCurrent() {
     flatGrowth: pjFlatGrowth(), years: pjYearsWanted(),
     mult: parseFloat($('pj-mult').value),
     divYield: (T === pjDivYieldTicker && isNum(pjDivYield)) ? pjDivYield : null,
+    curPe: (T === pjCurPeTicker && isNum(pjCurPe)) ? pjCurPe : null,
     path: JSON.parse(JSON.stringify(pjPath)), fromForecast: pjPathFromForecast
   };
   setProjections(all);
@@ -2713,6 +2715,7 @@ function pjRestore(T) {
   pjLoaded = null;
   pjMultAuto = null;
   pjDivYieldTicker = T; pjDivYield = isNum(s.divYield) ? s.divYield : null;
+  pjCurPeTicker = T; pjCurPe = (isNum(s.curPe) && s.curPe > 0) ? s.curPe : null;
   $('pj-ticker').value = T;
   if (isNum(s.price)) $('pj-price').value = s.price;
   if (isNum(s.baseEps)) $('pj-eps').value = s.baseEps;
@@ -3037,6 +3040,7 @@ async function loadProjectionTicker() {
     if (isNum(d.epsGrowth5Y)) bits.push('analyst 5-yr EPS growth ' + fmtNum(d.epsGrowth5Y, 1) + '%/yr');
     else if (isNum(d.epsGrowthNextY)) bits.push('next-yr EPS growth ' + fmtNum(d.epsGrowthNextY, 1) + '%');
     pjDivYieldTicker = T; pjDivYield = isNum(d.divYield) ? d.divYield : null;
+    pjCurPeTicker = T; pjCurPe = (isNum(d.pe) && d.pe > 0) ? d.pe : null;
     pjSetLoadedStatusParts('Loaded ' + T, bits);
     runProjection();
   } catch (e) {
@@ -3061,12 +3065,19 @@ function runProjection() {
   }
   renderPjPath();
   var path = pjPath.slice(0, years + pjTtmOffset());
+  var pjT = ($('pj-ticker').value || '').trim().toUpperCase();
+  /* Bear exit P/E rule (Justin's call, 2026-11-03): if the stock's
+   * CURRENT trailing P/E is lower than the calculated bear multiple
+   * (base x 0.8), the bear case uses today's P/E instead -- the
+   * market already prices the stock cheaper than the bear scenario
+   * assumes. Only for the ticker whose P/E was captured at load. */
+  var bearMult = mult * 0.8, bearPeUsed = false;
+  if (pjT && pjT === pjCurPeTicker && isNum(pjCurPe) && pjCurPe > 0 && pjCurPe < bearMult) { bearMult = pjCurPe; bearPeUsed = true; }
   var scen = [
-    { name: 'Bear', f: 0.8, m: mult * 0.8 },
+    { name: 'Bear', f: 0.8, m: bearMult },
     { name: 'Base', f: 1, m: mult },
     { name: 'Bull', f: 1.2, m: mult * 1.2 }
   ];
-  var pjT = ($('pj-ticker').value || '').trim().toUpperCase();
   var divY = (pjT && pjT === pjDivYieldTicker && isNum(pjDivYield) && pjDivYield > 0) ? pjDivYield : 0;
   var divF = divY > 0 ? Math.pow(1 + divY / 100, years) : 1;
   var rows = '', maxLen = 0, baseFp = null;
@@ -3119,7 +3130,7 @@ function runProjection() {
   html += '<div class="pj-math-wrap"><button type="button" class="pj-math-toggle" data-pjmath aria-expanded="false">Show math <span class="pj-math-chev">\u25be</span></button>' +
     '<div class="pj-math">' +
     '<p><strong>Growth:</strong> each year\u2019s growth is scaled \u2014 Bear \u00d7 0.8, Base as entered, Bull \u00d7 1.2.' + exLine + '</p>' +
-    '<p><strong>Exit P/E:</strong> your ' + fmtNum(mult, 1) + '\u00d7, scaled \u2014 Bear ' + fmtNum(mult * 0.8, 1) + '\u00d7 (\u00d7 0.8) \u00b7 Bull ' + fmtNum(mult * 1.2, 1) + '\u00d7 (\u00d7 1.2).</p>' +
+    '<p><strong>Exit P/E:</strong> your ' + fmtNum(mult, 1) + '\u00d7, scaled \u2014 Bear ' + fmtNum(bearMult, 1) + '\u00d7' + (bearPeUsed ? ' (today\u2019s P/E \u2014 lower than the scaled ' + fmtNum(mult * 0.8, 1) + '\u00d7, so the bear case uses it)' : ' (\u00d7 0.8)') + ' \u00b7 Bull ' + fmtNum(mult * 1.2, 1) + '\u00d7 (\u00d7 1.2).</p>' +
     '<p><strong>Implied price</strong> = final-year EPS \u00d7 that case\u2019s exit P/E.</p>' +
     '</div></div>';
   if (divY > 0) html += '<p class="fineprint">Return and CAGR include dividends at the current ' + fmtNum(divY, 2) + '% yield, reinvested.</p>';
