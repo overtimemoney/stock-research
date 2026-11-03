@@ -2709,6 +2709,18 @@ function pjSaveCurrent() {
   renderPjSaved();
   runProjection();
 }
+/* A restored projection's stored P/E is as of its save date (or
+ * missing entirely on saves from before the bear-P/E rule). Refresh
+ * it in the background so the rule always runs on TODAY'S P/E;
+ * re-runs the build only if the value actually changed. */
+async function pjRefreshCurPe(T) {
+  try {
+    var html = await relayFetch('https://finviz.com/stock?t=' + encodeURIComponent(T));
+    if (!html || html.indexOf('snapshot-td-label') === -1) return;
+    var v = parseNum(parseFinviz(html)['P/E']);
+    if (isNum(v) && v > 0 && pjCurPeTicker === T && pjCurPe !== v) { pjCurPe = v; runProjection(); }
+  } catch (e) {}
+}
 function pjRestore(T) {
   var s = getProjections()[T];
   if (!s) return;
@@ -2726,6 +2738,7 @@ function pjRestore(T) {
   pjPathFromForecast = !!s.fromForecast;
   renderPjPath();
   runProjection();
+  pjRefreshCurPe(T);
   var st = $('pj-status');
   pjStatusBits = null;
   st.className = 'status';
