@@ -3093,8 +3093,9 @@ function runProjection() {
   var savedPj = curT ? getProjections()[curT] : null;
   html += '</table>';
   /* Glanceable headline (Justin's ask, 2026-11-02): the base case in
-   * one big line under the Bear/Base/Bull table — "NFLX AT $222 BY
-   * 2030" — so the expected outcome reads at a glance. Base implied
+   * one big line under the Bear/Base/Bull table — "NFLX \u2192 $222
+   * by 2030" (arrow wording, Justin's pick 2026-11-02) — so the
+   * expected outcome reads at a glance. Base implied
    * price matches the table ($222.66 there, cents dropped here);
    * the year is the path's final fiscal year. Only with a ticker
    * loaded and a real base price. */
@@ -3103,8 +3104,8 @@ function runProjection() {
     for (var li = path.length - 1; li >= 0; li--) { if (!path[li].ttm && path[li].label) { lastLbl = path[li].label; break; } }
     var ym = String(lastLbl).match(/(\d{4})/);
     var hpTxt = baseFp >= 10 ? '$' + Math.floor(baseFp).toLocaleString('en-US') : fmtMoney(baseFp);
-    var hlTxt = pjT + ' AT ' + hpTxt + (ym ? ' BY ' + ym[1] : '');
-    html += '<div class="pj-headline' + (hlTxt.length > 22 ? ' sm' : '') + '">' + esc(pjT) + ' AT <span class="pj-hl-price">' + esc(hpTxt) + '</span>' + (ym ? ' BY ' + ym[1] : '') + '</div>';
+    var hlTxt = pjT + ' \u2192 ' + hpTxt + (ym ? ' by ' + ym[1] : '');
+    html += '<div class="pj-headline' + (hlTxt.length > 22 ? ' sm' : '') + '">' + esc(pjT) + ' \u2192 <span class="pj-hl-price">' + esc(hpTxt) + '</span>' + (ym ? ' by ' + ym[1] : '') + '</div>';
   }
   var growths = pjGrowths(base, path), exLine = '', gPrev = base, hasNeg = isNum(base) && base <= 0;
   for (var gi = 0; gi < path.length; gi++) {
