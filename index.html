@@ -258,6 +258,21 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
           <button id="sync-signin" class="btn-gold" type="button">Sign in</button>
           <button id="sync-signup" class="btn-ghost" type="button">Sign up</button>
         </div>
+        <!-- Beta-full state: shown only when the Worker reports all
+             beta spots taken. Sign-up is replaced by this waitlist
+             blurb; sign-in above stays fully available so existing
+             members are never locked out. -->
+        <div id="sync-beta-full" hidden>
+          <div class="set-h" style="margin-top:14px">The beta is full</div>
+          <p class="fineprint" style="margin:0 0 8px">All <span id="beta-cap-num">50</span> founding beta spots are taken. Join the waitlist and we'll email you when signups open again.</p>
+          <div id="beta-waitlist-body">
+            <label>Email<input id="beta-waitlist-email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com"></label>
+            <div class="row-gap">
+              <button id="beta-waitlist-btn" class="btn-gold" type="button">Notify me</button>
+            </div>
+            <div id="beta-waitlist-status" class="status" role="status"></div>
+          </div>
+        </div>
       </div>
       <div id="sync-signed-in" hidden>
         <p class="fineprint" style="margin:0 0 8px">Signed in as <span id="sync-user"></span></p>

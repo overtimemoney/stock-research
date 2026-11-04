@@ -7544,6 +7544,101 @@ if (typeof document !== 'undefined' && document.getElementById) {
     } catch (e) {}
   }
 
+  /* ---- Beta member cap + waitlist ----------------------------------
+   * The beta is capped at 50 Supabase ACCOUNTS. The cap gates NEW
+   * account creation only: it never blocks sign-in, and the app stays
+   * fully usable without an account. The count lives in the relay
+   * Worker's KV (see /beta-status, /beta-claim, /beta-waitlist in
+   * relay/worker.js). Every call here fails SILENTLY — if the status
+   * can't be fetched, this section behaves exactly as it always has.
+   * The one exception: a status that WAS fetched and says full swaps
+   * the sign-up button for the waitlist blurb (sign-in untouched). */
+  var BETA_WORKER = 'https://stock-research-relay.supplessayings-6e6.workers.dev';
+  var betaFull = false;
+  var betaFetchAt = 0;
+  var betaFetchBusy = false;
+
+  function betaApply(st) {
+    try {
+      if (!st || typeof st.open !== 'boolean') return;
+      betaFull = !st.open;
+      var signUpBtn = document.getElementById('sync-signup');
+      var fullBlock = document.getElementById('sync-beta-full');
+      var capNum = document.getElementById('beta-cap-num');
+      if (capNum && typeof st.cap === 'number') capNum.textContent = String(st.cap);
+      if (betaFull) {
+        if (signUpBtn) signUpBtn.style.display = 'none';
+        if (fullBlock) fullBlock.hidden = false;
+      } else {
+        if (signUpBtn) signUpBtn.style.display = '';
+        if (fullBlock) fullBlock.hidden = true;
+      }
+    } catch (e) {}
+  }
+
+  function betaFetchStatus() {
+    var now = Date.now();
+    if (betaFetchBusy || (now - betaFetchAt) < 30000) return;
+    betaFetchBusy = true;
+    betaFetchAt = now;
+    try {
+      var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var timer = ctrl ? setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, 4000) : null;
+      fetch(BETA_WORKER + '/beta-status', ctrl ? { signal: ctrl.signal } : {})
+        .then(function (r) { return r.json(); })
+        .then(function (st) { betaApply(st); })
+        .catch(function () { /* fail silent: behave exactly as today */ })
+        .then(function () { if (timer) clearTimeout(timer); betaFetchBusy = false; });
+    } catch (e) { betaFetchBusy = false; }
+  }
+
+  function betaClaim(userId) {
+    /* Fire-and-forget: a failed claim never affects the session. */
+    try {
+      if (!userId) return;
+      fetch(BETA_WORKER + '/beta-claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: String(userId) })
+      }).catch(function () {});
+    } catch (e) {}
+  }
+
+  function wireBetaWaitlist() {
+    var btn = document.getElementById('beta-waitlist-btn');
+    if (!btn || btn._wired) return;
+    btn._wired = true;
+    btn.addEventListener('click', async function () {
+      var emEl = document.getElementById('beta-waitlist-email');
+      var stEl = document.getElementById('beta-waitlist-status');
+      function say(msg, isErr) {
+        if (stEl) { stEl.className = 'status' + (isErr ? ' err' : ''); stEl.textContent = msg; }
+      }
+      var email = emEl ? String(emEl.value || '').trim() : '';
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+        say('Enter a valid email address first.', true);
+        return;
+      }
+      btn.disabled = true;
+      say('Joining the waitlist…');
+      try {
+        var r = await fetch(BETA_WORKER + '/beta-waitlist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email })
+        });
+        var j = null;
+        try { j = await r.json(); } catch (e) {}
+        if (!r.ok || !j || !j.ok) throw new Error('waitlist rejected');
+        var body = document.getElementById('beta-waitlist-body');
+        if (body) body.innerHTML = '<p class="fineprint" style="margin:0">You\u2019re on the list — we\u2019ll email you when signups open again.</p>';
+      } catch (e) {
+        btn.disabled = false;
+        say('Could not join the waitlist — check your connection and try again.', true);
+      }
+    });
+  }
+
   function isEmptyParsed(v) {
     if (v == null || v === '') return true;
     if (Array.isArray(v)) return v.length === 0;
@@ -7708,6 +7803,9 @@ if (typeof document !== 'undefined' && document.getElementById) {
         if (out) out.hidden = false;
         if (inn) inn.hidden = true;
         if (userEl) userEl.textContent = '';
+        /* Signed-out view is where sign-up lives: refresh beta state
+         * (throttled inside betaFetchStatus; fails silently). */
+        try { betaFetchStatus(); } catch (e) {}
       }
     } catch (e) {}
   }
@@ -7754,6 +7852,10 @@ if (typeof document !== 'undefined' && document.getElementById) {
       try {
         var r = await client.auth.signUp(c);
         if (r.error) throw r.error;
+        /* Claim a beta spot for the new account (fire-and-forget).
+         * Runs even if the beta was full on a stale status — the cap
+         * is soft and a completed sign-up is never turned away. */
+        try { if (r.data && r.data.user && r.data.user.id) betaClaim(r.data.user.id); } catch (e) {}
         if (r.data && r.data.session && r.data.user) {
           await afterSignIn(r.data.user);
         } else {
@@ -7775,6 +7877,8 @@ if (typeof document !== 'undefined' && document.getElementById) {
 
   try {
     wireSyncUi();
+    wireBetaWaitlist();
+    betaFetchStatus();
     if (!client) {
       setSyncStatus('Sync is unavailable (library or connection problem) — the app still works from this device.', true);
       return;
