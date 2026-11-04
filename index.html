@@ -99,9 +99,12 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
       </form>
       <div id="qm-status" class="status" role="status" style="margin:0 2px 8px"></div>
       <div id="qm-body" hidden>
-        <div class="seg" role="group" aria-label="Metrics period" style="margin-bottom:12px">
-          <button type="button" data-qmfreq="q" class="active">Quarterly</button>
-          <button type="button" data-qmfreq="y">Yearly</button>
+        <div class="row-between" style="margin-bottom:12px">
+          <div class="seg" role="group" aria-label="Metrics period">
+            <button type="button" data-qmfreq="q" class="active">Quarterly</button>
+            <button type="button" data-qmfreq="y">Yearly</button>
+          </div>
+          <button type="button" id="qm-csv" class="btn-ghost">Export CSV</button>
         </div>
         <button type="button" id="qm-metric-btn" class="qm-picker-btn" aria-haspopup="true" aria-expanded="false"><span id="qm-metric-name">Revenue</span><span class="qm-chev">▾</span></button>
         <div id="qm-metric-list" class="qm-picker-list" hidden>
@@ -167,6 +170,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
   <section id="tab-watchlist" class="tab">
     <h2 class="tab-title">Watch<span class="gold-text">list</span></h2>
     <div id="scan-card"></div>
+    <div id="earn-card"></div>
     <form id="wl-form" class="wl-inputs" autocomplete="off">
       <input id="wl-ticker" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="Ticker" aria-label="Watchlist ticker">
       <input id="wl-target" type="number" step="any" min="0" placeholder="Target buy $" aria-label="Target buy price">

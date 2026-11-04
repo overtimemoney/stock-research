@@ -2486,7 +2486,8 @@ function renderScorecard(d) {
     '<button class="btn-ghost" id="sc-watch" type="button">◎ Add to watchlist</button>' +
     '<button class="btn-ghost" id="sc-journal" type="button">✎ Journal this stock</button>' +
     '<button class="btn-ghost" id="sc-project" type="button">✦ Project it</button>' +
-    '<button class="btn-ghost" id="sc-refresh" type="button">↻ Refresh data</button></div>';
+    '<button class="btn-ghost" id="sc-refresh" type="button">↻ Refresh data</button>' +
+    '<a class="btn-ghost sc-ext" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=' + esc(d.ticker) + '&type=&dateb=&owner=include&count=10" target="_blank" rel="noopener">SEC filings ↗</a></div>';
 
   var when = d.fetchedAt ? new Date(d.fetchedAt).toLocaleString() : '';
   if (d.partial) html += '<div class="alert warn">Fast data is in — still pulling valuation details (forward P/E, PEG, margins)… the score updates when they land.</div>';
@@ -3168,6 +3169,33 @@ var qmMetric = 'revenue';
 var qmFreq = 'q';
 var qmStore = { ticker: null, q: null, y: null };
 function qmData() { return qmStore[qmFreq]; }
+/* Export the statements behind the Charts tool as CSV (Justin's
+ * pick from the Fiscal.ai comparison, 2026-11-03): the actuals the
+ * app already fetched for this ticker and period view, raw dollars,
+ * downloaded with the same Blob pattern as the backup export. */
+function qmExportCsv() {
+  var d = qmData();
+  if (!d || !d.periods || !d.periods.length) return;
+  var cols = [['Period', 'periods'], ['Revenue', 'revenue'], ['Gross profit', 'grossProfit'],
+    ['Operating income', 'operIncome'], ['Net income', 'netIncome'], ['EPS (diluted)', 'eps'],
+    ['Free cash flow', 'fcf'], ['Shares outstanding', 'shares']];
+  var lines = [cols.map(function (c) { return c[0]; }).join(',')];
+  d.periods.forEach(function (p, i) {
+    lines.push(cols.map(function (c, ci) {
+      if (ci === 0) return '"' + String(p).replace(/"/g, '""') + '"';
+      var v = d[c[1]] && d[c[1]][i];
+      return isNum(v) ? String(Math.round(v * 10000) / 10000) : '';
+    }).join(','));
+  });
+  try {
+    var blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (qmStore.ticker || 'stock') + '_' + (qmFreq === 'y' ? 'yearly' : 'quarterly') + '_financials.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+  } catch (e) {}
+}
 
 function parseSAValueM(s) {
   if (s == null) return null;
@@ -3661,6 +3689,98 @@ var SCAN_KEY = 'sr_scan_v4';
 var scanRunning = false, scanActive = 0, scanCoolUntil = 0, scanTimer = null;
 
 function scanTodayKey() { return pfKeyToISO(pfDkey(new Date())); }
+
+/* ---------- earnings calendar (2026-11-03, from the Fiscal.ai
+ * comparison): the user's watchlist + portfolio stocks reporting in
+ * the next 14 days, from the Nasdaq earnings calendar (rides the
+ * relay like everything else). Cached per day + ticker set; the
+ * card renders instantly from cache and refreshes in the
+ * background. Dates can shift -- the fineprint says so. ---------- */
+var EARN_KEY = 'sr_earncal_v1';
+var earnBusy = false;
+function earnUserTickers() {
+  var set = {};
+  getWatchlist().forEach(function (x) { if (x.ticker) set[x.ticker] = true; });
+  getPortfolio().forEach(function (p) { if (p.ticker && p.shares > 0) set[p.ticker] = true; });
+  return Object.keys(set).sort();
+}
+function earnDays() {
+  var out = [], base = new Date(scanTodayKey() + 'T12:00:00');
+  for (var i = 0; i < 14; i++) out.push(pfKeyToISO(pfDkey(new Date(base.getTime() + i * 86400000))));
+  return out;
+}
+async function earnFetchDay(iso) {
+  try {
+    var txt = await relayFetch('https://api.nasdaq.com/api/calendar/earnings?date=' + iso);
+    if (!txt) return null;
+    var j = JSON.parse(txt);
+    var rows = (j && j.data && j.data.rows) || [];
+    return rows.map(function (r) {
+      return { s: String(r.symbol || '').toUpperCase(), n: r.name || '', t: r.time || '', eps: r.epsForecast || '' };
+    }).filter(function (r) { return r.s; });
+  } catch (e) { return null; }
+}
+function earnRender(box, cache, tickers) {
+  var inSet = {};
+  tickers.forEach(function (t) { inSet[t] = true; });
+  var html = '<div class="card"><div class="scan-h">Earnings \u2014 your stocks <span class="scan-date">next 14 days</span></div>';
+  var any = false;
+  earnDays().forEach(function (iso) {
+    var rows = ((cache.byDay || {})[iso] || []).filter(function (r) { return inSet[r.s]; });
+    if (!rows.length) return;
+    any = true;
+    html += '<div class="scan-group">' + esc(new Date(iso + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })) + '</div>';
+    rows.forEach(function (r) {
+      var when = r.t === 'time-pre-market' ? 'before the open' : r.t === 'time-after-hours' ? 'after close' : '';
+      html += '<button type="button" class="scan-row" data-earn-research="' + esc(r.s) + '">' + logoTile(r.s, 'sm') +
+        '<span class="scan-id"><b>' + esc(r.s) + '</b><span class="scan-sub"><span class="scan-nm">' + esc(r.n) + '</span>' + (r.eps ? ' <span class="scan-cyc partial">est ' + esc(r.eps) + '</span>' : '') + '</span></span>' +
+        '<span class="scan-px">' + esc(when) + '</span></button>';
+    });
+  });
+  if (!any) html += '<div class="status">None of your stocks report in the next 14 days.</div>';
+  html += '<p class="fineprint" style="margin-top:8px">From the Nasdaq earnings calendar \u00b7 dates can shift.</p></div>';
+  box.innerHTML = html;
+  box.querySelectorAll('[data-earn-research]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var T = b.getAttribute('data-earn-research');
+      switchTab('scorecard');
+      $('search-input').value = T;
+      runSearch(T);
+    });
+  });
+}
+async function renderEarnCard() {
+  var box = $('earn-card');
+  if (!box) return;
+  var tickers = earnUserTickers();
+  if (!tickers.length) { box.innerHTML = ''; return; }
+  var setKey = tickers.join(',');
+  var cache = lsGet(EARN_KEY, null);
+  if (cache && cache.day === scanTodayKey() && cache.setKey === setKey) { earnRender(box, cache, tickers); return; }
+  if (earnBusy) { if (cache && cache.setKey === setKey) earnRender(box, cache, tickers); return; }
+  earnBusy = true;
+  if (cache && cache.setKey === setKey) earnRender(box, cache, tickers);
+  else box.innerHTML = '<div class="card"><div class="scan-h">Earnings \u2014 your stocks</div><div class="status">Checking the calendar\u2026</div></div>';
+  var days = earnDays(), byDay = {};
+  for (var b = 0; b < days.length; b += 4) {
+    var batch = await Promise.all(days.slice(b, b + 4).map(function (iso) {
+      return earnFetchDay(iso).then(function (rows) { return [iso, rows]; });
+    }));
+    batch.forEach(function (pair) { if (pair[1]) byDay[pair[0]] = pair[1]; });
+  }
+  /* Store only the user's own matches -- a full day page is ~480
+   * rows, and 14 of those would crowd localStorage for data the
+   * card never renders. A changed ticker set refetches (setKey). */
+  var inSet = {};
+  tickers.forEach(function (t) { inSet[t] = true; });
+  Object.keys(byDay).forEach(function (iso) {
+    byDay[iso] = byDay[iso].filter(function (r) { return inSet[r.s]; });
+  });
+  var fresh = { day: scanTodayKey(), setKey: setKey, byDay: byDay };
+  lsSet(EARN_KEY, fresh);
+  earnBusy = false;
+  earnRender(box, fresh, tickers);
+}
 function scanFreshIdx(started) {
   // Option B (Justin's pick, 2026-10-26): the Russell 2000 is 297 of
   // the 375 daily pages, so only the S&P 500 auto-starts; the Russell
@@ -5105,6 +5225,7 @@ function openOverview(T) {
 }
 
 async function renderWatchlist(refresh) {
+  renderEarnCard();
   var wl = getWatchlist();
   var box = $('wl-list');
   if (!wl.length) {
@@ -6545,6 +6666,7 @@ function initApp() {
   runCompound();
   attachAutocomplete($('qm-ticker'), function (sym) { $('qm-ticker').value = sym; loadQm(); });
   $('qm-load-form').addEventListener('submit', function (e) { e.preventDefault(); loadQm(); $('qm-ticker').blur(); });
+  $('qm-csv').addEventListener('click', qmExportCsv);
   document.querySelectorAll('[data-qm]').forEach(function (b) {
     b.addEventListener('click', function () {
       qmMetric = b.getAttribute('data-qm');
