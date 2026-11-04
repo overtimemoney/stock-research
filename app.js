@@ -3754,9 +3754,20 @@ function qmLoadCardHtml(name) {
  * read the loaded statements; the special ones (segments, ratios,
  * EPS-vs-estimates) fill in as their lazy loads land, and hide when
  * a company doesn't have them. */
+/* Grid/detail tap wiring, registered exactly once. Called from
+ * initApp and lazily from renderQmGrid -- whichever runs first -- so
+ * the taps are live even if some other startup wiring ever fails. */
+var qmWiringDone = false;
+function ensureQmWiring() {
+  if (qmWiringDone) return;
+  qmWiringDone = true;
+  ensureQmWiring();
+}
+
 function renderQmGrid() {
   var grid = $('qm-grid');
   if (!grid) return;
+  ensureQmWiring();
   var d = qmData();
   var groups = [];
   function stdCards(ids) {
@@ -7188,22 +7199,7 @@ function initApp() {
       if (qmStore.ticker) loadQm();
     });
   });
-  document.querySelectorAll('[data-qmview]').forEach(function (b) {
-    b.addEventListener('click', function () {
-      qmView = b.getAttribute('data-qmview');
-      renderQm();
-    });
-  });
-  var qmGridEl = $('qm-grid');
-  if (qmGridEl) qmGridEl.addEventListener('click', function (e) {
-    var card = e.target && e.target.closest ? e.target.closest('[data-qmopen]') : null;
-    if (!card) return;
-    qmMetric = card.getAttribute('data-qmopen');
-    qmMode = 'detail';
-    renderQm();
-  });
-  var qmBackEl = $('qm-back');
-  if (qmBackEl) qmBackEl.addEventListener('click', function () { qmMode = 'grid'; renderQm(); });
+  ensureQmWiring();
   $('wl-form').addEventListener('submit', function (e) {
     e.preventDefault();
     var t = $('wl-ticker').value, target = parseFloat($('wl-target').value);
