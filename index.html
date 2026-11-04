@@ -106,6 +106,9 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
           </div>
           <button type="button" id="qm-csv" class="btn-ghost">Export CSV</button>
         </div>
+        <div id="qm-grid"></div>
+        <div id="qm-detail" hidden>
+        <button type="button" id="qm-back" class="btn-ghost" style="margin-bottom:12px">‹ All charts</button>
         <button type="button" id="qm-metric-btn" class="qm-picker-btn" aria-haspopup="true" aria-expanded="false"><span id="qm-metric-name">Revenue</span><span class="qm-chev">▾</span></button>
         <div id="qm-metric-list" class="qm-picker-list" hidden>
           <div class="qm-group">Money</div>
@@ -141,6 +144,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
         </div>
         <div id="qm-chart"></div>
         <p class="fineprint" id="qm-note"></p>
+        </div>
       </div>
     </div>
 

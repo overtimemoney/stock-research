@@ -3185,7 +3185,7 @@ function qmDownloadCsv(lines, suffix) {
 }
 
 function qmExportCsv() {
-  if (qmMetric === 'segRev' || qmMetric === 'segOp') {
+  if (qmMode === 'detail' && (qmMetric === 'segRev' || qmMetric === 'segOp')) {
     var sd = qmStore.seg;
     if (!sd || !sd.ok) return;
     var key = qmMetric === 'segRev' ? 'rev' : 'op';
@@ -3201,7 +3201,7 @@ function qmExportCsv() {
     qmDownloadCsv(lines, '_segments_' + key + '.csv');
     return;
   }
-  if (qmMetric === 'peHist' || qmMetric === 'psHist') {
+  if (qmMode === 'detail' && (qmMetric === 'peHist' || qmMetric === 'psHist')) {
     var rd = qmStore.ratios;
     if (!rd) return;
     var series = qmMetric === 'peHist' ? rd.pe : rd.ps;
@@ -3211,7 +3211,7 @@ function qmExportCsv() {
     qmDownloadCsv(rl, qmMetric === 'peHist' ? '_pe_by_year.csv' : '_ps_by_year.csv');
     return;
   }
-  if (qmMetric === 'avEps') {
+  if (qmMode === 'detail' && qmMetric === 'avEps') {
     var md = qmStore.mb;
     if (!md || !md.length) return;
     var ml = ['Quarter,Consensus estimate,Reported EPS'];
@@ -3452,6 +3452,7 @@ var QM_METRICS = {
  * through their own paths; the freq toggle does not apply to them. */
 var SEGMENTS_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/segments';
 var qmView = 'values';
+var qmMode = 'grid';
 
 async function fetchSegmentsApp(T) {
   var cache = lsGet('sr_seg_v1', {});
@@ -3553,10 +3554,10 @@ function qmEnsure(slot, loader) {
 var SEG_COLORS = ['#F8C73D', '#4da3ff', '#2fbf71', '#ff8a5c', '#b78bff', '#37c8c3', '#ff5c7a', '#a3b86b', '#e0a458', '#7d8fb3'];
 function segColor(s, si) { return (s.balance || s.corporate) ? '#6b6656' : SEG_COLORS[si % SEG_COLORS.length]; }
 
-function qmStackedSVG(data, key) {
+function qmStackedSVG(data, key, mini) {
   var years = data.years;
   var segs = data.segments.filter(function (sg) { return sg[key]; });
-  var w = 640, h = 224, padT = 34, padB = 34, padX = 6;
+  var w = 640, h = mini ? 150 : 224, padT = mini ? 10 : 34, padB = 34, padX = 6;
   var tops = years.map(function (y, yi) {
     var pos = 0, neg = 0;
     segs.forEach(function (sg) { var v = sg[key][yi]; if (isNum(v)) { if (v >= 0) pos += v; else neg += v; } });
@@ -3589,10 +3590,12 @@ function qmStackedSVG(data, key) {
       out += '<rect x="' + x.toFixed(1) + '" y="' + yTop.toFixed(1) + '" width="' + bwid.toFixed(1) + '" height="' + Math.max(1.5, yBot - yTop).toFixed(1) + '" rx="1.5" style="fill:' + segColor(sg, si) + '"/>';
     });
     var tot = data.total && data.total[key] ? data.total[key][yi] : null;
-    if (isNum(tot)) {
+    if (isNum(tot) && !mini) {
       out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (zeroY - (tops[yi].pos / span) * (h - padT - padB) - 8).toFixed(1) + '" text-anchor="middle" font-size="15" font-weight="800" style="fill:var(--chart-val)">' + esc(fmtMoneyShort(tot)) + '</text>';
     }
-    out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#8a8271">' + y + '</text>';
+    if (!mini || yi === 0 || yi === years.length - 1) {
+      out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#8a8271">' + y + '</text>';
+    }
   });
   return out + '</svg>';
 }
@@ -3640,8 +3643,8 @@ function renderQmSegments(key) {
   note.textContent = 'Annual, as reported in the 10-K segment note (filed ' + data.filed + ') \u00b7 SEC EDGAR. Stacks sum to the reported total.';
 }
 
-function qmPairsSVG(pairs) {
-  var w = 640, h = 224, padT = 36, padB = 34, padX = 6;
+function qmPairsSVG(pairs, mini) {
+  var w = 640, h = mini ? 150 : 224, padT = mini ? 10 : 36, padB = 34, padX = 6;
   var vals = [];
   pairs.forEach(function (p) { vals.push(p.est, p.act); });
   var max = Math.max.apply(null, vals.concat([0]));
@@ -3659,12 +3662,15 @@ function qmPairsSVG(pairs) {
     function bar(x, v, fill, bold) {
       var y = zeroY - (v / span) * (h - padT - padB);
       var top = Math.min(y, zeroY), bot = Math.max(y, zeroY);
-      return '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bwPair.toFixed(1) + '" height="' + Math.max(1.5, bot - top).toFixed(1) + '" rx="1.5" style="fill:' + fill + '"/>' +
-        '<text x="' + (x + bwPair / 2).toFixed(1) + '" y="' + (v >= 0 ? top - 6 : bot + lfs + 3).toFixed(1) + '" text-anchor="middle" font-size="' + lfs + '" font-weight="' + (bold ? '800' : '600') + '" fill="' + (bold ? 'var(--chart-val)' : '#8a8271') + '">$' + fmtNum(v, 2) + '</text>';
+      var r = '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bwPair.toFixed(1) + '" height="' + Math.max(1.5, bot - top).toFixed(1) + '" rx="1.5" style="fill:' + fill + '"/>';
+      if (mini) return r;
+      return r + '<text x="' + (x + bwPair / 2).toFixed(1) + '" y="' + (v >= 0 ? top - 6 : bot + lfs + 3).toFixed(1) + '" text-anchor="middle" font-size="' + lfs + '" font-weight="' + (bold ? '800' : '600') + '" fill="' + (bold ? 'var(--chart-val)' : '#8a8271') + '">$' + fmtNum(v, 2) + '</text>';
     }
     out += bar(ex, p.est, '#5a5546', false);
     out += bar(ax, p.act, p.act >= p.est ? 'var(--neon-up)' : 'var(--neon-dn)', true);
-    out += '<text x="' + (slotX + bw / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#8a8271">' + esc(qmShortQ(p.label)) + '</text>';
+    if (!mini || i === 0 || i === pairs.length - 1) {
+      out += '<text x="' + (slotX + bw / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#8a8271">' + esc(qmShortQ(p.label)) + '</text>';
+    }
   });
   return out + '</svg>';
 }
@@ -3710,7 +3716,116 @@ function renderQmRatios(key) {
   note.textContent = (key === 'pe' ? 'Price / earnings' : 'Price / sales') + ' at each fiscal year end (StockAnalysis ratios) \u00b7 the current multiple is on the scorecard.';
 }
 
+/* Mini bar chart for grid cards: shape only (the card header
+ * carries the latest value), first + last period labels. */
+function qmMiniBarsSVG(pts) {
+  var w = 640, h = 150, padT = 10, padB = 22, padX = 4;
+  var max = Math.max.apply(null, pts.map(function (p) { return p.value; }).concat([0]));
+  var min = Math.min.apply(null, pts.map(function (p) { return p.value; }).concat([0]));
+  var span = (max - min) || 1;
+  var bw = (w - padX * 2) / pts.length;
+  var zeroY = padT + (max / span) * (h - padT - padB);
+  var out = '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Mini chart">';
+  out += '<line x1="' + padX + '" y1="' + zeroY + '" x2="' + (w - padX) + '" y2="' + zeroY + '" stroke="#3a372d" stroke-width="1"/>';
+  pts.forEach(function (p, i) {
+    var x = padX + i * bw + bw * 0.04, bwid = bw * 0.92;
+    var y = zeroY - (p.value / span) * (h - padT - padB);
+    var top = Math.min(y, zeroY), bot = Math.max(y, zeroY);
+    var col = p.value >= 0 ? 'var(--neon-up)' : 'var(--neon-dn)';
+    out += '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bwid.toFixed(1) + '" height="' + Math.max(1.5, bot - top).toFixed(1) + '" rx="1.5" style="fill:' + col + ';opacity:.92"/>';
+  });
+  if (pts.length) {
+    out += '<text x="' + padX + '" y="' + (h - 5) + '" font-size="12" font-weight="700" fill="#8a8271">' + esc(pts[0].label) + '</text>';
+    out += '<text x="' + (w - padX) + '" y="' + (h - 5) + '" text-anchor="end" font-size="12" font-weight="700" fill="#8a8271">' + esc(pts[pts.length - 1].label) + '</text>';
+  }
+  return out + '</svg>';
+}
+
+function qmCardHtml(id, name, val, svg, wide) {
+  return '<button type="button" class="qm-card' + (wide ? ' wide' : '') + '" data-qmopen="' + id + '">' +
+    '<div class="qm-card-h"><span class="qm-card-name">' + esc(name) + '</span><span class="qm-card-val">' + esc(val) + '</span></div>' + svg + '</button>';
+}
+function qmLoadCardHtml(name) {
+  return '<div class="qm-card"><div class="qm-card-h"><span class="qm-card-name">' + esc(name) + '</span></div><div class="qm-card-load"><span class="spinner"></span>Loading</div></div>';
+}
+
+/* The Charts grid: every metric as a small-multiples card on one
+ * scrolling page; tap a card for the full chart. Standard metrics
+ * read the loaded statements; the special ones (segments, ratios,
+ * EPS-vs-estimates) fill in as their lazy loads land, and hide when
+ * a company doesn't have them. */
+function renderQmGrid() {
+  var grid = $('qm-grid');
+  if (!grid) return;
+  var d = qmData();
+  var groups = [];
+  function stdCards(ids) {
+    var out = [];
+    if (!d) return out;
+    ids.forEach(function (id) {
+      var M = QM_METRICS[id], pts = [];
+      d.periods.forEach(function (p, i) {
+        var v = M.get(d, i);
+        if (isNum(v)) pts.push({ label: qmShortQ(p), value: v });
+      });
+      if (pts.length) out.push(qmCardHtml(id, M.name, M.fmt(pts[pts.length - 1].value), qmMiniBarsSVG(pts), false));
+    });
+    return out;
+  }
+  groups.push(['Money', stdCards(['revenue', 'netIncome', 'eps', 'fcf'])]);
+  groups.push(['Margins', stdCards(['grossMargin', 'operMargin', 'netMargin'])]);
+  groups.push(['Shares', stdCards(['shares'])]);
+  groups.push(['Balance sheet', stdCards(['bsCash', 'bsDebt', 'bsNet'])]);
+  var valCards = [];
+  var ratios = qmEnsure('ratios', fetchRatiosByYear);
+  if (ratios === 'loading') { valCards.push(qmLoadCardHtml('P/E by year')); }
+  else if (ratios) {
+    [['peHist', 'pe', 'P/E by year'], ['psHist', 'ps', 'P/S by year']].forEach(function (cfg) {
+      var series = ratios[cfg[1]] || [];
+      if (!series.length) return;
+      var pts = series.map(function (p) { return { label: String(p.fy), value: p.v }; });
+      valCards.push(qmCardHtml(cfg[0], cfg[2], QM_METRICS[cfg[0]].fmt(series[series.length - 1].v), qmMiniBarsSVG(pts), false));
+    });
+  }
+  groups.push(['Valuation', valCards]);
+  var segCards = [];
+  var seg = qmEnsure('seg', fetchSegmentsApp);
+  if (seg === 'loading') { segCards.push(qmLoadCardHtml('Segments')); }
+  else if (seg && seg.ok) {
+    var yi = seg.years.length - 1;
+    if (seg.revenue && seg.total && seg.total.rev) segCards.push(qmCardHtml('segRev', 'Segment revenue', fmtMoneyShort(seg.total.rev[yi]), qmStackedSVG(seg, 'rev', true), true));
+    if (seg.profit && seg.total && seg.total.op) segCards.push(qmCardHtml('segOp', 'Segment operating profit', fmtMoneyShort(seg.total.op[yi]), qmStackedSVG(seg, 'op', true), true));
+  }
+  groups.push(['Segments', segCards]);
+  var estCards = [];
+  var mb = qmEnsure('mb', fetchMbPairs);
+  if (mb === 'loading') { estCards.push(qmLoadCardHtml('EPS vs estimates')); }
+  else if (mb && mb.length) {
+    estCards.push(qmCardHtml('avEps', 'EPS vs estimates', '$' + fmtNum(mb[mb.length - 1].act, 2), qmPairsSVG(mb, true), true));
+  }
+  groups.push(['Estimates', estCards]);
+  var html = '';
+  groups.forEach(function (g) {
+    if (!g[1].length) return;
+    html += '<div class="qm-grid-group">' + g[0] + '</div>' + g[1].join('');
+  });
+  grid.innerHTML = html || '<div class="status err">No chart data for ' + esc(qmStore.ticker || '') + '.</div>';
+}
+
 function renderQm() {
+  var grid = $('qm-grid'), det = $('qm-detail');
+  if (qmMode === 'grid') {
+    if (grid) grid.hidden = false;
+    if (det) det.hidden = true;
+    renderQmGrid();
+    return;
+  }
+  if (grid) grid.hidden = true;
+  if (det) det.hidden = false;
+  renderQmDetail();
+}
+
+function renderQmDetail() {
   document.querySelectorAll('[data-qm]').forEach(function (b) {
     b.classList.toggle('on', b.getAttribute('data-qm') === qmMetric);
   });
@@ -3718,6 +3833,16 @@ function renderQm() {
   if (qmName && qmActive) qmName.textContent = qmActive.textContent;
   var M = QM_METRICS[qmMetric];
   var special = !!M.special;
+  var qmGridEl = $('qm-grid');
+  if (qmGridEl) qmGridEl.addEventListener('click', function (e) {
+    var card = e.target.closest ? e.target.closest('[data-qmopen]') : null;
+    if (!card) return;
+    qmMetric = card.getAttribute('data-qmopen');
+    qmMode = 'detail';
+    renderQm();
+  });
+  var qmBackEl = $('qm-back');
+  if (qmBackEl) qmBackEl.addEventListener('click', function () { qmMode = 'grid'; renderQm(); });
   document.querySelectorAll('[data-qmview]').forEach(function (b) {
     b.addEventListener('click', function () {
       qmView = b.getAttribute('data-qmview');
@@ -3830,7 +3955,7 @@ function qmNextYLabels(lastLabel, n) {
 async function loadQm() {
   var T = String(($('qm-ticker').value || '')).trim().toUpperCase();
   if (!T) return;
-  if (qmStore.ticker !== T) qmStore = { ticker: T, q: null, y: null };
+  if (qmStore.ticker !== T) { qmStore = { ticker: T, q: null, y: null }; qmMode = 'grid'; }
   var st = $('qm-status');
   var yearly = qmFreq === 'y';
   try {
