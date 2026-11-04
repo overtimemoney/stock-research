@@ -401,6 +401,7 @@ table.factors.scen.micro td, table.factors.scen.micro th { padding: 7px 3px; }
   font-weight: 800; font-size: 13.5px; padding: 8px 0; border-radius: 9px;
 }
 .seg button.active { background: var(--gold-grad); color: #141414; }
+.seg button[disabled] { opacity: .38; pointer-events: none; }
 #backup-text { width: 100%; box-sizing: border-box; margin-top: 8px; font-size: 12px; }
 .settings-menu .status { margin: 6px 0 0; min-height: 0; }
 .settings-menu .status:empty { display: none; }
@@ -591,6 +592,11 @@ table.factors.scen.micro td, table.factors.scen.micro th { padding: 7px 3px; }
 .qm-picker-btn[aria-expanded="true"] .qm-chev { transform: rotate(180deg); }
 .qm-picker-list { border: 1px solid var(--line); border-radius: 12px; padding: 6px; margin: 0 0 12px; }
 .qm-group { font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 8px 10px 4px; }
+.qm-legend { margin-top: 10px; display: flex; flex-direction: column; gap: 5px; }
+.qm-leg-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.qm-dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.qm-leg-name { color: var(--ink); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qm-leg-val { color: var(--muted); margin-left: auto; font-weight: 700; white-space: nowrap; }
 .qm-opt { display: flex; justify-content: space-between; align-items: center; width: 100%; background: none; border: 0; color: var(--ink); padding: 10px; font: inherit; font-size: 14.5px; font-weight: 700; cursor: pointer; border-radius: 8px; text-align: left; }
 .qm-opt.on { color: var(--gold); }
 .qm-opt.on::after { content: '\2713'; font-weight: 800; }

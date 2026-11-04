@@ -119,6 +119,25 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
           <button type="button" data-qm="netMargin" class="qm-opt">Net margin</button>
           <div class="qm-group">Shares</div>
           <button type="button" data-qm="shares" class="qm-opt">Shares outstanding</button>
+          <div class="qm-group">Balance sheet</div>
+          <button type="button" data-qm="bsCash" class="qm-opt">Cash &amp; investments</button>
+          <button type="button" data-qm="bsDebt" class="qm-opt">Total debt</button>
+          <button type="button" data-qm="bsNet" class="qm-opt">Net cash (debt)</button>
+          <div class="qm-group">Valuation</div>
+          <button type="button" data-qm="peHist" class="qm-opt">P/E by year</button>
+          <button type="button" data-qm="psHist" class="qm-opt">P/S by year</button>
+          <div class="qm-group">Segments</div>
+          <button type="button" data-qm="segRev" class="qm-opt">Segment revenue</button>
+          <button type="button" data-qm="segOp" class="qm-opt">Segment operating profit</button>
+          <div class="qm-group">Estimates</div>
+          <button type="button" data-qm="avEps" class="qm-opt">EPS vs estimates</button>
+        </div>
+        <div style="margin:12px 0">
+          <div class="seg" role="group" aria-label="Chart view">
+            <button type="button" data-qmview="values" class="active">Values</button>
+            <button type="button" data-qmview="growth">Growth</button>
+            <button type="button" data-qmview="csize">% of revenue</button>
+          </div>
         </div>
         <div id="qm-chart"></div>
         <p class="fineprint" id="qm-note"></p>
