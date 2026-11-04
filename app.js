@@ -3814,6 +3814,10 @@ function renderQmGrid() {
 
 function renderQm() {
   var grid = $('qm-grid'), det = $('qm-detail');
+  document.querySelectorAll('[data-qmfreq]').forEach(function (b) {
+    b.classList.toggle('active', b.getAttribute('data-qmfreq') === qmFreq);
+    if (qmMode === 'grid') b.disabled = false;
+  });
   if (qmMode === 'grid') {
     if (grid) grid.hidden = false;
     if (det) det.hidden = true;
@@ -3833,22 +3837,6 @@ function renderQmDetail() {
   if (qmName && qmActive) qmName.textContent = qmActive.textContent;
   var M = QM_METRICS[qmMetric];
   var special = !!M.special;
-  var qmGridEl = $('qm-grid');
-  if (qmGridEl) qmGridEl.addEventListener('click', function (e) {
-    var card = e.target.closest ? e.target.closest('[data-qmopen]') : null;
-    if (!card) return;
-    qmMetric = card.getAttribute('data-qmopen');
-    qmMode = 'detail';
-    renderQm();
-  });
-  var qmBackEl = $('qm-back');
-  if (qmBackEl) qmBackEl.addEventListener('click', function () { qmMode = 'grid'; renderQm(); });
-  document.querySelectorAll('[data-qmview]').forEach(function (b) {
-    b.addEventListener('click', function () {
-      qmView = b.getAttribute('data-qmview');
-      renderQm();
-    });
-  });
   document.querySelectorAll('[data-qmfreq]').forEach(function (b) {
     b.classList.toggle('active', b.getAttribute('data-qmfreq') === qmFreq);
     b.disabled = special;
@@ -7200,6 +7188,22 @@ function initApp() {
       if (qmStore.ticker) loadQm();
     });
   });
+  document.querySelectorAll('[data-qmview]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      qmView = b.getAttribute('data-qmview');
+      renderQm();
+    });
+  });
+  var qmGridEl = $('qm-grid');
+  if (qmGridEl) qmGridEl.addEventListener('click', function (e) {
+    var card = e.target && e.target.closest ? e.target.closest('[data-qmopen]') : null;
+    if (!card) return;
+    qmMetric = card.getAttribute('data-qmopen');
+    qmMode = 'detail';
+    renderQm();
+  });
+  var qmBackEl = $('qm-back');
+  if (qmBackEl) qmBackEl.addEventListener('click', function () { qmMode = 'grid'; renderQm(); });
   $('wl-form').addEventListener('submit', function (e) {
     e.preventDefault();
     var t = $('wl-ticker').value, target = parseFloat($('wl-target').value);

@@ -594,7 +594,7 @@ table.factors.scen.micro td, table.factors.scen.micro th { padding: 7px 3px; }
 .qm-group { font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 8px 10px 4px; }
 /* Chart grid: the Charts tool's home view — every metric as a small
  * multiples card, tap to open the full chart. */
-.qm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+#qm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .qm-grid-group { grid-column: 1 / -1; font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 6px 2px 0; }
 .qm-card { background: var(--field); border: 1.5px solid var(--line); border-radius: 14px; padding: 10px 10px 6px; text-align: left; cursor: pointer; font: inherit; color: var(--ink); width: 100%; }
 .qm-card.wide { grid-column: 1 / -1; }
