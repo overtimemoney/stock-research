@@ -3425,7 +3425,7 @@ function qmBarsSVG(pts, fmt) {
 }
 
 var QM_METRICS = {
-  revenue: { name: 'Revenue', kind: 'money', csize: true, fmt: fmtMoneyShort, get: function (d, i) { return d.revenue && d.revenue[i]; } },
+  revenue: { name: 'Revenue', kind: 'money', fmt: fmtMoneyShort, get: function (d, i) { return d.revenue && d.revenue[i]; } },
   netIncome: { name: 'Net income', kind: 'money', csize: true, fmt: fmtMoneyShort, get: function (d, i) { return d.netIncome && d.netIncome[i]; } },
   eps: { name: 'EPS (diluted)', kind: 'eps', fmt: function (v) { return '$' + fmtNum(v, 2); }, get: function (d, i) { return d.eps && d.eps[i]; } },
   fcf: { name: 'Free cash flow', kind: 'money', csize: true, fmt: fmtMoneyShort, get: function (d, i) { return d.fcf && d.fcf[i]; } },
@@ -3728,7 +3728,8 @@ function renderQm() {
     b.classList.toggle('active', b.getAttribute('data-qmfreq') === qmFreq);
     b.disabled = special;
   });
-  var view = (qmView === 'csize' && !M.csize) ? 'values' : qmView;
+  if (qmView === 'csize' && !M.csize) qmView = 'values';
+  var view = qmView;
   document.querySelectorAll('[data-qmview]').forEach(function (b) {
     var v = b.getAttribute('data-qmview');
     b.classList.toggle('active', v === view && !special);
