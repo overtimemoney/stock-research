@@ -3761,7 +3761,22 @@ var qmWiringDone = false;
 function ensureQmWiring() {
   if (qmWiringDone) return;
   qmWiringDone = true;
-  ensureQmWiring();
+  document.querySelectorAll('[data-qmview]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      qmView = b.getAttribute('data-qmview');
+      renderQm();
+    });
+  });
+  var qmGridEl = $('qm-grid');
+  if (qmGridEl) qmGridEl.addEventListener('click', function (e) {
+    var card = e.target && e.target.closest ? e.target.closest('[data-qmopen]') : null;
+    if (!card) return;
+    qmMetric = card.getAttribute('data-qmopen');
+    qmMode = 'detail';
+    renderQm();
+  });
+  var qmBackEl = $('qm-back');
+  if (qmBackEl) qmBackEl.addEventListener('click', function () { qmMode = 'grid'; renderQm(); });
 }
 
 function renderQmGrid() {
