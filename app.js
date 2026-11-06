@@ -2550,8 +2550,11 @@ function renderScorecard(d) {
 }
 
 async function runSearch(ticker, fresh) {
-  var T = String(ticker || '').trim().toUpperCase();
+  var rawQ = String(ticker || '').trim();
+  if (!rawQ) return;
+  var T = await resolveTickerInput(rawQ);
   if (!T) return;
+  if (T !== rawQ.toUpperCase()) { var siEl = $('search-input'); if (siEl) siEl.value = T; }
   scRange = '1y';
   var status = $('score-status');
   status.className = 'status';
@@ -3016,7 +3019,9 @@ function pjSetLoadedStatusParts(head, bits) {
   pjRenderLoadedStatus();
 }
 async function loadProjectionTicker() {
-  var T = ($('pj-ticker').value || '').trim().toUpperCase();
+  var rawQ = ($('pj-ticker').value || '').trim();
+  var T = await resolveTickerInput(rawQ);
+  if (T && T !== rawQ.toUpperCase()) $('pj-ticker').value = T;
   var status = $('pj-status');
   if (!T) { status.className = 'status err'; status.textContent = 'Type a ticker first.'; return; }
   status.className = 'status';
@@ -3453,6 +3458,7 @@ var QM_METRICS = {
 var SEGMENTS_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/segments';
 var qmView = 'values';
 var qmMode = 'grid';
+var qmPrevMode = 'grid';
 
 async function fetchSegmentsApp(T) {
   var cache = lsGet('sr_seg_v1', {});
@@ -3777,6 +3783,12 @@ function ensureQmWiring() {
   });
   var qmBackEl = $('qm-back');
   if (qmBackEl) qmBackEl.addEventListener('click', function () { qmMode = 'grid'; renderQm(); });
+  var qmCloseEl = $('qm-close');
+  if (qmCloseEl) qmCloseEl.addEventListener('click', function () { qmMode = 'grid'; renderQm(); });
+  var qmOvEl = $('qm-overlay');
+  if (qmOvEl) qmOvEl.addEventListener('click', function (e) {
+    if (e.target === qmOvEl) { qmMode = 'grid'; renderQm(); }
+  });
 }
 
 function renderQmGrid() {
@@ -3839,19 +3851,25 @@ function renderQmGrid() {
 }
 
 function renderQm() {
-  var grid = $('qm-grid'), det = $('qm-detail');
+  var ov = $('qm-overlay'), det = $('qm-detail');
   document.querySelectorAll('[data-qmfreq]').forEach(function (b) {
     b.classList.toggle('active', b.getAttribute('data-qmfreq') === qmFreq);
     if (qmMode === 'grid') b.disabled = false;
   });
   if (qmMode === 'grid') {
-    if (grid) grid.hidden = false;
-    if (det) det.hidden = true;
+    if (ov) ov.hidden = true;
+    document.body.classList.remove('qm-lock');
+    qmPrevMode = 'grid';
     renderQmGrid();
     return;
   }
-  if (grid) grid.hidden = true;
-  if (det) det.hidden = false;
+  /* Detail opens as a popup sheet over the grid (the grid stays
+   * rendered underneath), so the chart appears where the user is
+   * instead of swapping the page under their scroll position. */
+  if (ov) ov.hidden = false;
+  document.body.classList.add('qm-lock');
+  if (det && qmPrevMode !== 'detail') det.scrollTop = 0;
+  qmPrevMode = 'detail';
   renderQmDetail();
 }
 
@@ -3967,15 +3985,19 @@ function qmNextYLabels(lastLabel, n) {
 }
 
 async function loadQm() {
-  var T = String(($('qm-ticker').value || '')).trim().toUpperCase();
+  var rawQ = String(($('qm-ticker').value || '')).trim();
+  if (!rawQ) return;
+  var T = await resolveTickerInput(rawQ);
   if (!T) return;
+  if (T !== rawQ.toUpperCase()) $('qm-ticker').value = T;
   if (qmStore.ticker !== T) { qmStore = { ticker: T, q: null, y: null }; qmMode = 'grid'; }
   var st = $('qm-status');
   var yearly = qmFreq === 'y';
   try {
     if (!qmStore[qmFreq]) {
       st.innerHTML = '<span class="spinner"></span>Loading ' + (yearly ? 'annual' : 'quarterly') + ' statements for ' + esc(T) + '\u2026';
-      qmStore[qmFreq] = await fetchQMetrics(T, qmFreq);
+      qmStore[qmFreq] = await withTimeout(fetchQMetrics(T, qmFreq), 45000,
+        'Loading timed out for ' + T + ' — check the name or ticker and try again.');
     }
     var d = qmData();
     st.textContent = d.ticker + ' \u00b7 last ' + d.periods.length + ' reported ' + (yearly ? 'years' : 'quarters');
@@ -6920,6 +6942,47 @@ async function tickerSuggestions(q) {
   } catch (e) {}
   return [];
 }
+/* Resolve free text to a ticker (2026-11-05, Justin's ask): typing a
+ * company NAME ("Micron") used to be treated as a ticker symbol, and
+ * the load spun forever on an empty result. Now the same suggestions
+ * behind the dropdown decide: an exact symbol match wins; otherwise
+ * the dropdown's top pick is used automatically. Ticker-shaped input
+ * already known locally (the loaded stock, watchlist, portfolio)
+ * skips the lookup, and any lookup failure falls back to the raw
+ * text, exactly as before. */
+function looksKnownTicker(T) {
+  if (!/^[A-Z]{1,5}([.\-][A-Z])?$/.test(T)) return false;
+  try {
+    if (typeof lastStock !== 'undefined' && lastStock && lastStock.ticker === T) return true;
+    if (getWatchlist().some(function (w) { return w.ticker === T; })) return true;
+    if (getPortfolio().some(function (p) { return p.ticker === T; })) return true;
+  } catch (e) {}
+  return false;
+}
+
+async function resolveTickerInput(raw) {
+  var q = String(raw || '').trim();
+  if (!q) return '';
+  var up = q.toUpperCase();
+  if (looksKnownTicker(up)) return up;
+  var items = [];
+  try { items = await tickerSuggestions(q); } catch (e) {}
+  if (items && items.length) {
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].symbol && items[i].symbol.toUpperCase() === up) return items[i].symbol.toUpperCase();
+    }
+    if (items[0].symbol) return items[0].symbol.toUpperCase();
+  }
+  return up;
+}
+
+/* Bound a promise so no load can spin forever on a hung route. */
+function withTimeout(p, ms, msg) {
+  return Promise.race([p, new Promise(function (_, rej) {
+    setTimeout(function () { rej(new Error(msg)); }, ms);
+  })]);
+}
+
 function attachAutocomplete(input, onPick) {
   if (!input) return;
   var list = document.createElement('div');
@@ -7215,10 +7278,12 @@ function initApp() {
     });
   });
   ensureQmWiring();
-  $('wl-form').addEventListener('submit', function (e) {
+  $('wl-form').addEventListener('submit', async function (e) {
     e.preventDefault();
     var t = $('wl-ticker').value, target = parseFloat($('wl-target').value);
     if (!t.trim()) return;
+    t = await resolveTickerInput(t);
+    if (!t) return;
     addToWatchlist(t, isNum(target) ? target : null);
     $('wl-ticker').value = ''; $('wl-target').value = '';
   });
