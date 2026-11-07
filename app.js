@@ -1396,6 +1396,37 @@ async function cycLoadTtmGrowth(T) {
   } catch (e) { return null; }
 }
 
+/* Fresh EPS growth outlook for a scan finalist (2026-11-07, Justin's
+ * ask after the Allstate miss): the same Nasdaq consensus FY pair the
+ * scorecard uses (next fiscal year vs this fiscal year). The morning
+ * re-rank re-scores the stored dataset, whose screener growth figure
+ * can be days old; an earnings print in between flips it (Allstate's
+ * went from strongly positive to -24% after its Nov 4 report), and
+ * because the figure feeds BOTH scores (15 pts of Value, 20 pts of
+ * Risk), one stale input swung its list score by 18 points. Day-
+ * cached in the same sr_cyc_v1 entry as the TTM growth. */
+async function cycLoadGrowthOutlook(T) {
+  var all0 = lsGet(CYC_KEY, {});
+  var hit = all0 && all0[T];
+  if (hit && hit.epsNDay === new Date().toDateString() && isNum(hit.epsN)) return hit.epsN;
+  try {
+    var fc = await relayJSON('https://api.nasdaq.com/api/analyst/' + encodeURIComponent(T) + '/earnings-forecast?assetclass=stocks');
+    var rows = ((fc && fc.data && fc.data.yearlyForecast && fc.data.yearlyForecast.rows) || [])
+      .map(function (r) {
+        return typeof r.consensusEPSForecast === 'number' ? r.consensusEPSForecast : parseNum(r.consensusEPSForecast);
+      }).filter(function (v) { return isNum(v); });
+    if (rows.length < 2 || !(rows[0] > 0)) return null;
+    var g = (rows[1] / rows[0] - 1) * 100;
+    var all = lsGet(CYC_KEY, {});
+    var cur = all[T] || { day: new Date().toDateString() };
+    cur.epsN = g;
+    cur.epsNDay = new Date().toDateString();
+    all[T] = cur;
+    lsSet(CYC_KEY, all);
+    return g;
+  } catch (e) { return null; }
+}
+
 function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 
 /* Cyclical severity overlay (Justin's spec, 2026-11-01): how
@@ -4599,7 +4630,9 @@ async function scanEnrichTop(fullByIx) {
         await Promise.all(top.slice(i, i + 4).map(async function (entry) {
           var data = await cycLoadYearly(entry.t);
           var g = await cycLoadTtmGrowth(entry.t);
+          var nY = await cycLoadGrowthOutlook(entry.t);
           if (isNum(g)) entry.rec.epsGrowthTTM = g;
+          if (isNum(nY)) entry.rec.epsGrowthNextY = nY;
           if (data) {
             entry.rec.yearly = data.yearly;
             if (data.revPath) entry.rec.revPath = data.revPath;
@@ -4609,7 +4642,7 @@ async function scanEnrichTop(fullByIx) {
               entry.sev = rk.cyc ? rk.cyc.severity : 0;
             }
             entry.full = true;
-            if (!isNum(g)) entry.partial = true; // yearly loaded, TTM basis unverified
+            if (!isNum(g) || !isNum(nY)) entry.partial = true; // yearly loaded, growth basis unverified
           } else {
             entry.partial = true;
           }
