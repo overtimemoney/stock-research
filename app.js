@@ -2235,7 +2235,7 @@ function pxRightLabel(d, win, slice) {
   return pxDateLabel(win.end, spanDays) + (near ? ' \u00b7 ' + fmtNum(near.c) : '');
 }
 function pxChartSVG(d, win, slice) {
-  var W = 640, H = 264, padT = 16, padB = 20, padX = 6;
+  var W = 640, H = 343, padT = 16, padB = 20, padX = 6; // 30% taller (2026-11-07: 264 -> 343)
   var pts = slice.pts;
   var max = -Infinity, min = Infinity;
   pts.forEach(function (p) { if (p.c > max) max = p.c; if (p.c < min) min = p.c; });
@@ -2343,7 +2343,7 @@ function bindPriceChart(d) {
   var labL = svg.querySelector('.px-lab-l'), labR = svg.querySelector('.px-lab-r');
   var hiG = svg.querySelector('.px-hi52'), hiLine = svg.querySelector('.px-hi-line'), hiLab = svg.querySelector('.px-hi-lab');
   var line = grp.querySelector('.px-scrub-line'), dot = grp.querySelector('.px-scrub-dot'), halo = grp.querySelector('.px-scrub-halo');
-  var W = 640, H = 264, padT = 16, padB = 20, padX = 6;
+  var W = 640, H = 343, padT = 16, padB = 20, padX = 6; // 30% taller (2026-11-07: 264 -> 343)
   var HINT = 'Drag to scrub \u00b7 pinch to zoom the time range.';
   var slice = pxSlice(d, scWin);
   if (!slice) return;
