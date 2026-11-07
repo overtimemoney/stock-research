@@ -839,12 +839,6 @@ table.factors tr.math-row td { border-bottom: 1px solid var(--row-line); padding
 .math-box { background: var(--field); border-radius: 10px; padding: 9px 11px; font-size: 12.5px; line-height: 1.55; }
 .banner-math { margin: 10px 0 4px; }
 
-/* Every screen check labeled pass/miss under the title */
-.screen-labels { flex: 1 1 100%; font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none; line-height: 1.55; }
-.slab.pass { color: #57c785; }
-.slab.fail { color: #ff7a6e; }
-.slab.unk { color: var(--muted); }
-.slab-dot { color: var(--muted); }
 
 /* Projection headline: one big glanceable line under the cases table */
 .pj-headline { text-align: center; font-size: 25px; font-weight: 800; letter-spacing: .01em; margin: 16px 0 4px; overflow-wrap: anywhere; }
