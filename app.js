@@ -554,7 +554,7 @@ async function fetchStock(ticker, opts) {
      * pass over the article body. Co-CEO pages ("A & B") have no
      * single person to look up, so their names stand alone. */
     var gatherFacts = async function () {
-      var facts = { since: null, founder: false, bio: '' };
+      var facts = { since: null, founder: false, bio: '', prevRole: null, prevGrowth: null };
       if (name.indexOf(' & ') !== -1) return facts;
       var queries = ceoWikiQueries(name, d.companyName || T);
       var pickedPage = null;
@@ -571,32 +571,43 @@ async function fetchStock(ticker, opts) {
         var wd = await ceoSinceFromWikidata(d.companyName || T, name);
         if (wd) facts.since = wd;
       }
-      /* Deep pass: some leads never date the tenure while the article
-       * body does (and founder facts can live only in the body too).
-       * Strict patterns only — every one is anchored to the CEO
-       * role — over the article's first chunk. A pre-IPO start year
-       * is fine: the start-bar label falls back to the first traded
-       * month. */
-      if (!facts.since && pickedPage && pickedPage.title) {
+      /* The article body serves two hunts: the strict tenure pass
+       * (only when the lead gave no date — some leads never date the
+       * tenure while the body does; strict patterns only, every one
+       * anchored to the CEO role) and the previous-experience
+       * extraction, whose facts live in the career sections further
+       * down. A pre-IPO start year is fine: the start-bar label
+       * falls back to the first traded month. */
+      var bodyExtract = '';
+      if (pickedPage && pickedPage.title) {
         try {
-          var burl = 'https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&explaintext=1&exchars=6000&redirects=1&titles=' + encodeURIComponent(pickedPage.title);
+          /* No exchars: with it set, this API returns the intro
+           * only (verified live 2026-11-07 — the old exchars=6000
+           * deep pass was silently re-reading the lead). Fetch the
+           * full article and trim here instead. */
+          var burl = 'https://en.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&explaintext=1&redirects=1&titles=' + encodeURIComponent(pickedPage.title);
           var bj = await relayFetch(burl, { timeout: 25000, validate: function (t) { return t.indexOf('"extract"') !== -1; } });
           var bpages = ((JSON.parse(bj).query || {}).pages) || {};
-          var bextract = '';
-          Object.keys(bpages).forEach(function (k) { if (bpages[k].extract) bextract = bpages[k].extract; });
-          if (bextract) {
-            var bodyClean = ceoCleanLead(bextract);
+          Object.keys(bpages).forEach(function (k) { if (bpages[k].extract) bodyExtract = bpages[k].extract.slice(0, 12000); });
+          if (bodyExtract && !facts.since) {
+            var bodyClean = ceoCleanLead(bodyExtract);
             var bs = ceoSinceFrom(bodyClean, true);
             if (bs) facts.since = bs;
             else if (foundedYear && ceoBodyFounder(bodyClean, name)) { facts.founder = true; facts.since = { y: foundedYear, m: null }; }
           }
         } catch (e) { d.errors.push('CEO deep: ' + e.message); }
       }
+      var prevText = bodyExtract || (pickedPage && pickedPage.extract) || '';
+      if (prevText) {
+        var pv = await ceoPrevFor(name, d.companyName || T, prevText);
+        if (pv) { facts.prevRole = pv.pr; facts.prevGrowth = pv.pg; }
+      }
       return facts;
     };
     var applyBundle = function (b) {
       d.ceoSince = b.since; d.ceoFounder = b.founder; d.ceoBio = b.bio;
       d.ceoStartClose = b.sc; d.ceoStartLabel = b.sl; d.ceoStartTs = b.st;
+      d.ceoPrevRole = b.pr; d.ceoPrevGrowth = b.pg;
     };
 
     var hit = ceoCacheGet(key);
@@ -612,9 +623,10 @@ async function fetchStock(ticker, opts) {
        * sources had not caught up) re-runs the hunt every few days,
        * so the performance line appears once the date is published
        * anywhere — no 30-day wait. */
-      if (!hit.since && Date.now() - (hit.ts || 0) > 3 * 86400000) {
+      if ((!hit.since || (hit.pr === undefined)) && Date.now() - (hit.ts || 0) > 3 * 86400000) {
         var facts2 = await gatherFacts();
         hit.ts = Date.now();
+        if (facts2.prevRole || facts2.prevGrowth) { hit.pr = facts2.prevRole; hit.pg = facts2.prevGrowth; }
         if (facts2.since) {
           hit.since = facts2.since; hit.founder = facts2.founder;
           if (facts2.bio) hit.bio = facts2.bio;
@@ -628,12 +640,12 @@ async function fetchStock(ticker, opts) {
     }
     var facts = await gatherFacts();
     var perf = facts.since ? await ceoPerfFor(T, facts.since) : null;
-    var bundle = { since: facts.since, founder: facts.founder, bio: facts.bio, sc: perf ? perf.sc : null, sl: perf ? perf.sl : '', st: perf ? perf.st : null, ts: Date.now() };
+    var bundle = { since: facts.since, founder: facts.founder, bio: facts.bio, sc: perf ? perf.sc : null, sl: perf ? perf.sl : '', st: perf ? perf.st : null, pr: facts.prevRole, pg: facts.prevGrowth, ts: Date.now() };
     applyBundle(bundle);
     /* Cache only a bundle that actually found something. Caching an
      * empty result (a failed lookup) used to stick for the whole
      * 30-day TTL — that is what kept NVDA's CEO block empty. */
-    if (bundle.since || bundle.bio || bundle.sc) ceoCacheSet(key, bundle);
+    if (bundle.since || bundle.bio || bundle.sc || bundle.pr) ceoCacheSet(key, bundle);
   } catch (e) { d.errors.push('CEO: ' + e.message); } };
 
   var srcSurprise = async function () { try {
@@ -1171,20 +1183,20 @@ async function ceoSinceFromWikidata(companyName, ceoName) {
 }
 function ceoCacheGet(key) {
   try {
-    var all = JSON.parse(localStorage.getItem('sr_ceo_v2') || '{}');
+    var all = JSON.parse(localStorage.getItem('sr_ceo_v3') || '{}');
     var e = all[key];
     /* An all-empty entry is a cached failure from the old build —
      * treat it as a miss so the lookup retries instead of waiting
      * out the TTL. */
-    if (e && (Date.now() - e.ts) < 30 * 864e5 && (e.since || e.bio || e.sc)) return e;
+    if (e && (Date.now() - e.ts) < 30 * 864e5 && (e.since || e.bio || e.sc || e.pr)) return e;
   } catch (err) {}
   return null;
 }
 function ceoCacheSet(key, e) {
   try {
-    var all = JSON.parse(localStorage.getItem('sr_ceo_v2') || '{}');
+    var all = JSON.parse(localStorage.getItem('sr_ceo_v3') || '{}');
     all[key] = e;
-    localStorage.setItem('sr_ceo_v2', JSON.stringify(all));
+    localStorage.setItem('sr_ceo_v3', JSON.stringify(all));
   } catch (err) {}
 }
 /* Latest-year revenue share per business segment, from the 10-K
@@ -1279,6 +1291,8 @@ function ceoInnerHtml(d) {
     }
     inner += '<p class="ceo-perf">Stock <span class="' + (pct >= 0 ? 'up' : 'down') + '">' + ptxt + '</span> since ' + esc(d.ceoStartLabel) + cagrTxt + '</p>';
   }
+  if (d.ceoPrevRole) inner += '<p class="ceo-prev">Previously \u00b7 ' + esc(d.ceoPrevRole) + '</p>';
+  if (d.ceoPrevGrowth) inner += '<p class="ceo-prev">Track record \u00b7 ' + esc(d.ceoPrevGrowth) + '</p>';
   return inner;
 }
 function ceoBlockHtml(d) {
@@ -2750,6 +2764,27 @@ function swotBox(letter, title, items, cls) {
  * the four lists. Saved on-device per ticker so it persists. */
 var AI_SWOT_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/swot';
 var BIZ_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/bizmodel';
+var CEOPREV_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/ceoprev';
+/* Previous-experience extraction lives in the Worker (grounded in
+ * the Wikipedia article text the CEO hunt already fetched; shared
+ * 30-day cache there). Returns {pr, pg} or null. */
+async function ceoPrevFor(name, company, extract) {
+  try {
+    var ctrl = ('AbortController' in window) ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 60000) : null;
+    var resp = await fetch(CEOPREV_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, company: company || '', extract: String(extract || '').slice(0, 12000) }),
+      signal: ctrl ? ctrl.signal : undefined
+    });
+    if (timer) clearTimeout(timer);
+    if (!resp.ok) return null;
+    var data = await resp.json();
+    if (data && (data.prevRole || data.prevGrowth)) return { pr: data.prevRole || null, pg: data.prevGrowth || null };
+  } catch (e) {}
+  return null;
+}
 var BIZ_KEY = 'sr_biz_v2';
 var SCAN_SHARED_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/scan';
 var AI_SWOT_CACHE_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/swot-cache';
