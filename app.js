@@ -4043,6 +4043,14 @@ function qmBarsSVG(pts, fmt) {
   // screenshot, 2026-10-31).
   var padB = min < 0 ? Math.ceil(vfs * 1.25) + 24 : 34;
   var zeroY = padT + (max / span) * (h - padT - padB);
+  /* "You are here" (Justin's ask, 2026-11-07): the current period
+   * gets an outline in the theme ink (white on dark, black on
+   * light). The current period is the first estimate bar when
+   * estimates are shown — that quarter/year is still in progress —
+   * and otherwise the latest reported bar. */
+  var nowI = -1;
+  pts.forEach(function (p, i) { if (nowI < 0 && p.kind === 'est') nowI = i; });
+  if (nowI < 0) nowI = pts.length - 1;
   var out = '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Metric chart">';
   out += '<line x1="' + padX + '" y1="' + zeroY + '" x2="' + (w - padX) + '" y2="' + zeroY + '" stroke="#3a372d" stroke-width="1"/>';
   pts.forEach(function (p, i) {
@@ -4055,11 +4063,13 @@ function qmBarsSVG(pts, fmt) {
     var fill = p.kind === 'est'
       ? 'fill:' + col + ';opacity:.45;filter:drop-shadow(0 0 4px ' + col + ')'
       : 'fill:' + col + ';filter:drop-shadow(0 0 6px ' + col + ')';
+    if (i === nowI) fill += ';stroke:var(--ink);stroke-width:2.5';
     out += '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bwid.toFixed(1) + '" height="' + Math.max(1.5, bot - top).toFixed(1) + '" rx="1.5" style="' + fill + '"/>';
     var ly = p.value >= 0 ? top - 8 : bot + vfs + 3;
     out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="middle" font-size="' + vfs + '" font-weight="800" style="fill:var(--chart-val)">' + esc(labs[i]) + '</text>';
     if (p.axis) {
-      out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#8a8271">' + esc(p.axis) + '</text>';
+      var nowAxis = i === nowI;
+      out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="12" font-weight="' + (nowAxis ? '800' : '700') + '" fill="' + (nowAxis ? 'var(--ink)' : '#8a8271') + '">' + esc(p.axis) + '</text>';
     }
   });
   return out + '</svg>';
@@ -4231,6 +4241,11 @@ function qmStackedSVG(data, key, mini) {
       }
       out += '<rect x="' + x.toFixed(1) + '" y="' + yTop.toFixed(1) + '" width="' + bwid.toFixed(1) + '" height="' + Math.max(1.5, yBot - yTop).toFixed(1) + '" rx="1.5" style="fill:' + segColor(sg, si) + '"/>';
     });
+    if (yi === years.length - 1 && (tops[yi].pos > 0 || tops[yi].neg < 0)) {
+      var oTop = zeroY - (tops[yi].pos / span) * (h - padT - padB);
+      var oBot = zeroY - (tops[yi].neg / span) * (h - padT - padB);
+      out += '<rect x="' + x.toFixed(1) + '" y="' + oTop.toFixed(1) + '" width="' + bwid.toFixed(1) + '" height="' + Math.max(1.5, oBot - oTop).toFixed(1) + '" rx="1.5" style="fill:none;stroke:var(--ink);stroke-width:2.5"/>';
+    }
     var tot = data.total && data.total[key] ? data.total[key][yi] : null;
     if (isNum(tot) && !mini) {
       out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (zeroY - (tops[yi].pos / span) * (h - padT - padB) - 8).toFixed(1) + '" text-anchor="middle" font-size="15" font-weight="800" style="fill:var(--chart-val)">' + esc(fmtMoneyShort(tot)) + '</text>';
@@ -4282,7 +4297,7 @@ function renderQmSegments(key) {
     return;
   }
   box.innerHTML = '<div class="chart-wrap">' + qmStackedSVG(data, key) + '</div>' + qmSegLegend(data, key);
-  note.textContent = 'Annual, as reported in the 10-K segment note (filed ' + data.filed + ') \u00b7 SEC EDGAR. Stacks sum to the reported total.';
+  note.textContent = 'Annual, as reported in the 10-K segment note (filed ' + data.filed + ') \u00b7 SEC EDGAR. Stacks sum to the reported total. The outlined column is the latest reported year.';
 }
 
 function qmPairsSVG(pairs, mini) {
@@ -4301,15 +4316,15 @@ function qmPairsSVG(pairs, mini) {
     var slotX = padX + i * bw;
     var bwPair = bw * 0.40;
     var ex = slotX + bw * 0.05, ax = ex + bwPair + bw * 0.05;
-    function bar(x, v, fill, bold) {
+    function bar(x, v, fill, bold, now) {
       var y = zeroY - (v / span) * (h - padT - padB);
       var top = Math.min(y, zeroY), bot = Math.max(y, zeroY);
-      var r = '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bwPair.toFixed(1) + '" height="' + Math.max(1.5, bot - top).toFixed(1) + '" rx="1.5" style="fill:' + fill + '"/>';
+      var r = '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bwPair.toFixed(1) + '" height="' + Math.max(1.5, bot - top).toFixed(1) + '" rx="1.5" style="fill:' + fill + (now ? ';stroke:var(--ink);stroke-width:2.5' : '') + '"/>';
       if (mini) return r;
       return r + '<text x="' + (x + bwPair / 2).toFixed(1) + '" y="' + (v >= 0 ? top - 6 : bot + lfs + 3).toFixed(1) + '" text-anchor="middle" font-size="' + lfs + '" font-weight="' + (bold ? '800' : '600') + '" fill="' + (bold ? 'var(--chart-val)' : '#8a8271') + '">$' + fmtNum(v, 2) + '</text>';
     }
-    out += bar(ex, p.est, '#5a5546', false);
-    out += bar(ax, p.act, p.act >= p.est ? 'var(--neon-up)' : 'var(--neon-dn)', true);
+    out += bar(ex, p.est, '#5a5546', false, false);
+    out += bar(ax, p.act, p.act >= p.est ? 'var(--neon-up)' : 'var(--neon-dn)', true, i === pairs.length - 1);
     if (!mini || i === 0 || i === pairs.length - 1) {
       out += '<text x="' + (slotX + bw / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#8a8271">' + esc(qmShortQ(p.label)) + '</text>';
     }
@@ -4336,7 +4351,7 @@ function renderQmAv() {
     '<div class="qm-leg-row"><span class="qm-dot" style="background:#5a5546"></span><span class="qm-leg-name">Consensus estimate</span></div>' +
     '<div class="qm-leg-row"><span class="qm-dot" style="background:var(--neon-up)"></span><span class="qm-leg-name">Reported EPS</span></div>' +
     '</div>';
-  note.textContent = 'Reported EPS vs the consensus estimate for each quarter (MarketBeat) \u00b7 beat the estimate in ' + beats + ' of the last ' + data.length + ' quarters.';
+  note.textContent = 'Reported EPS vs the consensus estimate for each quarter (MarketBeat) \u00b7 beat the estimate in ' + beats + ' of the last ' + data.length + ' quarters. The outlined bar is the most recent quarter.';
 }
 
 function renderQmRatios(key) {
@@ -4355,7 +4370,7 @@ function renderQmRatios(key) {
   }
   var pts = series.map(function (p) { return { label: 'FY ' + p.fy, value: p.v, kind: 'actual', axis: String(p.fy) }; });
   box.innerHTML = '<div class="chart-wrap">' + qmBarsSVG(pts, QM_METRICS[key === 'pe' ? 'peHist' : 'psHist'].fmt) + '</div>';
-  note.textContent = (key === 'pe' ? 'Price / earnings' : 'Price / sales') + ' at each fiscal year end (StockAnalysis ratios) \u00b7 the current multiple is on the scorecard.';
+  note.textContent = (key === 'pe' ? 'Price / earnings' : 'Price / sales') + ' at each fiscal year end (StockAnalysis ratios) \u00b7 the current multiple is on the scorecard. The outlined bar is the latest fiscal year.';
 }
 
 /* Mini bar chart for grid cards: shape only (the card header
@@ -4374,7 +4389,9 @@ function qmMiniBarsSVG(pts) {
     var y = zeroY - (p.value / span) * (h - padT - padB);
     var top = Math.min(y, zeroY), bot = Math.max(y, zeroY);
     var col = p.value >= 0 ? 'var(--neon-up)' : 'var(--neon-dn)';
-    out += '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bwid.toFixed(1) + '" height="' + Math.max(1.5, bot - top).toFixed(1) + '" rx="1.5" style="fill:' + col + ';opacity:.92"/>';
+    var msty = 'fill:' + col + ';opacity:.92';
+    if (i === pts.length - 1) msty += ';stroke:var(--ink);stroke-width:2.5';
+    out += '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bwid.toFixed(1) + '" height="' + Math.max(1.5, bot - top).toFixed(1) + '" rx="1.5" style="' + msty + '"/>';
   });
   if (pts.length) {
     out += '<text x="' + padX + '" y="' + (h - 5) + '" font-size="12" font-weight="700" fill="#8a8271">' + esc(pts[0].label) + '</text>';
@@ -4597,16 +4614,16 @@ function renderQmDetail() {
   var per = qmFreq === 'y' ? 'years' : 'quarters';
   var note = $('qm-note');
   if (view === 'growth') {
-    note.textContent = 'Year-over-year change for each reported ' + (qmFreq === 'y' ? 'year' : 'quarter') + (M.kind === 'pct' ? ', in percentage points for margins' : '') + ' \u00b7 SEC filings via StockAnalysis. Estimates are shown in the Values view.';
+    note.textContent = 'Year-over-year change for each reported ' + (qmFreq === 'y' ? 'year' : 'quarter') + (M.kind === 'pct' ? ', in percentage points for margins' : '') + ' \u00b7 SEC filings via StockAnalysis. Estimates are shown in the Values view. The outlined bar is the latest reported ' + (qmFreq === 'y' ? 'year' : 'quarter') + '.';
   } else if (view === 'csize') {
-    note.textContent = 'Each bar is the period\u2019s value as a % of that same period\u2019s revenue \u00b7 SEC filings via StockAnalysis. Estimates are shown in the Values view.';
+    note.textContent = 'Each bar is the period\u2019s value as a % of that same period\u2019s revenue \u00b7 SEC filings via StockAnalysis. Estimates are shown in the Values view. The outlined bar is the latest reported ' + (qmFreq === 'y' ? 'year' : 'quarter') + '.';
   } else {
     var hasEst = pts.some(function (p) { return p.kind === 'est'; });
     note.textContent = !hasEst
-      ? 'Reported ' + per + ' only \u2014 SEC filings via StockAnalysis. No free consensus is published for this metric in this view.'
+      ? 'Reported ' + per + ' only \u2014 SEC filings via StockAnalysis. No free consensus is published for this metric in this view. The outlined bar is the latest reported ' + (qmFreq === 'y' ? 'year' : 'quarter') + '.'
       : qmMetric === 'eps'
-        ? 'Solid bars: reported ' + per + ' (SEC filings via StockAnalysis). Faded bars: analyst consensus for the next few ' + per + ' (Nasdaq).'
-        : 'Solid bars: reported years (SEC filings via StockAnalysis). Faded bars: analyst consensus for the current fiscal year (StockAnalysis) \u2014 deeper years are paywalled there, so only EPS runs further out (via Nasdaq). Quarterly consensus is published only for EPS.';
+        ? 'Solid bars: reported ' + per + ' (SEC filings via StockAnalysis). Faded bars: analyst consensus for the next few ' + per + ' (Nasdaq). The outlined bar is the current ' + (qmFreq === 'y' ? 'fiscal year' : 'quarter') + ', still in progress.'
+        : 'Solid bars: reported years (SEC filings via StockAnalysis). Faded bars: analyst consensus for the current fiscal year (StockAnalysis) \u2014 deeper years are paywalled there, so only EPS runs further out (via Nasdaq). Quarterly consensus is published only for EPS. The outlined bar is the current fiscal year, still in progress.';
   }
 }
 
