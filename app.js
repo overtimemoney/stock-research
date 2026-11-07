@@ -2129,6 +2129,33 @@ function renderScChart(d) {
  * it would destroy the element holding the pointer capture. A full
  * re-render happens once, when the gesture ends, if a finer data
  * tier is needed. Double-tap resets to the 1-year default. */
+/* Haptic feedback for chart gestures. A web app cannot ring the
+ * Taptic Engine directly: Android honours navigator.vibrate, while
+ * on iOS the only web route is toggling a native switch control,
+ * which makes the system emit its selection tick — so a hidden
+ * switch input is kept around for that. Best-effort and
+ * rate-limited; unsupported platforms simply stay silent. */
+var _hapticSw = null, _hapticLast = 0;
+function hapticTick() {
+  var now = Date.now();
+  if (now - _hapticLast < 25) return;
+  _hapticLast = now;
+  try {
+    if (navigator.vibrate) { navigator.vibrate(8); return; }
+    if (typeof document === 'undefined' || !document.createElement || !document.body) return;
+    if (!_hapticSw) {
+      var sw = document.createElement('input');
+      sw.type = 'checkbox';
+      sw.setAttribute('switch', '');
+      sw.setAttribute('aria-hidden', 'true');
+      sw.tabIndex = -1;
+      sw.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;';
+      document.body.appendChild(sw);
+      _hapticSw = sw;
+    }
+    _hapticSw.click();
+  } catch (e) {}
+}
 function bindPriceChart(d) {
   var wrap = $('score-result');
   if (!wrap) return;
@@ -2150,6 +2177,7 @@ function bindPriceChart(d) {
   var mode = 'idle'; // 'scrub' | 'pinch'
   var pinch0 = null, downInfo = null, lastTap = 0, wheelTimer = null;
   var pinched = false; // a pinch happened during this touch sequence
+  var lastScrubTs = null, lastScrubTick = 0; // haptic ratchet state
 
   function geom(sl) {
     var max = -Infinity, min = Infinity;
@@ -2190,7 +2218,8 @@ function bindPriceChart(d) {
     var chg = first.c > 0 ? (last.c / first.c - 1) * 100 : 0;
     read.innerHTML = '<b class="pf-read-date">' + pxDateLabel(scWin.start, spanDays()) + ' \u2013 ' + pxDateLabel(scWin.end, spanDays()) + '</b> \u00b7 <b class="' + (chg >= 0 ? 'up' : 'down') + '">' + fmtPct(chg) + '</b> across the window';
   }
-  function finishGesture() {
+  function finishGesture(fromPinch) {
+    if (fromPinch) hapticTick(); // one settle tick when a pinch lands
     read.textContent = HINT;
     var want = pxDesiredTier(scWin.end - scWin.start);
     if (want.range && !pxTierSeries(d, want)) {
@@ -2209,6 +2238,13 @@ function bindPriceChart(d) {
     var best = null, bd = Infinity;
     slice.pts.forEach(function (p) { var dd = Math.abs(p.ts - tsAt); if (dd < bd) { bd = dd; best = p; } });
     if (!best) return;
+    /* Ratchet haptic: one light tick per new point under the finger,
+     * spaced out so a fast swipe rattles gently instead of buzzing. */
+    if (best.ts !== lastScrubTs) {
+      lastScrubTs = best.ts;
+      var stNow = Date.now();
+      if (stNow - lastScrubTick >= 45) { lastScrubTick = stNow; hapticTick(); }
+    }
     var g = geom(slice);
     var x = g.X(best.ts), y = g.Y(best.c);
     grp.style.display = '';
@@ -2232,6 +2268,7 @@ function bindPriceChart(d) {
     if (pointers.size === 1) {
       mode = 'scrub';
       downInfo = { t: Date.now(), x: e.clientX, moved: false };
+      lastScrubTs = null; // a fresh grab ticks on its first point
       scrubTo(e.clientX);
     } else if (pointers.size === 2) {
       mode = 'pinch';
@@ -2273,11 +2310,12 @@ function bindPriceChart(d) {
       /* finishGesture runs when the LAST finger lifts: lifting one
        * finger first drops into scrub mode, and the pinch's tier
        * fetch + readout reset must still happen at the end. */
-      if (pinched) { pinched = false; finishGesture(); }
+      if (pinched) { pinched = false; finishGesture(true); }
       else if (downInfo && !downInfo.moved && Date.now() - downInfo.t < 300) {
         var now = Date.now();
         if (now - lastTap < 320) {
           lastTap = 0;
+          hapticTick();
           scWin = pxDefaultWin(d);
           renderScChart(d);
           return;
@@ -2291,6 +2329,7 @@ function bindPriceChart(d) {
       mode = 'scrub';
       var p = Array.from(pointers.values())[0];
       downInfo = { t: Date.now(), x: p.clientX, moved: true };
+      lastScrubTs = null;
       scrubTo(p.clientX);
     }
   }
