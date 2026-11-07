@@ -255,6 +255,7 @@ table.factors td:first-child:has(.info-dot) { padding-right: 28px; }
 .biz-line { font-size: 14.5px; line-height: 1.45; color: var(--ink); margin: 2px 0 9px; }
 .biz-row { margin: 7px 0; }
 .biz-row-top { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; margin-bottom: 3px; }
+.biz-mgn { color: var(--muted); font-weight: 600; font-size: 12.5px; }
 .biz-bar { height: 5px; border-radius: 3px; background: var(--field); overflow: hidden; }
 .biz-bar > div { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #d9a92c, var(--gold)); }
 .fv-labs { position: relative; height: 17px; }

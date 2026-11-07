@@ -1182,7 +1182,21 @@ function segShares(seg) {
     var v = sg.rev ? sg.rev[li] : null;
     if (!isNum(v) || v <= 0) return;
     var pct = v / total * 100;
-    if (pct >= 2) rows.push({ name: sg.name, pct: pct });
+    if (pct < 2) return;
+    var row = { name: sg.name, pct: pct };
+    /* Depth from the same filings (2026-11-07): the segment's own
+     * profit margin where the 10-K splits profit, and how its share
+     * of revenue has shifted vs ~3 years earlier. */
+    var op = sg.op ? sg.op[li] : null;
+    if (isNum(op)) row.margin = op / v * 100;
+    var ei = li >= 3 ? li - 3 : 0;
+    var totPrev = seg.total && seg.total.rev ? seg.total.rev[ei] : null;
+    var vPrev = sg.rev ? sg.rev[ei] : null;
+    if (ei !== li && isNum(totPrev) && totPrev > 0 && isNum(vPrev)) {
+      var pctPrev = vPrev / totPrev * 100;
+      if (Math.abs(pct - pctPrev) >= 3) { row.pctPrev = pctPrev; row.yearPrev = seg.years[ei]; }
+    }
+    rows.push(row);
   });
   rows.sort(function (a, b) { return b.pct - a.pct; });
   rows = rows.slice(0, 5);
@@ -1205,9 +1219,15 @@ function bizInnerHtml(d) {
   if (d.bizLine) inner += '<p class="biz-line">' + esc(d.bizLine) + '</p>';
   if (segs.length >= 2) {
     inner += segs.map(function (sg) {
-      return '<div class="biz-row"><div class="biz-row-top"><span>' + esc(sg.name) + '</span><span class="gold-text">' + fmtNum(sg.pct, 0) + '%</span></div>' +
+      var mgn = (isNum(sg.margin) && sg.margin >= -50 && sg.margin <= 100)
+        ? '<span class="biz-mgn"> \u00b7 ' + fmtNum(sg.margin, 0) + '% margin</span>' : '';
+      return '<div class="biz-row"><div class="biz-row-top"><span>' + esc(sg.name) + '</span><span><span class="gold-text">' + fmtNum(sg.pct, 0) + '%</span>' + mgn + '</span></div>' +
         '<div class="biz-bar"><div style="width:' + Math.max(2, Math.min(100, sg.pct)).toFixed(0) + '%"></div></div></div>';
     }).join('');
+    var top = segs[0];
+    if (top && isNum(top.pctPrev)) {
+      inner += '<p class="fineprint">' + esc(top.name) + ' was ' + fmtNum(top.pctPrev, 0) + '% of revenue in ' + top.yearPrev + ' \u2014 now ' + fmtNum(top.pct, 0) + '%.</p>';
+    }
     inner += '<p class="fineprint">Share of revenue, latest fiscal year (company filings).</p>';
   }
   if (d.bizLine) inner += '<p class="fineprint">Plain-English summary written from the company\u2019s public description and filings.</p>';
@@ -2711,7 +2731,7 @@ function swotBox(letter, title, items, cls) {
  * the four lists. Saved on-device per ticker so it persists. */
 var AI_SWOT_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/swot';
 var BIZ_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/bizmodel';
-var BIZ_KEY = 'sr_biz_v1';
+var BIZ_KEY = 'sr_biz_v2';
 var SCAN_SHARED_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/scan';
 var AI_SWOT_CACHE_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/swot-cache';
 var AI_SWOT_KEY = 'sr_aiswot_v1';
