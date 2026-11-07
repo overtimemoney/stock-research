@@ -436,6 +436,38 @@ async function fetchStock(ticker, opts) {
   // --- StockAnalysis annual statements: yearly EPS + margins for
   // --- the cyclical severity overlay (day-cached via cycLoadYearly,
   // --- shared with the scan enrichment and the watchlist).
+  /* --- Business model: 10-K segment revenue split + the Worker's
+   * plain-English one-liner (shared KV cache there, 7-day local
+   * cache here). --- */
+  var srcBiz = async function () { try {
+    var seg = await fetchSegmentsApp(T);
+    if (seg) d.bizSegs = segShares(seg);
+    var cache = lsGet(BIZ_KEY, {});
+    var hit = cache[T];
+    if (hit && hit.line && (Date.now() - hit.ts) < 7 * 864e5) { d.bizLine = hit.line; return; }
+    var ctrl = ('AbortController' in window) ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 60000) : null;
+    var resp = await fetch(BIZ_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ticker: T,
+        name: d.companyName || T,
+        industry: d.industry || '',
+        about: d.about || '',
+        segments: (d.bizSegs || []).map(function (sg) { return { name: sg.name, pct: sg.pct }; })
+      }),
+      signal: ctrl ? ctrl.signal : undefined
+    });
+    if (timer) clearTimeout(timer);
+    var data = await resp.json();
+    if (resp.ok && data && data.line) {
+      d.bizLine = data.line;
+      cache[T] = { line: data.line, ts: Date.now() };
+      lsSet(BIZ_KEY, cache);
+    }
+  } catch (e) { d.errors.push('Biz: ' + e.message); } };
+
   var srcYearly = async function () { try {
     var cycData = await cycLoadYearly(T);
     if (cycData) {
@@ -617,7 +649,7 @@ async function fetchStock(ticker, opts) {
   }
   // Slow stage: Finviz fundamentals + MarketBeat EPS-surprise history in
   // parallel — both are big HTML pages through the relays.
-  await Promise.all([srcFinviz(), srcSurprise(), srcRevPath(), srcAbout(), srcCeo(), srcYearly()]);
+  await Promise.all([srcFinviz(), srcSurprise(), srcRevPath(), srcAbout(), srcCeo(), srcYearly(), srcBiz()]);
   deriveValues(d);
   d.partial = false;
 
@@ -1105,6 +1137,53 @@ function ceoCacheSet(key, e) {
     all[key] = e;
     localStorage.setItem('sr_ceo_v2', JSON.stringify(all));
   } catch (err) {}
+}
+/* Latest-year revenue share per business segment, from the 10-K
+ * segment data (fetchSegmentsApp). Accounting leftover rows
+ * (Corporate & other / balance rows) are not businesses, so they
+ * are skipped; whatever they held lands in "Everything else". */
+function segShares(seg) {
+  if (!seg || !seg.ok || !seg.revenue || !seg.years || !seg.years.length) return [];
+  var li = seg.years.length - 1;
+  var total = seg.total && seg.total.rev ? seg.total.rev[li] : null;
+  if (!isNum(total) || total <= 0) return [];
+  var rows = [];
+  (seg.segments || []).forEach(function (sg) {
+    if (sg.balance || sg.corporate || /corporate/i.test(sg.name || '')) return;
+    var v = sg.rev ? sg.rev[li] : null;
+    if (!isNum(v) || v <= 0) return;
+    var pct = v / total * 100;
+    if (pct >= 2) rows.push({ name: sg.name, pct: pct });
+  });
+  rows.sort(function (a, b) { return b.pct - a.pct; });
+  rows = rows.slice(0, 5);
+  if (rows.length < 2) return [];
+  var sum = rows.reduce(function (a, r) { return a + r.pct; }, 0);
+  if (sum < 97) rows.push({ name: 'Everything else', pct: 100 - sum });
+  return rows;
+}
+
+/* "How it makes money" (Justin's ask, 2026-11-07): one plain-English
+ * sentence (AI-written from the company's public description and
+ * filings, numbers-free by construction) over the real revenue
+ * split from its 10-K segments. Renders only when at least one of
+ * the two exists — never a guessed split. */
+function bizBlockHtml(d) {
+  if (!d) return '';
+  var segs = d.bizSegs || [];
+  if (!d.bizLine && segs.length < 2) return '';
+  var inner = '';
+  if (d.bizLine) inner += '<p class="biz-line">' + esc(d.bizLine) + '</p>';
+  if (segs.length >= 2) {
+    inner += segs.map(function (sg) {
+      return '<div class="biz-row"><div class="biz-row-top"><span>' + esc(sg.name) + '</span><span class="gold-text">' + fmtNum(sg.pct, 0) + '%</span></div>' +
+        '<div class="biz-bar"><div style="width:' + Math.max(2, Math.min(100, sg.pct)).toFixed(0) + '%"></div></div></div>';
+    }).join('');
+    inner += '<p class="fineprint">Share of revenue, latest fiscal year (company filings).</p>';
+  }
+  if (d.bizLine) inner += '<p class="fineprint">Plain-English summary written from the company\u2019s public description and filings.</p>';
+  return '<button type="button" class="ceo-toggle" data-biztoggle aria-expanded="false"><span class="earn-line ceo-line">How it makes money</span><span class="ceo-chev">\u25be</span></button>' +
+    '<div class="ceo-body biz-body" hidden>' + inner + '</div>';
 }
 function ceoBlockHtml(d) {
   if (!d || !d.ceo) return '';
@@ -2575,6 +2654,8 @@ function swotBox(letter, title, items, cls) {
  * already fetched; the worker adds recent Yahoo headlines and returns
  * the four lists. Saved on-device per ticker so it persists. */
 var AI_SWOT_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/swot';
+var BIZ_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/bizmodel';
+var BIZ_KEY = 'sr_biz_v1';
 var SCAN_SHARED_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/scan';
 var AI_SWOT_CACHE_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/swot-cache';
 var AI_SWOT_KEY = 'sr_aiswot_v1';
@@ -2869,6 +2950,7 @@ function renderScorecard(d) {
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
   if (d.about) html += '<div class="sc-about">' + esc(d.about) + '</div>';
   html += ceoBlockHtml(d);
+  html += bizBlockHtml(d);
   html += earnLineHtml(d);
 
   if (d.history && d.history.length >= 2) {
@@ -8056,6 +8138,14 @@ function initApp() {
     if (!b) return;
     var body = b.nextElementSibling;
     if (!body || !body.classList.contains('ceo-body')) return;
+    body.hidden = !body.hidden;
+    b.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-biztoggle]') : null;
+    if (!b) return;
+    var body = b.nextElementSibling;
+    if (!body || !body.classList.contains('biz-body')) return;
     body.hidden = !body.hidden;
     b.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
   });
