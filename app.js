@@ -1737,142 +1737,405 @@ function barChartSVG(pts, w, h) {
   out += '</svg>';
   return out;
 }
-function lineChartSVG(closes, high52, w, h, startText) {
-  w = w || 640; h = h || 170; startText = startText || '1 year ago';
-  if (!closes || closes.length < 2) return '';
-  var padT = 16, padB = 20, padX = 6;
-  var max = Math.max.apply(null, closes), min = Math.min.apply(null, closes);
-  var span = (max - min) || 1;
-  var X = function (i) { return padX + i * (w - padX * 2) / (closes.length - 1); };
-  var Y = function (v) { return padT + (max - v) / span * (h - padT - padB); };
-  var pts = closes.map(function (c, i) { return X(i).toFixed(1) + ',' + Y(c).toFixed(1); }).join(' ');
-  var out = '<svg class="px-chart" viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Price chart">';
-  if (isNum(high52)) {
-    var hy = Y(Math.min(high52, max));
-    out += '<line x1="' + padX + '" y1="' + hy + '" x2="' + (w - padX) + '" y2="' + hy + '" stroke="#B46A11" stroke-width="1.4" stroke-dasharray="5 4"/>' +
-      '<text x="' + (w - padX) + '" y="' + (hy - 4) + '" text-anchor="end" font-size="11" font-weight="800" fill="#B46A11">52-wk high ' + fmtNum(high52, 0) + '</text>';
+/* ================= price chart: pinch-zoom time window =================
+ * Justin's ask (2026-11-07): pinch to zoom in and out on TIME and get
+ * rid of the static 1Y / 5Y / 10Y / ALL buttons. The chart now shows a
+ * time window over a ladder of series -- daily bars for the last year,
+ * weekly for 5 years, monthly for all time. The finest tier covering
+ * the window draws it; a coarser tier stands in until a finer one has
+ * loaded. One finger still scrubs; two fingers pinch (and drag) the
+ * window; the mouse wheel zooms on desktop; double-tap resets to the
+ * default 1-year view. The window never extends past the data that
+ * has actually loaded -- the ladder fetches run in the background, so
+ * zooming out unlocks as the longer history lands. */
+var PX_MIN_SPAN = 10 * 86400; // seconds: never zoom past ~10 days
+var PX_TIERS = [ // finest first; wantSpan = the widest window this tier should draw
+  { key: 'histD', tsKey: 'histDTs', range: '1y', interval: '1d', wantSpan: 370 * 86400 },
+  { key: 'history', tsKey: 'historyTs', range: null, interval: null, wantSpan: 370 * 86400 },
+  { key: 'hist5w', tsKey: 'hist5wTs', range: '5y', interval: '1wk', wantSpan: 5 * 366 * 86400 },
+  { key: 'histMax', tsKey: 'histMaxTs', range: 'max', interval: '1mo', wantSpan: Infinity }
+];
+var PX_MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+var scWin = null;       // {start, end} epoch seconds; null = default window
+var scWinTicker = null; // the ticker scWin belongs to
+
+function pxTierSeries(d, tier) {
+  var closes = d[tier.key], ts = d[tier.tsKey];
+  if (!closes || !ts || closes.length < 2 || ts.length !== closes.length) return null;
+  return { tier: tier, closes: closes, ts: ts };
+}
+function pxDesiredTier(span) {
+  for (var i = 0; i < PX_TIERS.length; i++) { if (span <= PX_TIERS[i].wantSpan) return PX_TIERS[i]; }
+  return PX_TIERS[PX_TIERS.length - 1];
+}
+function pxBounds(d) {
+  var start = null, end = null;
+  PX_TIERS.forEach(function (tier) {
+    var s = pxTierSeries(d, tier);
+    if (!s) return;
+    if (start == null || s.ts[0] < start) start = s.ts[0];
+    if (end == null || s.ts[s.ts.length - 1] > end) end = s.ts[s.ts.length - 1];
+  });
+  return start == null ? null : { start: start, end: end };
+}
+function pxPickSeries(d, win) {
+  var longest = null;
+  for (var i = 0; i < PX_TIERS.length; i++) {
+    var s = pxTierSeries(d, PX_TIERS[i]);
+    if (!s) continue;
+    var span = s.ts[s.ts.length - 1] - s.ts[0];
+    if (!longest || span > longest.span) longest = { s: s, span: span };
+    if (s.ts[0] <= win.start + 172800 && s.ts[s.ts.length - 1] >= win.end - 172800) return s;
   }
-  out += '<polyline points="' + pts + '" fill="none" style="stroke:var(--chart-line)" stroke-width="2.2" stroke-linejoin="round"/>';
-  out += '<text x="' + padX + '" y="' + (h - 5) + '" font-size="11" font-weight="700" fill="#77705f">' + startText + '</text>' +
-    '<text x="' + (w - padX) + '" y="' + (h - 5) + '" text-anchor="end" font-size="11" font-weight="700" fill="#77705f">now · ' + fmtNum(closes[closes.length - 1]) + '</text>';
-  out += '<g class="px-scrub" style="display:none"><line class="px-scrub-line" y1="' + padT + '" y2="' + (h - padB) + '" stroke-width="1" stroke-dasharray="4 4" style="stroke:var(--muted)"/>' +
+  return longest ? longest.s : null;
+}
+function pxDefaultWin(d) {
+  var b = pxBounds(d);
+  if (!b) return null;
+  return { start: Math.max(b.start, b.end - 365 * 86400), end: b.end };
+}
+function pxClampWin(d, win) {
+  var b = pxBounds(d);
+  if (!b || !win) return win;
+  var maxSpan = Math.max(b.end - b.start, PX_MIN_SPAN);
+  var span = Math.min(Math.max(win.end - win.start, PX_MIN_SPAN), maxSpan);
+  var start = win.start, end = start + span;
+  if (start < b.start) { start = b.start; end = start + span; }
+  if (end > b.end) { end = b.end; start = end - span; }
+  if (start < b.start) start = b.start;
+  return { start: start, end: end };
+}
+function pxSpanLabel(win, d) {
+  var span = win.end - win.start;
+  /* "All time" only when the window covers the full-history series
+   * itself -- with just the 1-year series loaded, the plain bounds
+   * would mislabel the default view as all time. */
+  var full = pxTierSeries(d, PX_TIERS[PX_TIERS.length - 1]);
+  if (full && win.start <= full.ts[0] + 172800 && win.end >= full.ts[full.ts.length - 1] - 172800) return 'All time';
+  var days = span / 86400;
+  if (days >= 350 && days <= 380) return '1 year';
+  if (days >= 730) { var yrs = Math.round(days / 365.25 * 10) / 10; return (yrs % 1 === 0 ? String(Math.round(yrs)) : String(yrs)) + ' years'; }
+  if (days >= 60) return Math.round(days / 30.44) + ' months';
+  if (days >= 14) return Math.round(days / 7) + ' weeks';
+  return Math.max(1, Math.round(days)) + ' days';
+}
+function pxDateLabel(ts, spanDays) {
+  var dt = new Date(ts * 1000);
+  if (spanDays > 400) return PX_MONS[dt.getMonth()] + ' ' + dt.getFullYear();
+  return PX_MONS[dt.getMonth()] + ' ' + dt.getDate() + ', ' + dt.getFullYear();
+}
+/* Slice the picked series to the window, keeping one point just
+ * outside each edge so the line always spans the full width. */
+function pxSlice(d, win) {
+  var s = pxPickSeries(d, win);
+  if (!s) return null;
+  var before = null, after = null, inside = [];
+  for (var i = 0; i < s.closes.length; i++) {
+    var ts = s.ts[i];
+    if (ts < win.start) { before = { ts: ts, c: s.closes[i] }; continue; }
+    if (ts > win.end) { after = { ts: ts, c: s.closes[i] }; break; }
+    inside.push({ ts: ts, c: s.closes[i] });
+  }
+  var pts = (before ? [before] : []).concat(inside, after ? [after] : []);
+  return { tier: s.tier, pts: pts, inside: inside, series: s };
+}
+/* Fetch one ladder tier from Yahoo (mirrors the old ensureRangeHist:
+ * stored on the record and written through to the quote cache).
+ * Concurrent calls share one flight; a settled flight clears its key
+ * so a failure can be retried by the next gesture. */
+function pxEnsureTier(d, tier) {
+  if (!tier.range) return Promise.resolve(!!pxTierSeries(d, tier));
+  if (pxTierSeries(d, tier)) return Promise.resolve(true);
+  d._pxLoad = d._pxLoad || {};
+  if (d._pxLoad[tier.key]) return d._pxLoad[tier.key];
+  var p = (async function () {
+    try {
+      var ch = await relayJSON('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(d.ticker) + '?range=' + tier.range + '&interval=' + tier.interval);
+      var res = ch && ch.chart && ch.chart.result && ch.chart.result[0];
+      if (!res) return false;
+      var rawCloses = (res.indicators && res.indicators.quote && res.indicators.quote[0].close) || [];
+      var rawTs = res.timestamp || [];
+      var closes = [], tsArr = [];
+      rawCloses.forEach(function (c, i) { if (isNum(c)) { closes.push(c); tsArr.push(rawTs[i] || null); } });
+      if (closes.length < 2 || tsArr.some(function (t) { return !isNum(t); })) return false;
+      d[tier.key] = closes;
+      d[tier.tsKey] = tsArr;
+      try {
+        var cache = lsGet(CACHE_KEY, {});
+        if (cache[d.ticker] && cache[d.ticker].data) {
+          cache[d.ticker].data[tier.key] = closes;
+          cache[d.ticker].data[tier.tsKey] = tsArr;
+          lsSet(CACHE_KEY, cache);
+        }
+      } catch (e) {}
+      return true;
+    } catch (e) { return false; }
+  })();
+  d._pxLoad[tier.key] = p;
+  p.then(function () { if (d._pxLoad) delete d._pxLoad[tier.key]; });
+  return p;
+}
+function pxRightLabel(d, win, slice) {
+  var b = pxBounds(d);
+  var spanDays = (win.end - win.start) / 86400;
+  var lastPt = slice.pts[slice.pts.length - 1];
+  if (b && win.end >= b.end - 3600) {
+    var sc = slice.series.closes;
+    return 'now \u00b7 ' + fmtNum(sc[sc.length - 1]);
+  }
+  var near = slice.inside.length ? slice.inside[slice.inside.length - 1] : lastPt;
+  return pxDateLabel(win.end, spanDays) + (near ? ' \u00b7 ' + fmtNum(near.c) : '');
+}
+function pxChartSVG(d, win, slice) {
+  var W = 640, H = 264, padT = 16, padB = 20, padX = 6;
+  var pts = slice.pts;
+  var max = -Infinity, min = Infinity;
+  pts.forEach(function (p) { if (p.c > max) max = p.c; if (p.c < min) min = p.c; });
+  var spanY = (max - min) || 1;
+  var X = function (ts) { return padX + (ts - win.start) / (win.end - win.start) * (W - padX * 2); };
+  var Y = function (v) { return padT + (max - v) / spanY * (H - padT - padB); };
+  var line = pts.map(function (p) { return X(p.ts).toFixed(1) + ',' + Y(p.c).toFixed(1); }).join(' ');
+  var spanDays = (win.end - win.start) / 86400;
+  var out = '<svg class="px-chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Price chart">';
+  if (isNum(d.high52) && spanDays <= 400) {
+    var hy = Y(Math.min(d.high52, max));
+    out += '<g class="px-hi52"><line class="px-hi-line" x1="' + padX + '" y1="' + hy + '" x2="' + (W - padX) + '" y2="' + hy + '" stroke="#B46A11" stroke-width="1.4" stroke-dasharray="5 4"/>' +
+      '<text class="px-hi-lab" x="' + (W - padX) + '" y="' + (hy - 4) + '" text-anchor="end" font-size="11" font-weight="800" fill="#B46A11">52-wk high ' + fmtNum(d.high52, 0) + '</text></g>';
+  }
+  out += '<polyline class="px-line" points="' + line + '" fill="none" style="stroke:var(--chart-line)" stroke-width="2.2" stroke-linejoin="round"/>';
+  out += '<text class="px-lab-l" x="' + padX + '" y="' + (H - 5) + '" font-size="11" font-weight="700" fill="#77705f">' + pxDateLabel(win.start, spanDays) + '</text>' +
+    '<text class="px-lab-r" x="' + (W - padX) + '" y="' + (H - 5) + '" text-anchor="end" font-size="11" font-weight="700" fill="#77705f">' + pxRightLabel(d, win, slice) + '</text>';
+  out += '<g class="px-scrub" style="display:none"><line class="px-scrub-line" y1="' + padT + '" y2="' + (H - padB) + '" stroke-width="1" stroke-dasharray="4 4" style="stroke:var(--muted)"/>' +
     '<circle class="px-scrub-halo" r="11" style="fill:var(--chart-line)" opacity=".18"/><circle class="px-scrub-dot" r="5.6" style="fill:var(--chart-line)" stroke="#0d0d0f" stroke-width="1.6"/></g>' +
-    '<rect class="px-scrub-zone" x="0" y="0" width="' + w + '" height="' + (h - padB + 4) + '" fill="transparent" style="touch-action:none"/>';
+    '<rect class="px-scrub-zone" x="0" y="0" width="' + W + '" height="' + (H - padB + 4) + '" fill="transparent" style="touch-action:none"/>';
   out += '</svg>';
   return out;
-}
-/* Price-chart range state (1Y weekly; 5Y/10Y monthly, fetched lazily
- * on first tap and then kept on the record, so the quote cache carries
- * them across opens). */
-var scRange = '1y';
-
-async function ensureRangeHist(d, range) {
-  var key = range === '5y' ? 'hist5' : (range === '10y' ? 'hist10' : 'histMax');
-  var tsKey = key + 'Ts';
-  if (d[key] && d[key].length >= 2) return true;
-  try {
-    var ch = await relayJSON('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(d.ticker) + '?range=' + range + '&interval=1mo');
-    var res = ch && ch.chart && ch.chart.result && ch.chart.result[0];
-    if (!res) return false;
-    var rawCloses = (res.indicators && res.indicators.quote && res.indicators.quote[0].close) || [];
-    var rawTs = res.timestamp || [];
-    var closes = [], tsArr = [];
-    rawCloses.forEach(function (c, i) { if (isNum(c)) { closes.push(c); tsArr.push(rawTs[i] || null); } });
-    if (closes.length < 2) return false;
-    d[key] = closes;
-    d[tsKey] = tsArr;
-    try {
-      var cache = lsGet(CACHE_KEY, {});
-      if (cache[d.ticker] && cache[d.ticker].data) {
-        cache[d.ticker].data[key] = closes;
-        cache[d.ticker].data[tsKey] = tsArr;
-        lsSet(CACHE_KEY, cache);
-      }
-    } catch (e) {}
-    return true;
-  } catch (e) { return false; }
 }
 
 function renderScChart(d) {
   var box = $('sc-chart-box');
   if (!box) return;
-  var range = scRange;
-  document.querySelectorAll('[data-scrange]').forEach(function (b) {
-    b.classList.toggle('on', b.getAttribute('data-scrange') === range);
-  });
-  var label = $('sc-range-label');
-  if (label) label.textContent = range === '1y' ? '1 year' : (range === '5y' ? '5 years' : (range === '10y' ? '10 years' : 'All time'));
-  var series = range === '1y' ? d.history : (range === '5y' ? d.hist5 : (range === '10y' ? d.hist10 : d.histMax));
-  if (!series || series.length < 2) {
-    if (d['histErr_' + range]) {
-      box.innerHTML = '<div class="status err">Couldn\'t load the ' + (range === '5y' ? '5-year' : (range === '10y' ? '10-year' : 'all-time')) + ' history. <button type="button" class="btn-mini" id="sc-chart-retry">Retry</button></div>';
-      var rb = $('sc-chart-retry');
-      if (rb) rb.addEventListener('click', function () { delete d['histErr_' + range]; renderScChart(d); });
-      return;
-    }
-    box.innerHTML = '<div class="status"><span class="spinner"></span>Loading ' + (range === '5y' ? '5-year' : (range === '10y' ? '10-year' : 'all-time')) + ' history\u2026</div>';
-    ensureRangeHist(d, range).then(function (ok) {
-      if (!ok) d['histErr_' + range] = true;
-      if (lastStock === d) renderScChart(d);
-    });
+  if (scWinTicker !== d.ticker) { scWin = null; scWinTicker = d.ticker; }
+  if (!d.history || d.history.length < 2) {
+    box.innerHTML = '<div class="status">Price history is not available for this one.</div>';
     return;
   }
-  var startText = range === '1y' ? '1 year ago' : (range === '5y' ? '5 years ago' : (range === '10y' ? '10 years ago' : (d.histMaxTs && isNum(d.histMaxTs[0]) ? 'since ' + new Date(d.histMaxTs[0] * 1000).getFullYear() : 'At the start')));
-  box.innerHTML = '<div id="sc-chart-read" class="pf-bench-read">Drag across the chart to see the price at any point.</div>' +
-    '<div class="chart-wrap">' + lineChartSVG(series, range === '1y' ? d.high52 : null, 640, 264, startText) + '</div>';
-  bindPriceScrub(d, range);
+  if (!scWin) scWin = pxDefaultWin(d);
+  scWin = pxClampWin(d, scWin);
+  var label = $('sc-range-label');
+  if (label) label.textContent = pxSpanLabel(scWin, d);
+  var slice = pxSlice(d, scWin);
+  if (!slice || slice.pts.length < 2) {
+    box.innerHTML = '<div class="status">No prices in this window.</div>';
+    return;
+  }
+  box.innerHTML = '<div id="sc-chart-read" class="pf-bench-read">Drag to scrub \u00b7 pinch to zoom the time range.</div>' +
+    '<div class="chart-wrap">' + pxChartSVG(d, scWin, slice) + '</div>';
+  bindPriceChart(d);
+  // Ladder upkeep: fetch the tier this span wants, and the full
+  // history (it sets the zoom-out limit), in the background. If a
+  // finer tier lands for the current window, redraw with it.
+  var drawnTier = slice.tier;
+  [pxDesiredTier(scWin.end - scWin.start), PX_TIERS[PX_TIERS.length - 1]].forEach(function (tier) {
+    if (!tier.range || pxTierSeries(d, tier)) return;
+    pxEnsureTier(d, tier).then(function (ok) {
+      if (!ok || lastStock !== d) return;
+      scWin = pxClampWin(d, scWin);
+      var now = pxPickSeries(d, scWin);
+      if (now && now.tier !== drawnTier) renderScChart(d);
+    });
+  });
 }
 
-/* Drag scrubbing for the scorecard price chart: a dashed crosshair + dot
- * follow the finger, and a readout under the chart shows that week's
- * date, price, and change since the start of the window. */
-function bindPriceScrub(d, range) {
-  range = range || '1y';
+/* Gestures for the scorecard price chart: one finger scrubs (dashed
+ * crosshair + readout), two fingers pinch the time window (spread =
+ * zoom in on a shorter span, together = zoom out; the window follows
+ * the pinch center, so a two-finger drag pans through time too).
+ * During a pinch the existing SVG is updated in place -- rebuilding
+ * it would destroy the element holding the pointer capture. A full
+ * re-render happens once, when the gesture ends, if a finer data
+ * tier is needed. Double-tap resets to the 1-year default. */
+function bindPriceChart(d) {
   var wrap = $('score-result');
-  var series = range === '5y' ? d.hist5 : (range === '10y' ? d.hist10 : (range === 'max' ? d.histMax : d.history));
-  var tsArr = range === '5y' ? d.hist5Ts : (range === '10y' ? d.hist10Ts : (range === 'max' ? d.histMaxTs : d.historyTs));
-  if (!wrap || !series || series.length < 2) return;
+  if (!wrap) return;
   var svg = wrap.querySelector('.px-chart');
-  var zone = svg ? svg.querySelector('.px-scrub-zone') : null;
-  var grp = svg ? svg.querySelector('.px-scrub') : null;
+  if (!svg) return;
+  var zone = svg.querySelector('.px-scrub-zone');
+  var grp = svg.querySelector('.px-scrub');
   var read = $('sc-chart-read');
-  if (!svg || !zone || !grp || !read) return;
-  var closes = series, n = closes.length;
-  var max = Math.max.apply(null, closes), min = Math.min.apply(null, closes);
-  var vb = svg.viewBox && svg.viewBox.baseVal;
-  var span = (max - min) || 1, padT = 16, padB = 20, padX = 6, W = (vb && vb.width) || 640, H = (vb && vb.height) || 240;
-  var X = function (i) { return padX + i * (W - padX * 2) / (n - 1); };
-  var Y = function (v) { return padT + (max - v) / span * (H - padT - padB); };
+  if (!zone || !grp || !read) return;
+  var poly = svg.querySelector('.px-line');
+  var labL = svg.querySelector('.px-lab-l'), labR = svg.querySelector('.px-lab-r');
+  var hiG = svg.querySelector('.px-hi52'), hiLine = svg.querySelector('.px-hi-line'), hiLab = svg.querySelector('.px-hi-lab');
   var line = grp.querySelector('.px-scrub-line'), dot = grp.querySelector('.px-scrub-dot'), halo = grp.querySelector('.px-scrub-halo');
-  var MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  var scrubbing = false;
-  function dateFor(i) {
-    var ts = tsArr && tsArr[i];
-    if (isNum(ts)) { var dt = new Date(ts * 1000); return MONS[dt.getMonth()] + ' ' + dt.getDate() + ', ' + dt.getFullYear(); }
-    var back = new Date();
-    if (range === '1y') back.setDate(back.getDate() - (n - 1 - i) * 7);
-    else back.setMonth(back.getMonth() - (n - 1 - i));
-    return MONS[back.getMonth()] + ' ' + back.getDate() + ', ' + back.getFullYear();
+  var W = 640, H = 264, padT = 16, padB = 20, padX = 6;
+  var HINT = 'Drag to scrub \u00b7 pinch to zoom the time range.';
+  var slice = pxSlice(d, scWin);
+  if (!slice) return;
+  var pointers = new Map();
+  var mode = 'idle'; // 'scrub' | 'pinch'
+  var pinch0 = null, downInfo = null, lastTap = 0, wheelTimer = null;
+  var pinched = false; // a pinch happened during this touch sequence
+
+  function geom(sl) {
+    var max = -Infinity, min = Infinity;
+    sl.pts.forEach(function (p) { if (p.c > max) max = p.c; if (p.c < min) min = p.c; });
+    var spanY = (max - min) || 1;
+    return {
+      X: function (ts) { return padX + (ts - scWin.start) / (scWin.end - scWin.start) * (W - padX * 2); },
+      Y: function (v) { return padT + (max - v) / spanY * (H - padT - padB); },
+      max: max, min: min
+    };
+  }
+  function spanDays() { return (scWin.end - scWin.start) / 86400; }
+  function redraw() {
+    if (!slice) return;
+    var g = geom(slice);
+    poly.setAttribute('points', slice.pts.map(function (p) { return g.X(p.ts).toFixed(1) + ',' + g.Y(p.c).toFixed(1); }).join(' '));
+    if (labL) labL.textContent = pxDateLabel(scWin.start, spanDays());
+    if (labR) labR.textContent = pxRightLabel(d, scWin, slice);
+    if (hiG && hiLine && hiLab) {
+      if (isNum(d.high52) && spanDays() <= 400) {
+        var hy = g.Y(Math.min(d.high52, g.max));
+        hiG.style.display = '';
+        hiLine.setAttribute('y1', hy); hiLine.setAttribute('y2', hy);
+        hiLab.setAttribute('y', hy - 4);
+      } else hiG.style.display = 'none';
+    }
+    var label = $('sc-range-label');
+    if (label) label.textContent = pxSpanLabel(scWin, d);
+  }
+  function applyWin(win) {
+    scWin = pxClampWin(d, win);
+    slice = pxSlice(d, scWin);
+    redraw();
+  }
+  function pinchRead() {
+    if (!slice || !slice.inside.length) return;
+    var first = slice.inside[0], last = slice.inside[slice.inside.length - 1];
+    var chg = first.c > 0 ? (last.c / first.c - 1) * 100 : 0;
+    read.innerHTML = '<b class="pf-read-date">' + pxDateLabel(scWin.start, spanDays()) + ' \u2013 ' + pxDateLabel(scWin.end, spanDays()) + '</b> \u00b7 <b class="' + (chg >= 0 ? 'up' : 'down') + '">' + fmtPct(chg) + '</b> across the window';
+  }
+  function finishGesture() {
+    read.textContent = HINT;
+    var want = pxDesiredTier(scWin.end - scWin.start);
+    if (want.range && !pxTierSeries(d, want)) {
+      pxEnsureTier(d, want).then(function (ok) { if (ok && lastStock === d) renderScChart(d); });
+    }
+  }
+  function dateFor(pt) {
+    var dt = new Date(pt.ts * 1000);
+    return PX_MONS[dt.getMonth()] + ' ' + dt.getDate() + ', ' + dt.getFullYear();
   }
   function scrubTo(clientX) {
     var rect = svg.getBoundingClientRect();
-    if (!rect.width) return;
+    if (!rect.width || !slice) return;
     var sx = (clientX - rect.left) / rect.width * W;
-    var i = Math.round((sx - padX) / (W - padX * 2) * (n - 1));
-    i = Math.max(0, Math.min(n - 1, i));
-    var x = X(i), y = Y(closes[i]);
+    var tsAt = scWin.start + (sx - padX) / (W - padX * 2) * (scWin.end - scWin.start);
+    var best = null, bd = Infinity;
+    slice.pts.forEach(function (p) { var dd = Math.abs(p.ts - tsAt); if (dd < bd) { bd = dd; best = p; } });
+    if (!best) return;
+    var g = geom(slice);
+    var x = g.X(best.ts), y = g.Y(best.c);
     grp.style.display = '';
     line.setAttribute('x1', x); line.setAttribute('x2', x);
     dot.setAttribute('cx', x); dot.setAttribute('cy', y);
     if (halo) { halo.setAttribute('cx', x); halo.setAttribute('cy', y); }
-    var chg = (closes[i] / closes[0] - 1) * 100;
-    read.innerHTML = '<b class="pf-read-date">' + dateFor(i) + '</b> \u00b7 <b>' + fmtMoney(closes[i]) + '</b> \u00b7 <b class="' + (chg >= 0 ? 'up' : 'down') + '">' + fmtPct(chg) + '</b> since start';
+    var base = slice.inside.length ? slice.inside[0] : slice.pts[0];
+    var chg = base && base.c > 0 ? (best.c / base.c - 1) * 100 : 0;
+    read.innerHTML = '<b class="pf-read-date">' + dateFor(best) + '</b> \u00b7 <b>' + fmtMoney(best.c) + '</b> \u00b7 <b class="' + (chg >= 0 ? 'up' : 'down') + '">' + fmtPct(chg) + '</b> since start';
   }
-  zone.addEventListener('pointerdown', function (e) { scrubbing = true; try { zone.setPointerCapture(e.pointerId); } catch (err) {} scrubTo(e.clientX); e.preventDefault(); });
-  zone.addEventListener('pointermove', function (e) { if (scrubbing) scrubTo(e.clientX); });
-  function endScrub() { scrubbing = false; grp.style.display = 'none'; }
-  zone.addEventListener('pointerup', endScrub);
-  zone.addEventListener('pointercancel', endScrub);
+  function centerFrac(ps) {
+    var rect = svg.getBoundingClientRect();
+    if (!rect.width) return 0.5;
+    var cx = ((ps[0].clientX + ps[1].clientX) / 2 - rect.left) / rect.width * W;
+    var f = (cx - padX) / (W - padX * 2);
+    return f < 0 ? 0 : (f > 1 ? 1 : f);
+  }
+  zone.addEventListener('pointerdown', function (e) {
+    pointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+    try { zone.setPointerCapture(e.pointerId); } catch (err) {}
+    if (pointers.size === 1) {
+      mode = 'scrub';
+      downInfo = { t: Date.now(), x: e.clientX, moved: false };
+      scrubTo(e.clientX);
+    } else if (pointers.size === 2) {
+      mode = 'pinch';
+      pinched = true;
+      grp.style.display = 'none';
+      var ps = Array.from(pointers.values());
+      var frac = centerFrac(ps);
+      pinch0 = {
+        dist: Math.hypot(ps[0].clientX - ps[1].clientX, ps[0].clientY - ps[1].clientY) || 1,
+        span: scWin.end - scWin.start,
+        anchorTs: scWin.start + frac * (scWin.end - scWin.start)
+      };
+    }
+    e.preventDefault();
+  });
+  zone.addEventListener('pointermove', function (e) {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+    if (mode === 'scrub' && pointers.size === 1) {
+      if (downInfo && Math.abs(e.clientX - downInfo.x) > 6) downInfo.moved = true;
+      scrubTo(e.clientX);
+    } else if (mode === 'pinch' && pointers.size === 2 && pinch0) {
+      var ps = Array.from(pointers.values());
+      var dist = Math.hypot(ps[0].clientX - ps[1].clientX, ps[0].clientY - ps[1].clientY);
+      if (dist < 4) return;
+      var span = pinch0.span * (pinch0.dist / dist);
+      var start = pinch0.anchorTs - centerFrac(ps) * span;
+      applyWin({ start: start, end: start + span });
+      pinchRead();
+      e.preventDefault();
+    }
+  });
+  function endPtr(e) {
+    var wasPinch = mode === 'pinch';
+    pointers.delete(e.pointerId);
+    if (pointers.size === 0) {
+      mode = 'idle';
+      grp.style.display = 'none';
+      /* finishGesture runs when the LAST finger lifts: lifting one
+       * finger first drops into scrub mode, and the pinch's tier
+       * fetch + readout reset must still happen at the end. */
+      if (pinched) { pinched = false; finishGesture(); }
+      else if (downInfo && !downInfo.moved && Date.now() - downInfo.t < 300) {
+        var now = Date.now();
+        if (now - lastTap < 320) {
+          lastTap = 0;
+          scWin = pxDefaultWin(d);
+          renderScChart(d);
+          return;
+        }
+        lastTap = now;
+        read.textContent = HINT;
+      }
+      downInfo = null;
+      pinch0 = null;
+    } else if (pointers.size === 1 && wasPinch) {
+      mode = 'scrub';
+      var p = Array.from(pointers.values())[0];
+      downInfo = { t: Date.now(), x: p.clientX, moved: true };
+      scrubTo(p.clientX);
+    }
+  }
+  zone.addEventListener('pointerup', endPtr);
+  zone.addEventListener('pointercancel', endPtr);
+  zone.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var rect = svg.getBoundingClientRect();
+    if (!rect.width) return;
+    var frac = ((e.clientX - rect.left) / rect.width * W - padX) / (W - padX * 2);
+    frac = frac < 0 ? 0 : (frac > 1 ? 1 : frac);
+    var anchorTs = scWin.start + frac * (scWin.end - scWin.start);
+    var span = (scWin.end - scWin.start) * Math.exp(e.deltaY * 0.0016);
+    var start = anchorTs - frac * span;
+    applyWin({ start: start, end: start + span });
+    pinchRead();
+    if (wheelTimer) clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(finishGesture, 200);
+  }, { passive: false });
 }
 
 /* ============================== scorecard UI ============================== */
@@ -2397,7 +2660,6 @@ function renderScorecard(d) {
 
   if (d.history && d.history.length >= 2) {
     html += '<div class="section-h">Price — <span class="gold-text" id="sc-range-label">1 year</span></div>' +
-      '<div class="sc-range-chips"><button type="button" data-scrange="1y" class="on">1Y</button><button type="button" data-scrange="5y">5Y</button><button type="button" data-scrange="10y">10Y</button><button type="button" data-scrange="max">ALL</button></div>' +
       '<div id="sc-chart-box"></div>';
   }
   html += fvBarHtml(d);
@@ -2581,9 +2843,6 @@ function renderScorecard(d) {
 
   bindAiSwotBtn(d);
   maybeShowSharedSwot(d);
-  document.querySelectorAll('[data-scrange]').forEach(function (b) {
-    b.addEventListener('click', function () { scRange = b.getAttribute('data-scrange'); renderScChart(d); });
-  });
   document.querySelectorAll('[data-stoggle]').forEach(function (b) {
     b.addEventListener('click', function () {
       var body = document.querySelector('[data-sbody="' + b.getAttribute('data-stoggle') + '"]');
@@ -2636,7 +2895,8 @@ async function runSearch(ticker, fresh) {
   var T = await resolveTickerInput(rawQ);
   if (!T) return;
   if (T !== rawQ.toUpperCase()) { var siEl = $('search-input'); if (siEl) siEl.value = T; }
-  scRange = '1y';
+  scWin = null;
+  scWinTicker = null;
   var status = $('score-status');
   status.className = 'status';
   status.innerHTML = '<span class="spinner"></span>Pulling live data for ' + esc(T) + '…';
