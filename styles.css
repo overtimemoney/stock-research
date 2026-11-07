@@ -251,6 +251,7 @@ table.factors td:first-child:has(.info-dot) { padding-right: 28px; }
 .ceo-toggle[aria-expanded="true"] .ceo-chev { transform: rotate(180deg); }
 .ceo-meta { font-size: 13px; font-weight: 700; color: var(--ink2); margin: 0 0 8px; }
 .ceo-body { margin-bottom: 2px; }
+.more-sec + .more-sec { border-top: 1px solid var(--row-line); margin-top: 8px; padding-top: 8px; }
 .biz-line { font-size: 14.5px; line-height: 1.45; color: var(--ink); margin: 2px 0 9px; }
 .biz-row { margin: 7px 0; }
 .biz-row-top { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; margin-bottom: 3px; }

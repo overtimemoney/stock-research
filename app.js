@@ -235,6 +235,23 @@ var CACHE_TTL = 15 * 60 * 1000;
  * this year, rolling to next when the date is over a week past (a
  * just-reported date inside the week stays, so the UI can say so). */
 var EARN_MONS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+function earnIso(dt) {
+  return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+}
+function earnAddMonths(dt, n) {
+  var target = new Date(dt.getFullYear(), dt.getMonth() + n, 1);
+  var last = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  return new Date(target.getFullYear(), target.getMonth(), Math.min(dt.getDate(), last));
+}
+/* The Finviz Earnings cell ("Oct 15 BMO") carries no year, and right
+ * after a report it often still shows the quarter just reported.
+ * Companies report every quarter, so (Justin's ruling, 2026-11-07):
+ * a cell date in the future — or within the past week, i.e. the
+ * report that just landed — is the real date (est=false). A cell
+ * date further past is stale: roll it forward one quarter at a
+ * time until it is upcoming and mark it estimated (est=true). The
+ * old code rolled a full YEAR, which put SCHW's next earnings at
+ * Oct 15, 2027 instead of the January 2027 quarter. */
 function earnDateFromFinviz(str, now) {
   if (!str) return null;
   var m = String(str).match(/([A-Za-z]{3})[a-z]*\s+(\d{1,2})(?:\s+(AMC|BMO))?/);
@@ -243,8 +260,15 @@ function earnDateFromFinviz(str, now) {
   var day = parseInt(m[2], 10);
   var dt = new Date(now.getFullYear(), EARN_MONS[m[1]], day);
   var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  if ((dt - today) / 864e5 < -7) dt = new Date(now.getFullYear() + 1, EARN_MONS[m[1]], day);
-  return { iso: dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0'), timing: m[3] || null };
+  if ((dt - today) / 864e5 >= -7) return { iso: earnIso(dt), timing: m[3] || null, est: false };
+  var guard = 0;
+  while (dt < today && guard++ < 8) dt = earnAddMonths(dt, 3);
+  /* 1-3 quarter-rolls = we projected the cadence past a stale cell
+   * (estimated). 4 rolls lands exactly on next year's same date:
+   * that is the cell pointing at next year's quarter — the normal
+   * forward state for e.g. a January reporter read in November —
+   * so the date is the source's own, not our estimate. */
+  return { iso: earnIso(dt), timing: m[3] || null, est: guard < 4 };
 }
 /* The "next earnings" line for the stock pages (Apple-Stocks style):
  * gold and explicit when the report lands today. */
@@ -261,7 +285,12 @@ function earnLineHtml(d) {
   var full = DAYS[dt.getDay()] + ', ' + md + ', ' + dt.getFullYear();
   var tim = d.earnTiming === 'AMC' ? ' \u00b7 after close' : d.earnTiming === 'BMO' ? ' \u00b7 before the open' : '';
   var txt, cls = 'earn-line';
-  if (diff === 0) { txt = 'Earnings today \u00b7 ' + md + tim; cls += ' today'; }
+  if (d.earnEst) {
+    if (diff === 0) txt = 'Earnings expected today \u00b7 ' + md + tim;
+    else if (diff === 1) txt = 'Earnings expected tomorrow \u00b7 ' + md + tim;
+    else txt = 'Next earnings (est.) \u00b7 ' + full + (diff <= 21 ? ' \u00b7 in ' + diff + ' days' : '') + tim;
+  }
+  else if (diff === 0) { txt = 'Earnings today \u00b7 ' + md + tim; cls += ' today'; }
   else if (diff === 1) txt = 'Earnings tomorrow \u00b7 ' + md + tim;
   else if (diff > 1) txt = 'Next earnings \u00b7 ' + full + (diff <= 21 ? ' \u00b7 in ' + diff + ' days' : '') + tim;
   else if (diff === -1) txt = 'Earnings yesterday \u00b7 ' + md + tim;
@@ -317,7 +346,7 @@ function fillFromFinviz(d, fvHtml) {
   var exDiv = p['Dividend Ex-Date'];
   d.exDivDate = (exDiv && exDiv !== '-') ? exDiv : null;
   var earn = earnDateFromFinviz(p['Earnings']);
-  if (earn) { d.earnNext = earn.iso; d.earnTiming = earn.timing; }
+  if (earn) { d.earnNext = earn.iso; d.earnTiming = earn.timing; d.earnEst = earn.est; }
   // Insider transactions table: rows classed fv-insider-row follow the
   // "Insider Trading" heading; 9 cells per row (name, relationship,
   // date, transaction, cost, #shares, value $, #shares total, SEC).
@@ -1168,7 +1197,7 @@ function segShares(seg) {
  * filings, numbers-free by construction) over the real revenue
  * split from its 10-K segments. Renders only when at least one of
  * the two exists — never a guessed split. */
-function bizBlockHtml(d) {
+function bizInnerHtml(d) {
   if (!d) return '';
   var segs = d.bizSegs || [];
   if (!d.bizLine && segs.length < 2) return '';
@@ -1182,12 +1211,16 @@ function bizBlockHtml(d) {
     inner += '<p class="fineprint">Share of revenue, latest fiscal year (company filings).</p>';
   }
   if (d.bizLine) inner += '<p class="fineprint">Plain-English summary written from the company\u2019s public description and filings.</p>';
+  return inner;
+}
+function bizBlockHtml(d) {
+  var inner = bizInnerHtml(d);
+  if (!inner) return '';
   return '<button type="button" class="ceo-toggle" data-biztoggle aria-expanded="false"><span class="earn-line ceo-line">How it makes money</span><span class="ceo-chev">\u25be</span></button>' +
     '<div class="ceo-body biz-body" hidden>' + inner + '</div>';
 }
-function ceoBlockHtml(d) {
-  if (!d || !d.ceo) return '';
-  var head = 'CEO \u00b7 <b>' + esc(d.ceo) + '</b>';
+function ceoHeadHtml(d) { return 'CEO \u00b7 <b>' + esc(d.ceo) + '</b>'; }
+function ceoInnerHtml(d) {
   var inner = '';
   var meta = [];
   if (d.ceoSince) meta.push('Since ' + (d.ceoSince.m != null ? CEO_MON_SHORT[d.ceoSince.m] + ' ' : '') + d.ceoSince.y);
@@ -1207,9 +1240,32 @@ function ceoBlockHtml(d) {
     }
     inner += '<p class="ceo-perf">Stock <span class="' + (pct >= 0 ? 'up' : 'down') + '">' + ptxt + '</span> since ' + esc(d.ceoStartLabel) + cagrTxt + '</p>';
   }
-  if (!inner) return '<p class="earn-line ceo-line">' + head + '</p>';
-  return '<button type="button" class="ceo-toggle" data-ceotoggle aria-expanded="false"><span class="earn-line ceo-line">' + head + '</span><span class="ceo-chev">\u25be</span></button>' +
+  return inner;
+}
+function ceoBlockHtml(d) {
+  if (!d || !d.ceo) return '';
+  var inner = ceoInnerHtml(d);
+  if (!inner) return '<p class="earn-line ceo-line">' + ceoHeadHtml(d) + '</p>';
+  return '<button type="button" class="ceo-toggle" data-ceotoggle aria-expanded="false"><span class="earn-line ceo-line">' + ceoHeadHtml(d) + '</span><span class="ceo-chev">\u25be</span></button>' +
     '<div class="ceo-body" hidden>' + inner + '</div>';
+}
+
+/* "More" (Justin's ask, 2026-11-07): on the scorecard, the CEO block,
+ * How it makes money, and the next-earnings line live under ONE
+ * dropdown named More, contents always expanded inside it. The
+ * earnings line additionally appears OUTSIDE the dropdown when its
+ * date is known for sure (earnEst false) — see renderScorecard. */
+function moreBlockHtml(d) {
+  if (!d) return '';
+  var secs = '';
+  if (d.ceo) secs += '<div class="more-sec"><p class="earn-line ceo-line">' + ceoHeadHtml(d) + '</p>' + ceoInnerHtml(d) + '</div>';
+  var bi = bizInnerHtml(d);
+  if (bi) secs += '<div class="more-sec"><p class="earn-line ceo-line">How it makes money</p>' + bi + '</div>';
+  var el = earnLineHtml(d);
+  if (el) secs += '<div class="more-sec">' + el + '</div>';
+  if (!secs) return '';
+  return '<button type="button" class="ceo-toggle" data-moretoggle aria-expanded="false"><span class="earn-line ceo-line">More</span><span class="ceo-chev">\u25be</span></button>' +
+    '<div class="ceo-body more-body" hidden>' + secs + '</div>';
 }
 function parseSAAbout(html) {
   if (!html) return '';
@@ -2949,9 +3005,8 @@ function renderScorecard(d) {
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
   if (d.about) html += '<div class="sc-about">' + esc(d.about) + '</div>';
-  html += ceoBlockHtml(d);
-  html += bizBlockHtml(d);
-  html += earnLineHtml(d);
+  html += moreBlockHtml(d);
+  if (!d.earnEst) html += earnLineHtml(d);
 
   if (d.history && d.history.length >= 2) {
     html += '<div class="section-h">Price — <span class="gold-text" id="sc-range-label">1 year</span></div>' +
@@ -8145,6 +8200,14 @@ function initApp() {
     if (!b) return;
     var body = b.nextElementSibling;
     if (!body || !body.classList.contains('ceo-body')) return;
+    body.hidden = !body.hidden;
+    b.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-moretoggle]') : null;
+    if (!b) return;
+    var body = b.nextElementSibling;
+    if (!body || !body.classList.contains('more-body')) return;
     body.hidden = !body.hidden;
     b.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
   });
