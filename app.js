@@ -272,7 +272,26 @@ function earnDateFromFinviz(str, now) {
 }
 /* The "next earnings" line for the stock pages (Apple-Stocks style):
  * gold and explicit when the report lands today. */
+/* Recompute the earnings date from the raw Finviz cell on every
+ * render (2026-11-07): records cached by older builds carry the old
+ * +1-year roll (SCHW sat at Oct 15, 2027 with no est flag, so the
+ * line printed both inside More and outside it, looking doubled).
+ * Recomputing from the cell — or, for legacy records, from the
+ * stored date's own month/day — repairs them in place. Idempotent. */
+var EARN_MON_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function earnRefresh(d) {
+  if (!d) return;
+  var str = d.earnCell || null;
+  if (!str && d.earnNext) {
+    var p = String(d.earnNext).split('-');
+    if (p.length === 3) str = EARN_MON_NAMES[parseInt(p[1], 10) - 1] + ' ' + parseInt(p[2], 10) + (d.earnTiming ? ' ' + d.earnTiming : '');
+  }
+  if (!str) return;
+  var e = earnDateFromFinviz(str);
+  if (e) { d.earnNext = e.iso; d.earnTiming = e.timing; d.earnEst = e.est; }
+}
 function earnLineHtml(d) {
+  earnRefresh(d);
   if (!d.earnNext) return '';
   var dt = new Date(d.earnNext + 'T12:00:00');
   if (isNaN(dt)) return '';
@@ -346,6 +365,7 @@ function fillFromFinviz(d, fvHtml) {
   var exDiv = p['Dividend Ex-Date'];
   d.exDivDate = (exDiv && exDiv !== '-') ? exDiv : null;
   var earn = earnDateFromFinviz(p['Earnings']);
+  if (p['Earnings']) d.earnCell = p['Earnings'];
   if (earn) { d.earnNext = earn.iso; d.earnTiming = earn.timing; d.earnEst = earn.est; }
   // Insider transactions table: rows classed fv-insider-row follow the
   // "Insider Trading" heading; 9 cells per row (name, relationship,
@@ -1230,7 +1250,6 @@ function bizInnerHtml(d) {
     }
     inner += '<p class="fineprint">Share of revenue, latest fiscal year (company filings).</p>';
   }
-  if (d.bizLine) inner += '<p class="fineprint">Plain-English summary written from the company\u2019s public description and filings.</p>';
   return inner;
 }
 function bizBlockHtml(d) {
