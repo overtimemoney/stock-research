@@ -207,6 +207,15 @@ button.screen-toggle { display: flex; align-items: baseline; flex-wrap: wrap; ga
 .kv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 14px; margin-top: 6px; }
 .kv-item .k { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 800; }
 .kv-item .v { font-size: 16px; font-weight: 800; margin-top: 1px; font-variant-numeric: tabular-nums; }
+/* Info dots pinned to the same spot in every metric cell
+ * (2026-11-07, Justin's ask): the dot used to sit inline after the
+ * label text, so it landed wherever the label happened to end and
+ * wrapped onto its own line for long labels. Now every dot lives
+ * in the cell's top-right corner, and the label gets a reserved
+ * lane so its text never runs underneath the dot. */
+.kv-item { position: relative; }
+.kv-item .info-dot { position: absolute; top: -2px; right: 0; margin-left: 0; }
+.kv-item:has(.info-dot) .k { padding-right: 24px; }
 .section-h { font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: .05em; margin: 18px 0 8px; }
 .section-h .gold-text { letter-spacing: .05em; }
 .alert {
