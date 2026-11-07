@@ -4197,6 +4197,7 @@ async function fetchWlValuation(T) {
   var auxCache = lsGet(WLAUX_KEY, {});
   var day = new Date().toDateString();
   var aux = (auxCache[T] && auxCache[T].day === day) ? auxCache[T] : null;
+  var cycHit = cycCachePeek(T);
   var parts = await Promise.all([
     relayFetch('https://finviz.com/stock?t=' + encodeURIComponent(T), {
       validate: function (t) { return t.indexOf('snapshot-td-label') !== -1; }
@@ -4205,7 +4206,10 @@ async function fetchWlValuation(T) {
     aux ? Promise.resolve(null) : relayFetch('https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/forecast/', {
       timeout: 20000,
       validate: function (t) { return t.indexOf('Fiscal Year') !== -1 && t.indexOf('Revenue') !== -1; }
-    }).catch(function () { return null; })
+    }).catch(function () { return null; }),
+    // Yearly statements for the cyclical overlay, loaded whenever
+    // they are not already day-cached (see the overlay block below).
+    cycHit ? Promise.resolve(null) : cycLoadYearly(T).catch(function () { return null; })
   ]);
   if (parts[0]) fillFromFinviz(d, parts[0]);
   if (aux) {
@@ -4229,14 +4233,17 @@ async function fetchWlValuation(T) {
     auxCache[T] = { day: day, epsForecasts: d.epsForecasts || [], revPath: d.revPath || null };
     lsSet(WLAUX_KEY, auxCache);
   }
-  // Cyclical overlay: when today's yearly statements are already
-  // cached (a scorecard visit or the scan enrichment), the watchlist
-  // risk is the FINAL score; otherwise it stays base and the row
-  // labels it as such.
-  var cycHit = cycCachePeek(T);
-  if (cycHit && cycHit.yearly) {
-    d.yearly = cycHit.yearly;
-    if (!d.revPath && cycHit.revPath) d.revPath = cycHit.revPath;
+  // Cyclical overlay (Justin's rule, 2026-11-07): the watchlist risk
+  // is ALWAYS the final score, never the base alone -- he asked what
+  // the "base" label meant and then ruled it out. Today's yearly
+  // statements usually sit in the cyclical cache already (a scorecard
+  // visit or the scan enrichment); on a miss they were loaded in
+  // parallel above and day-cached for every other surface. Only a
+  // failed load leaves the risk at its base value for this pass.
+  var cycData = cycHit || parts[3];
+  if (cycData && cycData.yearly) {
+    d.yearly = cycData.yearly;
+    if (!d.revPath && cycData.revPath) d.revPath = cycData.revPath;
   }
   // EPS growth next yr: fiscal-year over fiscal-year, the scorecard's
   // rule -- Nasdaq FY pair first, Finviz pair as fallback.
@@ -4271,7 +4278,7 @@ async function fetchWlValuation(T) {
  * are labelled partial, with the true scored count. */
 function wlValInner(v) {
   return 'Value <b style="color:hsl(' + Math.round(v.score * 1.2) + ', 78%, var(--val-l))">' + v.score + '</b>' +
-    (isNum(v.risk) ? ' \u00b7 Risk <b style="color:hsl(' + Math.round((100 - v.risk) * 1.2) + ', 78%, var(--val-l))">' + v.risk + '</b>' + (v.riskOverlay === true ? '' : ' <span class="wl-base">base</span>') : '');
+    (isNum(v.risk) ? ' \u00b7 Risk <b style="color:hsl(' + Math.round((100 - v.risk) * 1.2) + ', 78%, var(--val-l))">' + v.risk + '</b>' : '');
 }
 
 /* Background fill for stale watchlist scores. The old version fired
