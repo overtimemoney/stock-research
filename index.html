@@ -29,7 +29,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
     <button id="sc-back" class="back-chip" type="button" hidden></button>
     <form id="search-form" class="search-row" autocomplete="off">
       <input id="search-input" type="text" inputmode="text" autocapitalize="characters"
-             autocorrect="off" spellcheck="false" placeholder="Ticker — e.g. MU, AAPL, NVDA" aria-label="Ticker symbol">
+             autocorrect="off" spellcheck="false" placeholder="Ticker or company" aria-label="Ticker symbol">
       <button type="submit" class="btn-gold">Research</button>
     </form>
     <div id="score-status" class="status" role="status"></div>
@@ -94,7 +94,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
     <h2 class="tab-title">Stock <span class="gold-text">Charts</span></h2>
     <div class="card">
       <form id="qm-load-form" class="search-row" autocomplete="off" style="margin-bottom:12px">
-        <input id="qm-ticker" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="Ticker — revenue, earnings, margins" aria-label="Stock charts ticker">
+        <input id="qm-ticker" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="Ticker" aria-label="Stock charts ticker">
         <button type="submit" class="btn-gold">Load stock</button>
       </form>
       <div id="qm-status" class="status" role="status" style="margin:0 2px 8px"></div>
@@ -168,7 +168,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
     <h2 class="tab-title">Custom <span class="gold-text">Screener</span></h2>
     <div id="scr-saved" class="scr-saved"></div>
     <div class="card scr-controls">
-      <label class="scr-row"><span>Index</span><select id="scr-ix"><option value="both">Both indexes</option><option value="spx">S&amp;P 500</option></select></label>
+      <label class="scr-row"><span>Index</span><select id="scr-ix"><option value="both">Both</option><option value="spx">S&amp;P 500</option></select></label>
       <label class="scr-row"><span>Sector</span><select id="scr-sector"><option value="all">All sectors</option></select></label>
       <label class="scr-row"><span>Forward P/E, max</span><input id="scr-fpe" type="number" step="any" min="0" inputmode="decimal"></label>
       <label class="scr-row"><span>PEG, max</span><input id="scr-peg" type="number" step="any" min="0" inputmode="decimal"></label>
@@ -198,7 +198,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
     <div id="earn-card"></div>
     <form id="wl-form" class="wl-inputs" autocomplete="off">
       <input id="wl-ticker" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="Ticker" aria-label="Watchlist ticker">
-      <input id="wl-target" type="number" step="any" min="0" placeholder="Target buy $" aria-label="Target buy price">
+      <input id="wl-target" type="number" step="any" min="0" placeholder="Target $" aria-label="Target buy price">
       <button type="submit" class="btn-gold">Add</button>
     </form>
     <div class="row-between wl-tools">
