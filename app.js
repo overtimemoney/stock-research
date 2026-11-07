@@ -14,20 +14,41 @@ function esc(s) {
   });
 }
 function isNum(n) { return typeof n === 'number' && isFinite(n); }
+/* Compact form for huge finite values (2026-11-07): toLocaleString
+ * on something like 5.3e39 prints all 40 digits and blows out the
+ * layout (Justin's compound-calculator screenshot: a 1,000,000%
+ * return typed in by hand). The compact branches only engage at a
+ * trillion or beyond — past any per-share price, portfolio total
+ * or return the app legitimately shows — so real data is untouched. */
+function fmtHugeAbs(a) {
+  if (a >= 1e18) {
+    var e = Math.floor(Math.log10(a));
+    return (a / Math.pow(10, e)).toFixed(2) + 'e' + e;
+  }
+  if (a >= 1e15) return (a / 1e15).toFixed(2) + 'Q';
+  return (a / 1e12).toFixed(2) + 'T';
+}
+
 function fmtMoney(n, dec) {
   if (!isNum(n)) return '—';
+  if (Math.abs(n) >= 1e12) return '$' + (n < 0 ? '-' : '') + fmtHugeAbs(Math.abs(n));
   return '$' + n.toLocaleString('en-US', { minimumFractionDigits: dec == null ? 2 : dec, maximumFractionDigits: dec == null ? 2 : dec });
 }
 function fmtNum(n, dec) {
   if (!isNum(n)) return '—';
+  if (Math.abs(n) >= 1e12) return (n < 0 ? '-' : '') + fmtHugeAbs(Math.abs(n));
   return n.toLocaleString('en-US', { minimumFractionDigits: dec == null ? 2 : dec, maximumFractionDigits: dec == null ? 2 : dec });
 }
 function fmtPct(n, dec) {
   if (!isNum(n)) return '—';
+  var a = Math.abs(n);
+  if (a >= 1e12) return (n > 0 ? '+' : '-') + fmtHugeAbs(a) + '%';
+  if (a >= 1e6) return (n > 0 ? '+' : '-') + (a / 1e6).toFixed(2) + 'M%';
   return (n > 0 ? '+' : '') + n.toFixed(dec == null ? 1 : dec) + '%';
 }
 function fmtCap(n) { // dollars -> $969.1B
   if (!isNum(n)) return '—';
+  if (n >= 1e15) return '$' + fmtHugeAbs(n);
   if (n >= 1e12) return '$' + (n / 1e12).toFixed(2) + 'T';
   if (n >= 1e9) return '$' + (n / 1e9).toFixed(1) + 'B';
   if (n >= 1e6) return '$' + (n / 1e6).toFixed(1) + 'M';
@@ -3164,7 +3185,7 @@ function runProjection() {
     var lastLbl = '';
     for (var li = path.length - 1; li >= 0; li--) { if (!path[li].ttm && path[li].label) { lastLbl = path[li].label; break; } }
     var ym = String(lastLbl).match(/(\d{4})/);
-    var hpTxt = baseFp >= 10 ? '$' + Math.floor(baseFp).toLocaleString('en-US') : fmtMoney(baseFp);
+    var hpTxt = baseFp >= 1e12 ? fmtMoney(baseFp, 0) : (baseFp >= 10 ? '$' + Math.floor(baseFp).toLocaleString('en-US') : fmtMoney(baseFp));
     var hlTxt = pjT + ' \u2192 ' + hpTxt + (ym ? ' by ' + ym[1] : '');
     html += '<div class="pj-headline' + (hlTxt.length > 22 ? ' sm' : '') + '">' + esc(pjT) + ' \u2192 <span class="pj-hl-price">' + esc(hpTxt) + '</span>' + (ym ? ' by ' + ym[1] : '') + '</div>';
   }
@@ -4044,6 +4065,9 @@ function runCompound() {
   var init = parseFloat($('cc-init').value) || 0;
   var monthly = parseFloat($('cc-monthly').value) || 0;
   var years = parseInt($('cc-years').value, 10) || 0;
+  if (!isFinite(init)) init = 0;
+  if (!isFinite(monthly)) monthly = 0;
+  if (years > 200) years = 200; // the loop below runs years x 12 times: an absurd year count would hang the tab
   var rate = parseFloat($('cc-rate').value);
   var out = $('cc-result');
   if (!isNum(rate) || years < 1) { out.innerHTML = '<div class="alert warn">Enter a return rate and at least 1 year.</div>'; return; }
@@ -4051,6 +4075,10 @@ function runCompound() {
   for (var m = 1; m <= years * 12; m++) {
     bal = bal * (1 + r) + monthly;
     contributed += monthly;
+    /* Pin absurd magnitudes so the series (and therefore the
+     * chart math) stays finite no matter what was typed. */
+    if (Math.abs(bal) > 1e300) bal = bal < 0 ? -1e300 : 1e300;
+    if (contributed > 1e300) contributed = 1e300;
     if (m % 12 === 0) series.push(bal);
   }
   var gains = bal - contributed;
@@ -5462,7 +5490,12 @@ function scanRecordScore(rec) {
   return { val: s.score, risk: rk.score, combined: Math.round(0.6 * s.score + 0.4 * (100 - rk.score)) };
 }
 function scrReadControls() {
-  var f = { ix: $('scr-ix').value, sort: $('scr-sort').value, sector: $('scr-sector') ? $('scr-sector').value : 'all' };
+  /* Russell 2000 was removed from the Index select (2026-11-07,
+   * Justin's call): the stored dataset never holds Russell records
+   * (its scan is on-demand and the server crawl is Finviz-walled),
+   * so the option only ever produced "0 matches". Anything that
+   * isn't the S&P-only choice reads as 'both'. */
+  var f = { ix: $('scr-ix').value === 'spx' ? 'spx' : 'both', sort: $('scr-sort').value, sector: $('scr-sector') ? $('scr-sector').value : 'all' };
   SCR_FIELDS.forEach(function (k) {
     var v = parseFloat($('scr-' + k).value);
     f[k] = isNum(v) ? v : null;
@@ -5471,7 +5504,7 @@ function scrReadControls() {
   return f;
 }
 function scrApplyControls(f) {
-  $('scr-ix').value = f.ix || 'both';
+  $('scr-ix').value = f.ix === 'spx' ? 'spx' : 'both'; // saved screens with the removed Russell option land on 'both'
   $('scr-sort').value = f.sort || 'combined';
   var ss = $('scr-sector'); if (ss) ss.value = f.sector || 'all';
   SCR_FIELDS.forEach(function (k) { $('scr-' + k).value = isNum(f[k]) ? f[k] : ''; });
