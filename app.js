@@ -474,14 +474,15 @@ async function fetchStock(ticker, opts) {
       return;
     }
     var facts = { since: null, founder: false, bio: '' };
-    try {
-      var wurl = 'https://en.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrlimit=1&prop=extracts&explaintext=1&exintro=1&redirects=1&gsrsearch=' + encodeURIComponent(name + ' ' + (d.companyName || T));
-      var wj = await relayFetch(wurl, { timeout: 20000, validate: function (t) { return t.indexOf('"extract"') !== -1; } });
-      var wpages = ((JSON.parse(wj).query || {}).pages) || {};
-      var lead = '';
-      Object.keys(wpages).forEach(function (k) { if (wpages[k].extract) lead = wpages[k].extract; });
-      if (lead && /chief executive|\bCEO\b/.test(lead.slice(0, 600))) facts = ceoFacts(lead, foundedYear);
-    } catch (e) { d.errors.push('CEO bio: ' + e.message); }
+    var queries = ceoWikiQueries(name, d.companyName || T);
+    for (var qi = 0; qi < queries.length; qi++) {
+      try {
+        var wurl = 'https://en.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrlimit=3&prop=extracts&explaintext=1&exintro=1&redirects=1&gsrsearch=' + encodeURIComponent(queries[qi]);
+        var wj = await relayFetch(wurl, { timeout: 20000, validate: function (t) { return t.indexOf('"extract"') !== -1; } });
+        var lead = ceoPickLead(((JSON.parse(wj).query || {}).pages) || {});
+        if (lead) { facts = ceoFacts(lead, foundedYear); break; }
+      } catch (e) { d.errors.push('CEO bio: ' + e.message); }
+    }
     var sc = null, sl = '';
     if (facts.since) {
       try {
@@ -500,7 +501,10 @@ async function fetchStock(ticker, opts) {
     }
     d.ceoSince = facts.since; d.ceoFounder = facts.founder; d.ceoBio = facts.bio;
     d.ceoStartClose = sc; d.ceoStartLabel = sl;
-    ceoCacheSet(key, { since: facts.since, founder: facts.founder, bio: facts.bio, sc: sc, sl: sl, ts: Date.now() });
+    /* Cache only a bundle that actually found something. Caching an
+     * empty result (a failed lookup) used to stick for the whole
+     * 30-day TTL — that is what kept NVDA's CEO block empty. */
+    if (facts.since || facts.bio || sc) ceoCacheSet(key, { since: facts.since, founder: facts.founder, bio: facts.bio, sc: sc, sl: sl, ts: Date.now() });
   } catch (e) { d.errors.push('CEO: ' + e.message); } };
 
   var srcSurprise = async function () { try {
@@ -876,6 +880,28 @@ function ceoBioFromLead(clean) {
   }
   return bio;
 }
+/* Wikipedia lookups for the CEO bio. Two traps, both hit live
+ * (2026-11-07, NVDA): (1) the company-qualified search can rank
+ * the COMPANY's own article first — "Jen-Hsun Huang NVIDIA Corp"
+ * returns the Nvidia article, whose lead fails the CEO check —
+ * so fall back to the bare CEO name; (2) trusting a single search
+ * hit is fragile, so scan the top few results for a lead that
+ * actually talks about a CEO. */
+function ceoWikiQueries(name, company) {
+  var qs = [];
+  if (company && name) qs.push(name + ' ' + company);
+  if (name) qs.push(name);
+  return qs;
+}
+function ceoPickLead(pages) {
+  var arr = Object.keys(pages || {}).map(function (k) { return pages[k]; });
+  arr.sort(function (a, b) { return (a.index || 99) - (b.index || 99); });
+  for (var i = 0; i < arr.length; i++) {
+    var lead = arr[i] && arr[i].extract;
+    if (lead && /chief executive|\bCEO\b/.test(lead.slice(0, 600))) return lead;
+  }
+  return '';
+}
 function ceoFacts(lead, foundedYear) {
   var clean = ceoCleanLead(lead);
   var founder = /co-?found/i.test(clean) || /founded (?:the |a )?company/i.test(clean);
@@ -900,7 +926,10 @@ function ceoCacheGet(key) {
   try {
     var all = JSON.parse(localStorage.getItem('sr_ceo_v1') || '{}');
     var e = all[key];
-    if (e && (Date.now() - e.ts) < 30 * 864e5) return e;
+    /* An all-empty entry is a cached failure from the old build —
+     * treat it as a miss so the lookup retries instead of waiting
+     * out the TTL. */
+    if (e && (Date.now() - e.ts) < 30 * 864e5 && (e.since || e.bio || e.sc)) return e;
   } catch (err) {}
   return null;
 }
