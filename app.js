@@ -6221,12 +6221,13 @@ function scanRecordScore(rec) {
   return { val: s.score, risk: rk.score, combined: Math.round(0.6 * s.score + 0.4 * (100 - rk.score)) };
 }
 function scrReadControls() {
-  /* Russell 2000 was removed from the Index select (2026-11-07,
-   * Justin's call): the stored dataset never holds Russell records
-   * (its scan is on-demand and the server crawl is Finviz-walled),
-   * so the option only ever produced "0 matches". Anything that
-   * isn't the S&P-only choice reads as 'both'. */
-  var f = { ix: $('scr-ix').value === 'spx' ? 'spx' : 'both', sort: $('scr-sort').value, sector: $('scr-sector') ? $('scr-sector').value : 'all' };
+  /* Russell 2000 is back in the Index select (2026-11-08): the
+   * shared scan's Russell crawl now runs on StockAnalysis instead
+   * of the Finviz-walled screener crawl, so the stored dataset
+   * holds Russell records again and the option is real. (It was
+   * removed 2026-11-07 while the Russell data never ran.) */
+  var ixv = $('scr-ix').value;
+  var f = { ix: ixv === 'spx' ? 'spx' : (ixv === 'rut' ? 'rut' : 'both'), sort: $('scr-sort').value, sector: $('scr-sector') ? $('scr-sector').value : 'all' };
   SCR_FIELDS.forEach(function (k) {
     var v = parseFloat($('scr-' + k).value);
     f[k] = isNum(v) ? v : null;
@@ -6235,7 +6236,7 @@ function scrReadControls() {
   return f;
 }
 function scrApplyControls(f) {
-  $('scr-ix').value = f.ix === 'spx' ? 'spx' : 'both'; // saved screens with the removed Russell option land on 'both'
+  $('scr-ix').value = (f.ix === 'spx' || f.ix === 'rut') ? f.ix : 'both'; // saved Russell screens open as Russell again (2026-11-08)
   $('scr-sort').value = f.sort || 'combined';
   var ss = $('scr-sector'); if (ss) ss.value = f.sector || 'all';
   SCR_FIELDS.forEach(function (k) { $('scr-' + k).value = isNum(f[k]) ? f[k] : ''; });
