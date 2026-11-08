@@ -3390,8 +3390,9 @@ async function runCompare() {
     { label: 'Current ratio', get: function (d) { return d.currentRatio; }, fmt: function (v) { return fmtNum(v, 2); }, best: 'max' },
     { label: 'Beta ↓', get: function (d) { return d.beta; }, fmt: function (v) { return fmtNum(v, 2); }, best: 'min' },
     { label: 'Dividend yield', get: function (d) { return d.divYield; }, fmt: function (v) { return isNum(v) ? fmtNum(v, 2) + '%' : '\u2014'; }, best: 'max' },
-    { label: 'Value screen', get: function (d) { return valueScreen(d).filter(function (s) { return s.test === true; }).length; }, fmt: function (v) { return v + ' / 4'; }, best: 'max' },
-    { label: 'Score', get: function (d) { return scoreStock(d).score; }, fmt: function (v) { return isNum(v) ? v + ' / 100' : '—'; }, best: 'max' }
+    { label: 'Value screen', get: function (d) { return valueScreen(d).filter(function (s) { return s.test === true; }).length; }, fmt: function (v) { return v + ' / 5'; }, best: 'max' },
+    { label: 'Score', get: function (d) { return scoreStock(d).score; }, fmt: function (v) { return isNum(v) ? v + ' / 100' : '—'; }, best: 'max' },
+    { label: 'Risk score \u2193', get: function (d) { var rk = riskScore(d); return rk && isNum(rk.score) ? rk.score : null; }, fmt: function (v) { return isNum(v) ? v + ' / 100' : '—'; }, best: 'min' },
   ];
   var html = '<div class="card"><table class="cmp"><tr><th></th>';
   ok.forEach(function (d) { html += '<th class="num"><span class="cmp-th">' + logoTile(d.ticker, 'sm') + esc(d.ticker) + '</span></th>'; });
