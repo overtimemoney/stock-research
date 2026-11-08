@@ -839,6 +839,13 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 button.v-score.pts-btn { border-bottom: 1px dotted rgba(0,0,0,.35); }
 button.v-score.pts-btn[aria-expanded="true"] { border-bottom: 1px solid currentColor; color: inherit; }
 table.factors tr.math-row td { border-bottom: 1px solid var(--row-line); padding: 2px 6px 10px; }
+/* Info text in a factor table gets its own full-width row (Justin's
+ * ask, 2026-11-08): inside the narrow first column the long blurbs
+ * ran past the unfold cap and clipped mid-sentence. Closed rows
+ * take no space; the taller cap fits the longest explainer. */
+table.factors tr.info-row td { padding: 0 6px; border-bottom: none; }
+table.factors tr.info-row:has(.info-text.open) td { border-bottom: 1px solid var(--row-line); padding-bottom: 8px; }
+table.factors .info-row .info-text.open { max-height: 900px; }
 .math-box { background: var(--field); border-radius: 10px; padding: 9px 11px; font-size: 12.5px; line-height: 1.55; }
 .banner-math { margin: 10px 0 4px; }
 

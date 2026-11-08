@@ -3099,7 +3099,8 @@ function renderScorecard(d) {
     html += '<table class="factors"><tr><th>Factor</th><th>Value</th><th class="num">Points</th></tr>';
     sc.factors.forEach(function (f, fi) {
       var ik = FACTOR_INFO[f.name];
-      html += '<tr><td><strong>' + esc(f.name) + '</strong>' + (ik ? infoDot(ik) : '') + '<div class="factor-note">' + esc(f.note) + '</div>' + (ik ? infoText(ik) : '') + '</td><td>' + esc(f.display) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-v' + fi + '" aria-expanded="false"><strong>' + f.pts + '</strong> / ' + f.max + '</button></td></tr>';
+      html += '<tr><td><strong>' + esc(f.name) + '</strong>' + (ik ? infoDot(ik) : '') + '<div class="factor-note">' + esc(f.note) + '</div></td><td>' + esc(f.display) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-v' + fi + '" aria-expanded="false"><strong>' + f.pts + '</strong> / ' + f.max + '</button></td></tr>';
+      if (ik) html += '<tr class="info-row"><td colspan="3">' + infoText(ik) + '</td></tr>';
       html += '<tr class="math-row" id="math-v' + fi + '" hidden><td colspan="3"><div class="math-box">' + esc(f.math) + '</div></td></tr>';
     });
     html += '</table>';
@@ -3123,7 +3124,8 @@ function renderScorecard(d) {
     html += '<table class="factors"><tr><th>Risk factor</th><th>Value</th><th class="num">Risk pts</th></tr>';
     rk.factors.forEach(function (f, fi) {
       var ik = FACTOR_INFO[f.name];
-      html += '<tr><td><strong>' + esc(f.name) + '</strong>' + (ik ? infoDot(ik) : '') + '<div class="factor-note">' + esc(f.note) + '</div>' + (ik ? infoText(ik) : '') + '</td><td>' + esc(f.display) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-r' + fi + '" aria-expanded="false"><strong>' + f.pts + '</strong> / ' + f.max + '</button></td></tr>';
+      html += '<tr><td><strong>' + esc(f.name) + '</strong>' + (ik ? infoDot(ik) : '') + '<div class="factor-note">' + esc(f.note) + '</div></td><td>' + esc(f.display) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-r' + fi + '" aria-expanded="false"><strong>' + f.pts + '</strong> / ' + f.max + '</button></td></tr>';
+      if (ik) html += '<tr class="info-row"><td colspan="3">' + infoText(ik) + '</td></tr>';
       html += '<tr class="math-row" id="math-r' + fi + '" hidden><td colspan="3"><div class="math-box">' + esc(f.math) + '</div></td></tr>';
     });
     var cycSig = rk.cyc ? [rk.cyc.signals.margin, rk.cyc.signals.epsDD, rk.cyc.signals.epsGrowth, rk.cyc.signals.revSurge].filter(isNum) : [];
@@ -3143,7 +3145,8 @@ function renderScorecard(d) {
       if (!rk.cyc.gatePassed) cNote += ' \u00b7 gate not met, no adjustment';
       else if (rk.cyc.limitedHistory) cNote += ' \u00b7 limited history';
       var cDetail = INFO_TEXT.cycsev + (cParts.length ? '<br><br>This stock: ' + esc(cParts.join(' \u00b7 ')) + '.' : '');
-      html += '<tr><td><strong>Cyclical earnings risk</strong>' + infoDot('cycsev') + '<div class="factor-note">' + esc(cNote) + '</div>' + '<span class="info-text" data-info-text="cycsev">' + cDetail + '</span>' + '</td><td>Severity ' + fmtNum(rk.cyc.severity, 2) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-cyc" aria-expanded="false"><strong>+' + rk.cycAdj + '</strong></button></td></tr>';
+      html += '<tr><td><strong>Cyclical earnings risk</strong>' + infoDot('cycsev') + '<div class="factor-note">' + esc(cNote) + '</div></td><td>Severity ' + fmtNum(rk.cyc.severity, 2) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-cyc" aria-expanded="false"><strong>+' + rk.cycAdj + '</strong></button></td></tr>';
+      html += '<tr class="info-row"><td colspan="3"><span class="info-text" data-info-text="cycsev">' + cDetail + '</span></td></tr>';
       var cycMath = 'Risk added = (100 \u2212 base ' + rk.base + ') \u00d7 severity ' + fmtNum(rk.cyc.severity, 2) + ' \u00d7 0.6 = +' + rk.cycAdj + ' \u2192 final ' + rk.score + '.';
       if (cParts.length) cycMath = 'Severity ' + fmtNum(rk.cyc.severity, 2) + ': ' + cParts.join(' \u00b7 ') + '.<br>' + cycMath;
       html += '<tr class="math-row" id="math-cyc" hidden><td colspan="3"><div class="math-box">' + cycMath + '</div></td></tr>';
