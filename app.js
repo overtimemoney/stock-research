@@ -5018,7 +5018,12 @@ var SCAN_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/scre
 var SCAN_VIEWS = ['121', '161', '171'];
 var SCAN_IDXS = [
   { key: 'spx', label: 'S&P 500' },
-  { key: 'rut', label: 'Russell 2000' }
+  { key: 'rut', label: 'Russell 2000' },
+  /* Russell 3000 (2026-11-08): shared-scan only -- the server crawl
+   * (StockAnalysis) publishes it daily; there is no on-device crawl
+   * for it (started stays false here, and the scan card renders no
+   * on-demand button for it). */
+  { key: 'r3k', label: 'Russell 3000' }
 ];
 var SCAN_KEY = 'sr_scan_v4';
 var scanRunning = false, scanActive = 0, scanCoolUntil = 0, scanTimer = null;
@@ -5429,12 +5434,15 @@ async function scanEnrichTop(fullByIx) {
  * of the stored records: enrichment hangs yearly/revenue data on the
  * records it scores, and the stored dataset must not grow them. */
 function scanFullFromData(ds) {
-  var byIx = { spx: { merged: {} }, rut: { merged: {} } };
+  var byIx = {};
+  SCAN_IDXS.forEach(function (ix) { byIx[ix.key] = { merged: {} }; });
   Object.keys(ds.recs).forEach(function (t) {
     var r = ds.recs[t];
-    if (byIx[r.ix]) byIx[r.ix].merged[t] = Object.assign({}, r);
+    SCAN_IDXS.forEach(function (ix) { if (scanRecIx(r, ix.key)) byIx[ix.key].merged[t] = Object.assign({}, r); });
   });
-  return { spx: scanRankAll(byIx.spx), rut: scanRankAll(byIx.rut) };
+  var out = {};
+  SCAN_IDXS.forEach(function (ix) { out[ix.key] = scanRankAll(byIx[ix.key]); });
+  return out;
 }
 
 async function scanFetchPage(ixKey, v, r) {
@@ -5653,24 +5661,40 @@ function scanUpdateNewBadges(results, force) {
   var today = scanTodayKey();
   var top = lsGet(SCAN_TOP_KEY, null);
   if (!force && top && top.date === today) return; // already noted today's first list
-  var hadPrev = !!(top && ((top.spx || []).length || (top.rut || []).length));
-  var newIn = { spx: [], rut: [] }, newTop = { date: today, spx: [], rut: [] };
-  ['spx', 'rut'].forEach(function (ix) {
+  var hadPrev = !!(top && SCAN_IDXS.some(function (ix) { return (top[ix.key] || []).length; }));
+  var newIn = {}, newTop = { date: today };
+  SCAN_IDXS.forEach(function (ixDef) {
+    var ix = ixDef.key;
+    newIn[ix] = []; newTop[ix] = [];
     var prev = (top && top[ix]) || [];
     (results[ix] || []).forEach(function (r) {
       newTop[ix].push(r.t);
       if (hadPrev && prev.indexOf(r.t) === -1) newIn[ix].push(r.t);
     });
   });
-  lsSet(SCAN_NEW_KEY, { date: today, spx: newIn.spx, rut: newIn.rut });
+  newIn.date = today;
+  lsSet(SCAN_NEW_KEY, newIn);
   lsSet(SCAN_TOP_KEY, newTop);
 }
 
+/* Multi-index membership (2026-11-08): indexes overlap -- the
+ * Russell 3000 contains nearly every Russell 2000 and S&P 500 name --
+ * so a stored record keeps the SET of indexes it belongs to (ixs).
+ * ix remains the most recent writer for legacy readers; membership
+ * questions go through scanRecIx. Without this, persisting the
+ * Russell 3000 dataset would have relabeled ~2,400 shared tickers
+ * and emptied the other two indexes' screener results. */
+function scanRecIx(rec, key) {
+  return !!rec && (rec.ix === key || !!(rec.ixs && rec.ixs.indexOf(key) !== -1));
+}
 function scanPersistIdx(ixKey, merged) {
   var ds = getScanData() || { recs: {}, asOf: null, lastRefreshDay: null, lastRefreshCount: 0 };
   Object.keys(merged).forEach(function (t) {
     var r = merged[t];
-    ds.recs[t] = { name: r.name, ix: ixKey, forwardPE: r.forwardPE, peg: r.peg, epsGrowthNextY: r.epsGrowthNextY,
+    var prev = ds.recs[t];
+    var ixs = (prev && prev.ixs) ? prev.ixs.slice() : (prev && prev.ix ? [prev.ix] : []);
+    if (ixs.indexOf(ixKey) === -1) ixs.push(ixKey);
+    ds.recs[t] = { name: r.name, ix: ixKey, ixs: ixs, forwardPE: r.forwardPE, peg: r.peg, epsGrowthNextY: r.epsGrowthNextY,
       price: r.price, marketCap: r.marketCap, grossMargin: r.grossMargin, profitMargin: r.profitMargin,
       debtEq: r.debtEq, currentRatio: r.currentRatio, pctBelowHigh: r.pctBelowHigh, beta: r.beta,
       divYield: r.divYield, industry: r.industry, epsGrowthTTM: r.epsGrowthTTM };
@@ -5747,7 +5771,7 @@ async function dyBackfill() {
 function scanRecordFromQuote(html, prev) {
   var d = { ticker: '', sources: [], errors: [] };
   try { fillFromFinviz(d, html); } catch (e) { return null; }
-  var rec = { name: d.companyName || (prev && prev.name) || '', ix: prev && prev.ix };
+  var rec = { name: d.companyName || (prev && prev.name) || '', ix: prev && prev.ix, ixs: prev && prev.ixs };
   rec.industry = prev ? prev.industry : null;
   ['forwardPE', 'peg', 'price', 'marketCap', 'grossMargin', 'profitMargin', 'debtEq', 'beta', 'currentRatio', 'pctBelowHigh', 'divYield', 'epsGrowthTTM'].forEach(function (k) {
     rec[k] = isNum(d[k]) ? d[k] : (prev ? prev[k] : null);
@@ -5757,13 +5781,20 @@ function scanRecordFromQuote(html, prev) {
   return rec;
 }
 
-function scanRankFromData(ds) {
-  var byIx = { spx: { merged: {} }, rut: { merged: {} } };
+function scanBucketsFromData(ds) {
+  var byIx = {};
+  SCAN_IDXS.forEach(function (ix) { byIx[ix.key] = { merged: {} }; });
   Object.keys(ds.recs).forEach(function (t) {
     var r = ds.recs[t];
-    if (byIx[r.ix]) byIx[r.ix].merged[t] = r;
+    SCAN_IDXS.forEach(function (ix) { if (scanRecIx(r, ix.key)) byIx[ix.key].merged[t] = r; });
   });
-  return { spx: scanFinalizeIdx(byIx.spx), rut: scanFinalizeIdx(byIx.rut) };
+  return byIx;
+}
+function scanRankFromData(ds) {
+  var byIx = scanBucketsFromData(ds);
+  var out = {};
+  SCAN_IDXS.forEach(function (ix) { out[ix.key] = scanFinalizeIdx(byIx[ix.key]); });
+  return out;
 }
 
 function scanShowDataResults(ds, refreshed) {
@@ -5778,7 +5809,7 @@ function scanShowDataResults(ds, refreshed) {
   s.dataAsOf = ds.asOf;
   s.refreshed = refreshed;
   SCAN_IDXS.forEach(function (ix) {
-    var n = Object.keys(ds.recs).filter(function (t) { return ds.recs[t].ix === ix.key; }).length;
+    var n = Object.keys(ds.recs).filter(function (t) { return scanRecIx(ds.recs[t], ix.key); }).length;
     s.idx[ix.key].scored = n;
     // Stored rows for this index mean its list renders; leaving the
     // fresh-day started=false in place would swap in the on-demand
@@ -5911,7 +5942,7 @@ async function scanFetchShared(ixKey) {
     if (!p || !p.asOf || !p.recs || !Array.isArray(p.top)) return null;
     if (Date.now() - Date.parse(p.asOf) > 48 * 3600 * 1000) return null; // stale
     var n = Object.keys(p.recs).length;
-    if (n < (ixKey === 'rut' ? 500 : 100)) return null;
+    if (n < (ixKey === 'rut' ? 500 : (ixKey === 'r3k' ? 1000 : 100))) return null;
     return p;
   } catch (e) { return null; }
 }
@@ -5927,6 +5958,7 @@ async function scanAdoptShared() {
     var spx = await scanFetchShared('spx');
     if (!spx) return false;
     var rut = await scanFetchShared('rut');
+    var r3k = await scanFetchShared('r3k');
     var asOfDay = pfKeyToISO(pfDkey(new Date(spx.asOf)));
     if (asOfDay !== scanTodayKey()) {
       // Yesterday's pass: refresh the stored dataset only (if newer),
@@ -5935,6 +5967,7 @@ async function scanAdoptShared() {
       if (!ds0 || !ds0.asOf || ds0.asOf < asOfDay) {
         scanPersistIdx('spx', spx.recs);
         if (rut) scanPersistIdx('rut', rut.recs);
+        if (r3k) scanPersistIdx('r3k', r3k.recs);
         var ds1 = getScanData();
         if (ds1) { ds1.asOf = asOfDay; setScanData(ds1); }
         return 'data';
@@ -5944,10 +5977,11 @@ async function scanAdoptShared() {
     var s = scanFreshState();
     s.done = true;
     s.shared = true;
-    s.sharedAsOf = rut && Date.parse(rut.asOf) > Date.parse(spx.asOf) ? rut.asOf : spx.asOf;
-    s.results = { spx: spx.top, rut: rut ? rut.top : [] };
-    var counts = { spx: 0, rut: 0 };
-    [spx, rut].forEach(function (p) {
+    s.sharedAsOf = spx.asOf;
+    [rut, r3k].forEach(function (p) { if (p && Date.parse(p.asOf) > Date.parse(s.sharedAsOf)) s.sharedAsOf = p.asOf; });
+    s.results = { spx: spx.top, rut: rut ? rut.top : [], r3k: r3k ? r3k.top : [] };
+    var counts = { spx: 0, rut: 0, r3k: 0 };
+    [spx, rut, r3k].forEach(function (p) {
       if (!p) return;
       Object.keys(p.recs).forEach(function (t) { if (p.recs[t].ix) counts[p.recs[t].ix] = (counts[p.recs[t].ix] || 0) + 1; });
     });
@@ -5955,9 +5989,12 @@ async function scanAdoptShared() {
     s.idx.spx.scored = counts.spx;
     if (rut) { s.idx.rut.started = true; s.idx.rut.scored = counts.rut; }
     else { s.idx.rut = scanFreshIdx(false); }
+    if (r3k) { s.idx.r3k.started = true; s.idx.r3k.scored = counts.r3k; }
+    else { s.idx.r3k = scanFreshIdx(false); }
     setScan(s);
     scanPersistIdx('spx', spx.recs);
     if (rut) scanPersistIdx('rut', rut.recs);
+    if (r3k) scanPersistIdx('r3k', r3k.recs);
     scanUpdateNewBadges(s.results);
     scanDiag('shared scan adopted: spx ' + spx.top.length + ' rows, asOf ' + spx.asOf);
     renderScanCard();
@@ -6074,7 +6111,7 @@ function renderScanCard() {
     var ranked = scanRankFromData(ds);
     var out = '<div class="fineprint" style="margin:2px 0 8px">Last completed list \u00b7 data from ' + esc(ds.asOf || 'an earlier scan') + '</div>';
     SCAN_IDXS.forEach(function (ix) {
-      var n = Object.keys(ds.recs).filter(function (t) { return ds.recs[t].ix === ix.key; }).length;
+      var n = Object.keys(ds.recs).filter(function (t) { return scanRecIx(ds.recs[t], ix.key); }).length;
       if (!n) return;
       var rows = ranked[ix.key] || [];
       out += '<div class="scan-group">' + esc(ix.label) + ' <span class="scan-count">' + n + ' stocks scored' + (scanNewList(ix.key).length ? ' \u00b7 ' + scanNewList(ix.key).length + ' new' : '') + '</span></div>';
@@ -6110,9 +6147,15 @@ function renderScanCard() {
       var rows = (s.results && s.results[ix.key]) || [];
       var z = s.idx[ix.key];
       if (z.started === false) {
-        out += '<div class="scan-group">' + esc(ix.label) + '</div>' +
-          '<div class="fineprint" style="margin:0 0 8px">Scanned on demand, so the daily scan stays fast.</div>' +
-          '<button type="button" class="btn-ghost" id="scan-start-rut">Scan Russell 2000</button>';
+        out += '<div class="scan-group">' + esc(ix.label) + '</div>';
+        if (ix.key === 'rut') {
+          out += '<div class="fineprint" style="margin:0 0 8px">Scanned on demand, so the daily scan stays fast.</div>' +
+            '<button type="button" class="btn-ghost" id="scan-start-rut">Scan Russell 2000</button>';
+        } else {
+          // Russell 3000 has no on-device crawl; it arrives with the
+          // shared daily scan.
+          out += '<div class="fineprint" style="margin:0 0 8px">Runs in the shared daily scan.</div>';
+        }
         return;
       }
       var newCt = scanNewList(ix.key).length;
@@ -6227,7 +6270,7 @@ function scrReadControls() {
    * holds Russell records again and the option is real. (It was
    * removed 2026-11-07 while the Russell data never ran.) */
   var ixv = $('scr-ix').value;
-  var f = { ix: ixv === 'spx' ? 'spx' : (ixv === 'rut' ? 'rut' : 'both'), sort: $('scr-sort').value, sector: $('scr-sector') ? $('scr-sector').value : 'all' };
+  var f = { ix: (ixv === 'spx' || ixv === 'rut' || ixv === 'r3k') ? ixv : 'both', sort: $('scr-sort').value, sector: $('scr-sector') ? $('scr-sector').value : 'all' };
   SCR_FIELDS.forEach(function (k) {
     var v = parseFloat($('scr-' + k).value);
     f[k] = isNum(v) ? v : null;
@@ -6236,13 +6279,13 @@ function scrReadControls() {
   return f;
 }
 function scrApplyControls(f) {
-  $('scr-ix').value = (f.ix === 'spx' || f.ix === 'rut') ? f.ix : 'both'; // saved Russell screens open as Russell again (2026-11-08)
+  $('scr-ix').value = (f.ix === 'spx' || f.ix === 'rut' || f.ix === 'r3k') ? f.ix : 'both'; // saved index screens reopen on their own index
   $('scr-sort').value = f.sort || 'combined';
   var ss = $('scr-sector'); if (ss) ss.value = f.sector || 'all';
   SCR_FIELDS.forEach(function (k) { $('scr-' + k).value = isNum(f[k]) ? f[k] : ''; });
 }
 function scrPasses(rec, f) {
-  if (f.ix !== 'both' && rec.ix !== f.ix) return false;
+  if (f.ix !== 'both' && !scanRecIx(rec, f.ix)) return false;
   if (f.sector && f.sector !== 'all' && sectorOf(rec) !== f.sector) return false;
   if (isNum(f.fpe) && !(isNum(rec.forwardPE) && rec.forwardPE <= f.fpe)) return false;
   if (isNum(f.peg) && !(isNum(rec.peg) && rec.peg <= f.peg)) return false;
