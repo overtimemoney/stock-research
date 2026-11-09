@@ -2785,7 +2785,7 @@ async function ceoPrevFor(name, company, extract) {
   } catch (e) {}
   return null;
 }
-var BIZ_KEY = 'sr_biz_v2';
+var BIZ_KEY = 'sr_biz_v3';
 var SCAN_SHARED_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/scan';
 var AI_SWOT_CACHE_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/swot-cache';
 var AI_SWOT_KEY = 'sr_aiswot_v1';
