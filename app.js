@@ -1450,6 +1450,8 @@ function parseSAForecastMetrics(html) {
     }
     cols.forEach(function (i) {
       var rev = valAt('Revenue', i);
+      if (!isNum(rev)) rev = valAt('Total Revenue', i);
+      if (!isNum(rev)) rev = valAt('Revenue as Reported', i);
       function push(key, v) { if (isNum(v)) (est[key] = est[key] || []).push({ plabel: hdr[i], value: v }); }
       push('revenue', rev);
       push('netIncome', valAt('Net Income', i));
@@ -4183,7 +4185,7 @@ function parseSAQuarterly(htmlIs, htmlCf, yearly, htmlBs) {
   var M = 1e6;
   return {
     periods: periods.slice().reverse(),
-    revenue: series('Revenue', M),
+    revenue: series('Revenue', M) || series('Total Revenue', M) || series('Revenue as Reported', M),
     grossProfit: series('Gross Profit', M),
     operIncome: series('Operating Income', M),
     netIncome: series('Net Income', M),
