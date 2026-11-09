@@ -285,6 +285,23 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
       </div>
       <div id="sync-status" class="status" role="status"></div>
     </div>
+    <div class="set-h">Scoring weights</div>
+    <p class="fineprint" style="margin:0 0 8px">How much each factor counts in your Value and Risk scores. Scores always scale to 100 over the factors that have data. The daily Top lists always use the standard weights.</p>
+    <div id="weights-presets" class="w-presets">
+      <button type="button" class="w-chip" data-preset="balanced">Balanced</button>
+      <button type="button" class="w-chip" data-preset="deepvalue">Deep Value</button>
+      <button type="button" class="w-chip" data-preset="safety">Safety First</button>
+      <button type="button" class="w-chip" data-preset="growth">Growth</button>
+      <button type="button" class="w-chip" data-preset="fundamentals">Fundamentals Only</button>
+    </div>
+    <div class="w-group">Value score</div>
+    <div id="weights-val"></div>
+    <div class="w-group">Risk score</div>
+    <div id="weights-risk"></div>
+    <div class="row-gap" style="margin-top:10px">
+      <button id="weights-reset" class="btn-ghost" type="button">Reset to defaults</button>
+    </div>
+    <div id="weights-state" class="status" role="status"></div>
     <div class="set-h">Learn</div>
     <button id="menu-quiz" class="btn-ghost wide" type="button" style="margin-bottom:6px"><svg class="ico" viewBox="0 0 24 24"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg> The 5% Quiz — what an extra 5%/yr is worth</button>
     <button id="menu-install" class="btn-ghost wide" type="button" style="margin-bottom:4px"><svg class="ico" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> Add to Home Screen</button>

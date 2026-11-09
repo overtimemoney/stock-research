@@ -769,7 +769,100 @@ function cheapPeTrap(d) {
   return isNum(d.forwardPE) && d.forwardPE > 0 && d.forwardPE < 8 && isNum(d.epsGrowthTTM) && d.epsGrowthTTM > 200;
 }
 
-function scoreStock(d) {
+/* ====================== scoring weights ======================
+ * The bands inside each factor never change — they are the
+ * measuring stick. How much each factor COUNTS is the user's call:
+ * scoreStock / riskScore take an optional weights argument. Omit it
+ * for the user's weights; pass STD_W for the standard rubric (the
+ * daily scans, the SWOT generators — anything shared or comparable
+ * across users). Scores always renormalize over the weights of the
+ * factors that have data, so any weight set still reads 0-100. */
+var SCORE_WEIGHTS_KEY = 'sr_weights_v1';
+var VAL_FACTOR_DEFS = [
+  { name: 'Forward P/E', def: 25 },
+  { name: 'PEG ratio', def: 20 },
+  { name: 'Below 52-wk high', def: 15 },
+  { name: 'EPS growth, next yr', def: 15 },
+  { name: 'Profit margin', def: 10 },
+  { name: 'Gross margin', def: 5 },
+  { name: 'Debt / Equity', def: 10 }
+];
+var RISK_FACTOR_DEFS = [
+  { name: 'Beta (volatility)', def: 10 },
+  { name: 'Debt / Equity', def: 25 },
+  { name: 'Profit margin', def: 20 },
+  { name: 'Company size', def: 15 },
+  { name: 'EPS trend, next yr', def: 20 },
+  { name: 'Current ratio', def: 10 }
+];
+function stdWeights() {
+  var v = {}, r = {};
+  VAL_FACTOR_DEFS.forEach(function (f) { v[f.name] = f.def; });
+  RISK_FACTOR_DEFS.forEach(function (f) { r[f.name] = f.def; });
+  return { val: v, risk: r };
+}
+var STD_W = stdWeights();
+var SCORE_PRESETS = {
+  balanced: stdWeights(),
+  deepvalue: {
+    val: { 'Forward P/E': 35, 'PEG ratio': 25, 'Below 52-wk high': 20, 'EPS growth, next yr': 5, 'Profit margin': 5, 'Gross margin': 5, 'Debt / Equity': 5 },
+    risk: { 'Beta (volatility)': 5, 'Debt / Equity': 30, 'Profit margin': 20, 'Company size': 10, 'EPS trend, next yr': 20, 'Current ratio': 15 }
+  },
+  safety: {
+    val: { 'Forward P/E': 15, 'PEG ratio': 10, 'Below 52-wk high': 10, 'EPS growth, next yr': 10, 'Profit margin': 20, 'Gross margin': 10, 'Debt / Equity': 25 },
+    risk: { 'Beta (volatility)': 15, 'Debt / Equity': 35, 'Profit margin': 20, 'Company size': 10, 'EPS trend, next yr': 5, 'Current ratio': 15 }
+  },
+  growth: {
+    val: { 'Forward P/E': 10, 'PEG ratio': 20, 'Below 52-wk high': 10, 'EPS growth, next yr': 35, 'Profit margin': 10, 'Gross margin': 10, 'Debt / Equity': 5 },
+    risk: { 'Beta (volatility)': 15, 'Debt / Equity': 10, 'Profit margin': 15, 'Company size': 5, 'EPS trend, next yr': 40, 'Current ratio': 15 }
+  },
+  /* Beta and company size switched off entirely: risk is judged
+   * only on the balance sheet, profitability, earnings trend and
+   * bill-paying ability (Justin's requirement, 2026-11-08). */
+  fundamentals: {
+    val: { 'Forward P/E': 20, 'PEG ratio': 15, 'Below 52-wk high': 10, 'EPS growth, next yr': 15, 'Profit margin': 20, 'Gross margin': 10, 'Debt / Equity': 10 },
+    risk: { 'Beta (volatility)': 0, 'Debt / Equity': 40, 'Profit margin': 25, 'Company size': 0, 'EPS trend, next yr': 20, 'Current ratio': 15 }
+  }
+};
+var SCORE_PRESET_LABELS = { balanced: 'Balanced', deepvalue: 'Deep Value', safety: 'Safety First', growth: 'Growth', fundamentals: 'Fundamentals Only' };
+function getScoreWeights() {
+  var stored = lsGet(SCORE_WEIGHTS_KEY, null);
+  var out = stdWeights();
+  if (stored) {
+    ['val', 'risk'].forEach(function (side) {
+      var defs = side === 'val' ? VAL_FACTOR_DEFS : RISK_FACTOR_DEFS;
+      defs.forEach(function (f) {
+        var v = stored[side] && stored[side][f.name];
+        if (isNum(v)) out[side][f.name] = Math.max(0, Math.min(60, v));
+      });
+    });
+  }
+  return out;
+}
+function setScoreWeights(w) { lsSet(SCORE_WEIGHTS_KEY, w); }
+function weightsAreCustom() {
+  return JSON.stringify(getScoreWeights()) !== JSON.stringify(STD_W);
+}
+function resolveWeights(w) { return w || getScoreWeights(); }
+/* Rescale built factors from the standard rubric to the given
+ * weights: each factor keeps the FRACTION of its max that it
+ * earned, applied to the user's max for that factor. A weight of 0
+ * switches the factor off — it stays visible, counts for nothing. */
+function applyWeights(factors, map) {
+  if (!map) return;
+  factors.forEach(function (f) {
+    var w = map[f.name];
+    if (w == null || w === f.max) return;
+    var frac = f.max > 0 ? f.pts / f.max : 0;
+    f.pts = Math.round(frac * w * 10) / 10;
+    f.math += w === 0
+      ? ' \u2192 switched off by your scoring weights, so it counts for nothing'
+      : ' \u2192 your weights count this factor as ' + f.pts + ' of ' + w + ' pts';
+    f.max = w;
+  });
+}
+
+function scoreStock(d, w) {
   var factors = [];
   /* pick(): first matching band wins. 'le' tables ascend (v <= limit);
    * 'ge' tables descend (v >= limit, or v > limit on a 'gt' row).
@@ -858,6 +951,7 @@ function scoreStock(d) {
       }
     });
   }
+  applyWeights(factors, resolveWeights(w).val);
   var got = factors.reduce(function (s, f) { return s + f.pts; }, 0);
   var maxAvailable = factors.reduce(function (s, f) { return s + f.max; }, 0);
   var score = maxAvailable > 0 ? Math.round(got / maxAvailable * 100) : null;
@@ -1921,7 +2015,7 @@ function cyclicalSeverity(d) {
   return out;
 }
 
-function riskScore(d) {
+function riskScore(d, w) {
   var factors = [];
   /* pick(): first matching band wins. 'le' tables ascend (v <= limit);
    * 'ge' tables descend (v >= limit, or v > limit on a 'gt' row).
@@ -1988,6 +2082,7 @@ function riskScore(d) {
     add('Current ratio', d.currentRatio, fmtNum(d.currentRatio, 2), 10,
       pick(d.currentRatio, bCr, false), 'Can it pay its near-term bills?', bCr, false);
   }
+  applyWeights(factors, resolveWeights(w).risk);
   var got = factors.reduce(function (s, f) { return s + f.pts; }, 0);
   var maxAvailable = factors.reduce(function (s, f) { return s + f.max; }, 0);
   // The six factors' weights sum to a true 100 (Justin's call,
@@ -2694,7 +2789,7 @@ function kvItem(k, v, ik) {
  * events (lawsuits, new rivals, regulation) can't appear here. */
 function buildSwot(d) {
   var S = [], W = [], O = [], T = [];
-  var sc = scoreStock(d);
+  var sc = scoreStock(d, STD_W);
   var traj = epsTrajectory(d);
   var pts = traj.points;
   // Implied growth between consecutive EPS points (TTM -> forecasts).
@@ -2800,7 +2895,7 @@ function saveAiSwot(ticker, entry) {
   lsSet(AI_SWOT_KEY, all);
 }
 function aiMetricsText(d) {
-  var sc = scoreStock(d);
+  var sc = scoreStock(d, STD_W);
   var parts = [];
   if (isNum(d.marketCap)) parts.push('market cap ' + fmtCap(d.marketCap));
   if (isNum(d.forwardPE)) parts.push('forward P/E ' + fmtNum(d.forwardPE, 1));
@@ -3093,13 +3188,17 @@ function renderScorecard(d) {
       '<div class="v-word">' + esc(sc.verdict) + '</div></div>' +
       '<button type="button" class="v-score pts-btn" data-mathbtn data-mathtarget="math-vscore" aria-expanded="false">' + sc.score + '<small> / 100</small></button></div>';
     html += '<div class="score-bar"><div style="width:' + sc.score + '%"></div></div>';
+    if (weightsAreCustom()) {
+      var scStd = scoreStock(d, STD_W);
+      if (scStd.score != null && scStd.rawScore !== sc.rawScore) html += '<p class="fineprint">Your scoring weights \u00b7 with the standard weights this scores ' + scStd.rawScore + '.</p>';
+    }
     var scMath = 'Score = ' + sc.got + ' pts earned \u00f7 ' + sc.maxAvailable + ' pts available \u00d7 100 = ' + sc.rawScore + '.';
     if (sc.cycCapped) scMath += ' Capped at 70: cyclical severity ' + fmtNum(sc.severity, 2) + ' is 0.5 or higher (peak-earnings risk).';
     html += '<div class="math-box banner-math" id="math-vscore" hidden>' + esc(scMath) + '</div>';
     html += '<table class="factors"><tr><th>Factor</th><th>Value</th><th class="num">Points</th></tr>';
     sc.factors.forEach(function (f, fi) {
       var ik = FACTOR_INFO[f.name];
-      html += '<tr><td><strong>' + esc(f.name) + '</strong>' + (ik ? infoDot(ik) : '') + '<div class="factor-note">' + esc(f.note) + '</div></td><td>' + esc(f.display) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-v' + fi + '" aria-expanded="false"><strong>' + f.pts + '</strong> / ' + f.max + '</button></td></tr>';
+      html += '<tr><td><strong>' + esc(f.name) + '</strong>' + (ik ? infoDot(ik) : '') + '<div class="factor-note">' + esc(f.note) + '</div></td><td>' + esc(f.display) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-v' + fi + '" aria-expanded="false">' + (f.max === 0 ? '<strong>off</strong>' : '<strong>' + f.pts + '</strong> / ' + f.max) + '</button></td></tr>';
       if (ik) html += '<tr class="info-row"><td colspan="3">' + infoText(ik) + '</td></tr>';
       html += '<tr class="math-row" id="math-v' + fi + '" hidden><td colspan="3"><div class="math-box">' + esc(f.math) + '</div></td></tr>';
     });
@@ -3118,13 +3217,17 @@ function renderScorecard(d) {
       '<div class="v-word">' + esc(rk.verdict) + '</div></div>' +
       '<button type="button" class="v-score pts-btn" data-mathbtn data-mathtarget="math-rscore" aria-expanded="false">' + rk.score + '<small> / 100</small></button></div>';
     html += '<div class="score-bar risk-bar"><div style="width:' + rk.score + '%"></div></div>';
+    if (weightsAreCustom()) {
+      var rkStd = riskScore(d, STD_W);
+      if (rkStd.score != null && rkStd.score !== rk.score) html += '<p class="fineprint">Your scoring weights \u00b7 with the standard weights the risk score is ' + rkStd.score + '.</p>';
+    }
     var rkMath = 'Base = ' + rk.got + ' pts \u00f7 ' + rk.maxAvailable + ' pts available \u00d7 100 = ' + rk.base + '.';
     if (rk.cyc && rk.cyc.severity > 0) rkMath += ' Cyclical overlay: ' + rk.base + ' + (100 \u2212 ' + rk.base + ') \u00d7 ' + fmtNum(rk.cyc.severity, 2) + ' \u00d7 0.6 = ' + rk.score + '.';
     html += '<div class="math-box banner-math" id="math-rscore" hidden>' + esc(rkMath) + '</div>';
     html += '<table class="factors"><tr><th>Risk factor</th><th>Value</th><th class="num">Risk pts</th></tr>';
     rk.factors.forEach(function (f, fi) {
       var ik = FACTOR_INFO[f.name];
-      html += '<tr><td><strong>' + esc(f.name) + '</strong>' + (ik ? infoDot(ik) : '') + '<div class="factor-note">' + esc(f.note) + '</div></td><td>' + esc(f.display) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-r' + fi + '" aria-expanded="false"><strong>' + f.pts + '</strong> / ' + f.max + '</button></td></tr>';
+      html += '<tr><td><strong>' + esc(f.name) + '</strong>' + (ik ? infoDot(ik) : '') + '<div class="factor-note">' + esc(f.note) + '</div></td><td>' + esc(f.display) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-r' + fi + '" aria-expanded="false">' + (f.max === 0 ? '<strong>off</strong>' : '<strong>' + f.pts + '</strong> / ' + f.max) + '</button></td></tr>';
       if (ik) html += '<tr class="info-row"><td colspan="3">' + infoText(ik) + '</td></tr>';
       html += '<tr class="math-row" id="math-r' + fi + '" hidden><td colspan="3"><div class="math-box">' + esc(f.math) + '</div></td></tr>';
     });
@@ -5340,7 +5443,7 @@ function scanRankAll(idxs) {
     // otherwise a name with two maxed-out minor factors (fresh
     // spin-offs, pre-revenue shells) normalizes to a meaningless 100.
     if (!(isNum(rec.forwardPE) && rec.forwardPE > 0)) return;
-    var s = scoreStock(rec);
+    var s = scoreStock(rec, STD_W);
     if (!(s && isNum(s.score) && s.maxAvailable >= 60)) return;
     // The combined score's risk side needs the same grounding: the
     // screener-fed risk factors total 80 points (beta 10 + debt/eq 20
@@ -5348,7 +5451,7 @@ function scanRankAll(idxs) {
     // the boom-bust factor needs a revenue path the screener doesn't
     // carry, so it never counts here). Require at least 60% of those
     // 80 — 48 points — mirroring the valuation side's 60-of-100 rule.
-    var rk = riskScore(rec);
+    var rk = riskScore(rec, STD_W);
     if (!(rk && isNum(rk.score) && rk.maxAvailable >= 60)) return;
     // One score for the daily list (Justin's ask, 2026-10-27):
     // 60% how cheap it is + 40% how safe it is.
@@ -5400,7 +5503,7 @@ async function scanEnrichTop(fullByIx) {
           if (data) {
             entry.rec.yearly = data.yearly;
             if (data.revPath) entry.rec.revPath = data.revPath;
-            var s = scoreStock(entry.rec), rk = riskScore(entry.rec);
+            var s = scoreStock(entry.rec, STD_W), rk = riskScore(entry.rec, STD_W);
             if (s && isNum(s.score) && rk && isNum(rk.score)) {
               entry.score = Math.round(0.6 * s.score + 0.4 * (100 - rk.score));
               entry.sev = rk.cyc ? rk.cyc.severity : 0;
@@ -6257,9 +6360,9 @@ var SCR_FIELDS = ['fpe', 'peg', 'mcap', 'growth', 'below', 'de', 'beta', 'pm', '
 var SCR_SAVED_KEY = 'sr_screens_v1';
 function scanRecordScore(rec) {
   if (!(isNum(rec.forwardPE) && rec.forwardPE > 0)) return null;
-  var s = scoreStock(rec);
+  var s = scoreStock(rec, STD_W);
   if (!s || !isNum(s.score)) return null;
-  var rk = riskScore(rec); // no revPath on records: boom-bust sits out, same as the scan
+  var rk = riskScore(rec, STD_W); // no revPath on records: boom-bust sits out, same as the scan
   if (!rk || !isNum(rk.score)) return null;
   return { val: s.score, risk: rk.score, combined: Math.round(0.6 * s.score + 0.4 * (100 - rk.score)) };
 }
@@ -6467,6 +6570,10 @@ function renderOverview(d, item) {
       '<div class="v-word">' + esc(sc.verdict) + '</div></div>' +
       '<button type="button" class="v-score pts-btn" data-mathbtn data-mathtarget="math-ovv" aria-expanded="false">' + sc.score + '<small> / 100</small></button></div>';
     html += '<div class="score-bar"><div style="width:' + sc.score + '%"></div></div>';
+    if (weightsAreCustom()) {
+      var ovScStd = scoreStock(d, STD_W);
+      if (ovScStd.score != null && ovScStd.rawScore !== sc.rawScore) html += '<p class="fineprint">Your scoring weights \u00b7 standard weights score this ' + ovScStd.rawScore + '.</p>';
+    }
     var ovScMath = 'Score = ' + sc.got + ' pts earned \u00f7 ' + sc.maxAvailable + ' pts available \u00d7 100 = ' + sc.rawScore + '.';
     if (sc.cycCapped) ovScMath += ' Capped at 70: cyclical severity ' + fmtNum(sc.severity, 2) + ' is 0.5 or higher (peak-earnings risk).';
     html += '<div class="math-box banner-math" id="math-ovv" hidden>' + esc(ovScMath) + '</div>';
@@ -6477,6 +6584,10 @@ function renderOverview(d, item) {
       '<div class="v-word">' + esc(rk.verdict) + '</div></div>' +
       '<button type="button" class="v-score pts-btn" data-mathbtn data-mathtarget="math-ovr" aria-expanded="false">' + rk.score + '<small> / 100</small></button></div>';
     html += '<div class="score-bar risk-bar"><div style="width:' + rk.score + '%"></div></div>';
+    if (weightsAreCustom()) {
+      var ovRkStd = riskScore(d, STD_W);
+      if (ovRkStd.score != null && ovRkStd.score !== rk.score) html += '<p class="fineprint">Your scoring weights \u00b7 standard weights put the risk at ' + ovRkStd.score + '.</p>';
+    }
     var ovRkMath = 'Base = ' + rk.got + ' pts \u00f7 ' + rk.maxAvailable + ' pts available \u00d7 100 = ' + rk.base + '.';
     if (rk.cyc && rk.cyc.severity > 0) ovRkMath += ' Cyclical overlay: ' + rk.base + ' + (100 \u2212 ' + rk.base + ') \u00d7 ' + fmtNum(rk.cyc.severity, 2) + ' \u00d7 0.6 = ' + rk.score + '.';
     html += '<div class="math-box banner-math" id="math-ovr" hidden>' + esc(ovRkMath) + '</div>';
@@ -8349,6 +8460,75 @@ function initApp() {
     var open = body.classList.toggle('open');
     t.setAttribute('aria-expanded', open ? 'true' : 'false');
   });
+  /* Scoring weights panel: presets + per-factor steppers + reset.
+   * Every change saves immediately, re-renders the panel, and
+   * re-scores the open scorecard (renderScorecard is self-contained)
+   * so the effect is visible without a reload. */
+  function weightsPresetKey(w) {
+    var keys = Object.keys(SCORE_PRESETS);
+    for (var i = 0; i < keys.length; i++) {
+      if (JSON.stringify(SCORE_PRESETS[keys[i]]) === JSON.stringify(w)) return keys[i];
+    }
+    return 'custom';
+  }
+  function renderWeightsPanel() {
+    var w = getScoreWeights();
+    var pk = weightsPresetKey(w);
+    document.querySelectorAll('[data-preset]').forEach(function (b) {
+      b.classList.toggle('on', b.getAttribute('data-preset') === pk);
+    });
+    ['val', 'risk'].forEach(function (side) {
+      var box = $(side === 'val' ? 'weights-val' : 'weights-risk');
+      if (!box) return;
+      var defs = side === 'val' ? VAL_FACTOR_DEFS : RISK_FACTOR_DEFS;
+      var html = '';
+      defs.forEach(function (f) {
+        var cur = w[side][f.name];
+        html += '<div class="w-row"><span class="w-name">' + esc(f.name) + '</span>' +
+          '<span class="w-step"><button type="button" class="w-btn" data-wadj="' + side + '|' + esc(f.name) + '|-1" aria-label="Count ' + esc(f.name) + ' less">\u2212</button>' +
+          '<span class="w-val' + (cur === 0 ? ' off' : '') + '">' + cur + '</span>' +
+          '<button type="button" class="w-btn" data-wadj="' + side + '|' + esc(f.name) + '|1" aria-label="Count ' + esc(f.name) + ' more">+</button></span></div>';
+      });
+      box.innerHTML = html;
+    });
+    var st = $('weights-state');
+    if (st) st.textContent = pk === 'balanced' ? 'Standard weights \u2014 every score uses the shared rubric.'
+      : pk === 'custom' ? 'Your custom weights are on. The scorecard shows the standard score next to yours.'
+      : SCORE_PRESET_LABELS[pk] + ' weights are on. The scorecard shows the standard score next to yours.';
+  }
+  function afterWeightsChange() {
+    renderWeightsPanel();
+    if (lastStock) { try { renderScorecard(lastStock); } catch (e) {} }
+  }
+  document.querySelectorAll('[data-preset]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      setScoreWeights(JSON.parse(JSON.stringify(SCORE_PRESETS[b.getAttribute('data-preset')])));
+      afterWeightsChange();
+    });
+  });
+  document.addEventListener('click', function (e) {
+    var btn = e.target && e.target.closest ? e.target.closest('[data-wadj]') : null;
+    if (!btn) return;
+    var parts = btn.getAttribute('data-wadj').split('|');
+    var side = parts[0], name = parts[1], delta = Number(parts[2]);
+    var defs = side === 'val' ? VAL_FACTOR_DEFS : RISK_FACTOR_DEFS;
+    var def = null;
+    defs.forEach(function (f) { if (f.name === name) def = f; });
+    if (!def) return;
+    var w = getScoreWeights();
+    var next = Math.max(0, Math.min(def.def * 2, (w[side][name] || 0) + delta));
+    if (next === w[side][name]) return;
+    w[side][name] = next;
+    setScoreWeights(w);
+    afterWeightsChange();
+  });
+  var wReset = $('weights-reset');
+  if (wReset) wReset.addEventListener('click', function () {
+    if (!window.confirm('Reset scoring weights to the standard rubric?')) return;
+    setScoreWeights(stdWeights());
+    afterWeightsChange();
+  });
+  renderWeightsPanel();
   $('set-clear-ai').addEventListener('click', function () {
     if (!window.confirm('Are you sure you\u2019d like to clear saved AI SWOTs?')) return;
     try { localStorage.removeItem(AI_SWOT_KEY); } catch (e) {}
@@ -8443,6 +8623,7 @@ if (typeof document !== 'undefined' && document.getElementById) {
     { key: 'sr_journal_v1', kind: 'json' },
     { key: 'sr_projections_v1', kind: 'json' },
     { key: 'sr_aiswot_v1', kind: 'json' },
+    { key: 'sr_weights_v1', kind: 'json' },
     { key: 'sr_theme', kind: 'string' },
     { key: 'sr_wlsort_v1', kind: 'string' },
     { key: 'sr_pfview_v1', kind: 'string' }

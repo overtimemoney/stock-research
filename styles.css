@@ -854,3 +854,17 @@ table.factors .info-row .info-text.open { max-height: 900px; }
 .pj-headline { text-align: center; font-size: 25px; font-weight: 800; letter-spacing: .01em; margin: 16px 0 4px; overflow-wrap: anywhere; }
 .pj-headline.sm { font-size: 20px; }
 .pj-hl-price { color: var(--gold); }
+
+/* Scoring weights panel (Profile settings) */
+.w-presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.w-chip { border: 1px solid var(--line); background: var(--field); color: var(--ink); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.w-chip.on { background: var(--gold); color: #141414; border-color: var(--gold); }
+.w-group { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 10px 0 4px; }
+.w-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.w-row:last-child { border-bottom: none; }
+.w-name { font-size: 14px; font-weight: 600; min-width: 0; }
+.w-step { display: flex; align-items: center; gap: 8px; flex: none; }
+.w-btn { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font-size: 17px; font-weight: 800; line-height: 1; cursor: pointer; }
+.w-btn:active { transform: scale(.94); }
+.w-val { min-width: 26px; text-align: center; font-weight: 800; font-size: 15px; }
+.w-val.off { color: var(--muted); }
