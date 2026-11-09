@@ -3383,6 +3383,8 @@ function renderScorecard(d) {
     '<button class="btn-ghost" id="sc-refresh" type="button">↻ Refresh data</button>' +
     '<a class="btn-ghost sc-ext" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=' + esc(d.ticker) + '&type=&dateb=&owner=include&count=10" target="_blank" rel="noopener">SEC filings ↗</a></div>';
 
+  html += stockNewsSectionHtml('sc', d.ticker);
+
   var when = d.fetchedAt ? new Date(d.fetchedAt).toLocaleString() : '';
   if (d.partial) html += '<div class="alert warn">Fast data is in — still pulling valuation details (forward P/E, PEG, margins)… the score updates when they land.</div>';
   html += '<p class="src-line">Sources: ' + esc(d.sources.join(', ') || '—') + ' · Fetched ' + esc(when) + (d.fromCache ? ' (cached, ≤15 min old)' : '') +
@@ -3391,6 +3393,7 @@ function renderScorecard(d) {
   html += '</div>';
   $('score-result').innerHTML = html;
   $('score-empty').style.display = 'none';
+  loadStockNews('sc', d.ticker);
 
   bindAiSwotBtn(d);
   maybeShowSharedSwot(d);
@@ -6673,6 +6676,7 @@ function renderOverview(d, item) {
     '<button type="button" class="btn-ghost" id="ov-remove">Remove</button>' +
     '<a class="btn-ghost" style="text-decoration:none" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&ticker=' + encodeURIComponent(d.ticker) + '&type=10-Q&dateb=&owner=include&count=10" target="_blank" rel="noopener">Earnings report</a>' +
     '<a class="btn-ghost" style="text-decoration:none" href="https://www.youtube.com/results?search_query=' + encodeURIComponent(d.ticker + ' earnings call') + '" target="_blank" rel="noopener">Earnings call</a></div>';
+  html += stockNewsSectionHtml('ov', d.ticker);
   html += '</div>';
   return html;
 }
@@ -6684,6 +6688,7 @@ function closeOverview() {
 }
 
 function wireOverviewActions(d) {
+  loadStockNews('ov', d.ticker);
   var sc = $('ov-scorecard');
   if (sc) sc.addEventListener('click', function () { ovReturnTicker = d.ticker; showBackChips(); closeOverview(); switchTab('scorecard'); $('search-input').value = d.ticker; runSearch(d.ticker); });
   var pj = $('ov-project');
@@ -7090,6 +7095,80 @@ async function refreshPfNews(force) {
   setPfNews({ fetchedAt: Date.now(), tickersKey: tickers.join(','), items: items.slice(0, 60) });
   pfNewsLoading = false;
   renderPfNews();
+}
+
+/* ====================== per-stock news (scorecard + overview) ======================
+ * Justin's ask (2026-11-08): the same headlines treatment as the
+ * Portfolio News view, but per stock — a "Latest news" section at the
+ * bottom of the scorecard and of the watchlist overview drawer. Same
+ * Yahoo RSS feed, parser and row markup as the holdings news above.
+ * Cached on-device per ticker for 1 hour (device-only, never synced);
+ * the section renders as a placeholder and fills in async, and a fetch
+ * that resolves after the user moved to another stock never paints. */
+var STOCK_NEWS_KEY = 'sr_stocknews_v1';
+var STOCK_NEWS_TTL = 3600 * 1000;
+var stockNewsPending = {}; // TICKER -> shared in-flight fetch promise
+
+function stockNewsAll() { return lsGet(STOCK_NEWS_KEY, {}); }
+function stockNewsEntry(T) {
+  var e = stockNewsAll()[T];
+  return (e && Array.isArray(e.items)) ? e : null;
+}
+function saveStockNews(T, items) {
+  var all = stockNewsAll();
+  all[T] = { fetchedAt: Date.now(), items: items.slice(0, 6) };
+  var keys = Object.keys(all).sort(function (a, b) { return (all[b].fetchedAt || 0) - (all[a].fetchedAt || 0); });
+  var out = {};
+  keys.slice(0, 40).forEach(function (k) { out[k] = all[k]; });
+  lsSet(STOCK_NEWS_KEY, out);
+}
+function stockNewsSectionHtml(scope, T) {
+  return '<div class="section-h">Latest <span class="gold-text">news</span></div>' +
+    '<div data-stocknews="' + scope + '" data-ticker="' + esc(T) + '"><div class="status">Loading headlines\u2026</div></div>';
+}
+function stockNewsRowsHtml(items) {
+  var col = pfPaletteColors(1)[0];
+  return items.map(function (it) {
+    var meta = [it.source, pfNewsAgo(it.ts)].filter(Boolean).join(' \u00b7 ');
+    return '<a class="news-row" href="' + esc(it.link) + '" target="_blank" rel="noopener">' +
+      '<span class="pf-avatar news-ava" style="background:' + col + ';color:' + pfInk(col) + '">' + esc(it.t.charAt(0)) + pfLogoImg(it.t) + '</span>' +
+      '<span class="news-main"><b>' + esc(it.title) + '</b><span>' + esc(meta) + '</span></span></a>';
+  }).join('');
+}
+function paintStockNews(scope, T, items) {
+  var box = document.querySelector('[data-stocknews="' + scope + '"]');
+  if (!box || box.getAttribute('data-ticker') !== T) return;
+  if (scope === 'sc' && (!lastStock || lastStock.ticker !== T)) return;
+  if (scope === 'ov' && ovTicker !== T) return;
+  box.innerHTML = (items && items.length)
+    ? '<div class="card news-card">' + stockNewsRowsHtml(items) + '</div>'
+    : '<p class="fineprint">No recent headlines.</p>';
+}
+function fetchStockNews(T) {
+  if (stockNewsPending[T]) return stockNewsPending[T];
+  var p = relayFetch('https://feeds.finance.yahoo.com/rss/2.0/headline?s=' + encodeURIComponent(T) + '&region=US&lang=en-US')
+    .then(function (xml) {
+      var items = parseYahooRss(xml, T).slice(0, 6);
+      saveStockNews(T, items);
+      return items;
+    })
+    .catch(function () {
+      var e = stockNewsEntry(T);
+      return e ? e.items : [];
+    })
+    .then(function (items) { delete stockNewsPending[T]; return items; });
+  stockNewsPending[T] = p;
+  return p;
+}
+async function loadStockNews(scope, T) {
+  if (!T) return;
+  var e = stockNewsEntry(T);
+  if (e) {
+    paintStockNews(scope, T, e.items);
+    if (Date.now() - (e.fetchedAt || 0) <= STOCK_NEWS_TTL) return; // fresh cache: no fetch
+  }
+  var items = await fetchStockNews(T);
+  paintStockNews(scope, T, items);
 }
 
 function pfView() { return localStorage.getItem('sr_pfview_v1') === 'news' ? 'news' : 'overview'; }
