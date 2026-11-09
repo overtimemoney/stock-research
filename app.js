@@ -2694,6 +2694,29 @@ function infoText(key) {
   var link = INFO_GLOSS[key] ? ' <button type="button" class="info-gloss-link" data-gloss="' + INFO_GLOSS[key] + '">See in Glossary \u2192</button>' : '';
   return '<span class="info-text" data-info-text="' + key + '">' + INFO_TEXT[key] + link + '</span>';
 }
+/* Toggle an explainer as ONE motion (Justin's report, 2026-11-08: the
+ * close used to fade the text out first, then slide the empty box up).
+ * The stylesheet animates max-height against a tall cap (460px, 900px
+ * in factor tables), so for a short explainer most of the transition
+ * shrank an invisible region while opacity ran on its own clock.
+ * Pinning the element's REAL height for both directions makes the box
+ * and the text travel together for the whole transition. After the
+ * motion, the inline height is handed back to the stylesheet so an
+ * open explainer still reflows on rotation/resize. */
+function setInfoOpen(txt, open) {
+  if (!txt) return;
+  if (open) {
+    txt.classList.add('open');
+    txt.style.maxHeight = txt.scrollHeight + 'px';
+    setTimeout(function () { if (txt.classList.contains('open')) txt.style.maxHeight = ''; }, 400);
+  } else {
+    txt.style.maxHeight = txt.scrollHeight + 'px';
+    void txt.offsetHeight; // commit the start value before transitioning to 0
+    txt.classList.remove('open');
+    txt.style.maxHeight = '0px';
+    setTimeout(function () { if (!txt.classList.contains('open')) txt.style.maxHeight = ''; }, 400);
+  }
+}
 var glossReturn = 'portfolio';
 var glossReturnState = null; /* {tab, scroll, ov} captured at the 'See in Glossary' tap */
 function openGlossaryTerm(term) {
@@ -8408,7 +8431,7 @@ function initApp() {
       if (!txt && node.nextElementSibling && node.nextElementSibling.classList.contains('info-text') &&
           node.nextElementSibling.getAttribute('data-info-text') === key) txt = node.nextElementSibling;
     }
-    if (txt) txt.classList.toggle('open');
+    if (txt) setInfoOpen(txt, !txt.classList.contains('open'));
   });
   document.addEventListener('click', function (e) {
     var mb = e.target && e.target.closest ? e.target.closest('[data-mathbtn]') : null;
