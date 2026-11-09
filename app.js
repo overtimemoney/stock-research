@@ -5472,7 +5472,12 @@ function scanRankAll(idxs) {
     // real forward P/E) and at least 60 of the 100 factor points —
     // otherwise a name with two maxed-out minor factors (fresh
     // spin-offs, pre-revenue shells) normalizes to a meaningless 100.
-    if (!(isNum(rec.forwardPE) && rec.forwardPE > 0)) return;
+    // Data-sanity + size gates (Justin's call, 2026-11-08): a forward
+    // P/E under 1 is a broken data point (a units artifact — NIVF
+    // read 0.0002), not a valuation; and the Top lists only carry
+    // companies worth $100M or more.
+    if (!(isNum(rec.forwardPE) && rec.forwardPE >= 1)) return;
+    if (!(isNum(rec.marketCap) && rec.marketCap >= 1e8)) return;
     var s = scoreStock(rec, STD_W);
     if (!(s && isNum(s.score) && s.maxAvailable >= 60)) return;
     // The combined score's risk side needs the same grounding: the
