@@ -2699,23 +2699,31 @@ function infoText(key) {
  * The stylesheet animates max-height against a tall cap (460px, 900px
  * in factor tables), so for a short explainer most of the transition
  * shrank an invisible region while opacity ran on its own clock.
- * Pinning the element's REAL height for both directions makes the box
- * and the text travel together for the whole transition. After the
- * motion, the inline height is handed back to the stylesheet so an
- * open explainer still reflows on rotation/resize. */
+ * Pinning the real height inline before transitioning did NOT fix it
+ * either — frame-by-frame measurement in a real browser (2026-11-08)
+ * showed the close curve unchanged, the text still fading ahead of
+ * the box. So the height is now driven by the Web Animations API with
+ * the same duration and easing as the opacity transition, which the
+ * compositor runs as one motion. After an open, the inline height is
+ * handed back to the stylesheet so the explainer reflows on rotation. */
 function setInfoOpen(txt, open) {
   if (!txt) return;
-  if (open) {
-    txt.classList.add('open');
-    txt.style.maxHeight = txt.scrollHeight + 'px';
-    setTimeout(function () { if (txt.classList.contains('open')) txt.style.maxHeight = ''; }, 400);
-  } else {
-    txt.style.maxHeight = txt.scrollHeight + 'px';
-    void txt.offsetHeight; // commit the start value before transitioning to 0
-    txt.classList.remove('open');
-    txt.style.maxHeight = '0px';
-    setTimeout(function () { if (!txt.classList.contains('open')) txt.style.maxHeight = ''; }, 400);
-  }
+  var reduced = false;
+  try { reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+  if (txt._infoAnim) { try { txt._infoAnim.cancel(); } catch (e) {} txt._infoAnim = null; }
+  var h = txt.scrollHeight;
+  if (open) txt.classList.add('open'); else txt.classList.remove('open');
+  txt.style.maxHeight = open ? h + 'px' : '0px';
+  if (reduced || !h || typeof txt.animate !== 'function') return;
+  var anim = txt.animate(
+    open ? [{ maxHeight: '0px' }, { maxHeight: h + 'px' }] : [{ maxHeight: h + 'px' }, { maxHeight: '0px' }],
+    { duration: 350, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' });
+  txt._infoAnim = anim;
+  setTimeout(function () {
+    if (txt._infoAnim !== anim) return;
+    txt._infoAnim = null;
+    if (txt.classList.contains('open')) txt.style.maxHeight = ''; // hand back to the stylesheet so it reflows on rotation
+  }, 420);
 }
 var glossReturn = 'portfolio';
 var glossReturnState = null; /* {tab, scroll, ov} captured at the 'See in Glossary' tap */
