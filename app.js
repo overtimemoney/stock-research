@@ -5121,12 +5121,7 @@ var SCAN_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/scre
 var SCAN_VIEWS = ['121', '161', '171'];
 var SCAN_IDXS = [
   { key: 'spx', label: 'S&P 500' },
-  { key: 'rut', label: 'Russell 2000' },
-  /* Russell 3000 (2026-11-08): shared-scan only -- the server crawl
-   * (StockAnalysis) publishes it daily; there is no on-device crawl
-   * for it (started stays false here, and the scan card renders no
-   * on-demand button for it). */
-  { key: 'r3k', label: 'Russell 3000' }
+  { key: 'rut', label: 'Russell 2000' }
 ];
 var SCAN_KEY = 'sr_scan_v4';
 var scanRunning = false, scanActive = 0, scanCoolUntil = 0, scanTimer = null;
@@ -6045,7 +6040,7 @@ async function scanFetchShared(ixKey) {
     if (!p || !p.asOf || !p.recs || !Array.isArray(p.top)) return null;
     if (Date.now() - Date.parse(p.asOf) > 48 * 3600 * 1000) return null; // stale
     var n = Object.keys(p.recs).length;
-    if (n < (ixKey === 'rut' ? 500 : (ixKey === 'r3k' ? 1000 : 100))) return null;
+    if (n < (ixKey === 'rut' ? 500 : 100)) return null;
     return p;
   } catch (e) { return null; }
 }
@@ -6061,7 +6056,6 @@ async function scanAdoptShared() {
     var spx = await scanFetchShared('spx');
     if (!spx) return false;
     var rut = await scanFetchShared('rut');
-    var r3k = await scanFetchShared('r3k');
     var asOfDay = pfKeyToISO(pfDkey(new Date(spx.asOf)));
     if (asOfDay !== scanTodayKey()) {
       // Yesterday's pass: refresh the stored dataset only (if newer),
@@ -6070,7 +6064,6 @@ async function scanAdoptShared() {
       if (!ds0 || !ds0.asOf || ds0.asOf < asOfDay) {
         scanPersistIdx('spx', spx.recs);
         if (rut) scanPersistIdx('rut', rut.recs);
-        if (r3k) scanPersistIdx('r3k', r3k.recs);
         var ds1 = getScanData();
         if (ds1) { ds1.asOf = asOfDay; setScanData(ds1); }
         return 'data';
@@ -6081,10 +6074,10 @@ async function scanAdoptShared() {
     s.done = true;
     s.shared = true;
     s.sharedAsOf = spx.asOf;
-    [rut, r3k].forEach(function (p) { if (p && Date.parse(p.asOf) > Date.parse(s.sharedAsOf)) s.sharedAsOf = p.asOf; });
-    s.results = { spx: spx.top, rut: rut ? rut.top : [], r3k: r3k ? r3k.top : [] };
-    var counts = { spx: 0, rut: 0, r3k: 0 };
-    [spx, rut, r3k].forEach(function (p) {
+    [rut].forEach(function (p) { if (p && Date.parse(p.asOf) > Date.parse(s.sharedAsOf)) s.sharedAsOf = p.asOf; });
+    s.results = { spx: spx.top, rut: rut ? rut.top : [] };
+    var counts = { spx: 0, rut: 0 };
+    [spx, rut].forEach(function (p) {
       if (!p) return;
       Object.keys(p.recs).forEach(function (t) { if (p.recs[t].ix) counts[p.recs[t].ix] = (counts[p.recs[t].ix] || 0) + 1; });
     });
@@ -6092,12 +6085,9 @@ async function scanAdoptShared() {
     s.idx.spx.scored = counts.spx;
     if (rut) { s.idx.rut.started = true; s.idx.rut.scored = counts.rut; }
     else { s.idx.rut = scanFreshIdx(false); }
-    if (r3k) { s.idx.r3k.started = true; s.idx.r3k.scored = counts.r3k; }
-    else { s.idx.r3k = scanFreshIdx(false); }
     setScan(s);
     scanPersistIdx('spx', spx.recs);
     if (rut) scanPersistIdx('rut', rut.recs);
-    if (r3k) scanPersistIdx('r3k', r3k.recs);
     scanUpdateNewBadges(s.results);
     scanDiag('shared scan adopted: spx ' + spx.top.length + ' rows, asOf ' + spx.asOf);
     renderScanCard();
@@ -6255,7 +6245,7 @@ function renderScanCard() {
           out += '<div class="fineprint" style="margin:0 0 8px">Scanned on demand, so the daily scan stays fast.</div>' +
             '<button type="button" class="btn-ghost" id="scan-start-rut">Scan Russell 2000</button>';
         } else {
-          // Russell 3000 has no on-device crawl; it arrives with the
+          // No on-device crawl for this index; it arrives with the
           // shared daily scan.
           out += '<div class="fineprint" style="margin:0 0 8px">Runs in the shared daily scan.</div>';
         }
@@ -6373,7 +6363,7 @@ function scrReadControls() {
    * holds Russell records again and the option is real. (It was
    * removed 2026-11-07 while the Russell data never ran.) */
   var ixv = $('scr-ix').value;
-  var f = { ix: (ixv === 'spx' || ixv === 'rut' || ixv === 'r3k') ? ixv : 'both', sort: $('scr-sort').value, sector: $('scr-sector') ? $('scr-sector').value : 'all' };
+  var f = { ix: (ixv === 'spx' || ixv === 'rut') ? ixv : 'both', sort: $('scr-sort').value, sector: $('scr-sector') ? $('scr-sector').value : 'all' };
   SCR_FIELDS.forEach(function (k) {
     var v = parseFloat($('scr-' + k).value);
     f[k] = isNum(v) ? v : null;
@@ -6382,7 +6372,7 @@ function scrReadControls() {
   return f;
 }
 function scrApplyControls(f) {
-  $('scr-ix').value = (f.ix === 'spx' || f.ix === 'rut' || f.ix === 'r3k') ? f.ix : 'both'; // saved index screens reopen on their own index
+  $('scr-ix').value = (f.ix === 'spx' || f.ix === 'rut') ? f.ix : 'both'; // saved index screens reopen on their own index
   $('scr-sort').value = f.sort || 'combined';
   var ss = $('scr-sector'); if (ss) ss.value = f.sector || 'all';
   SCR_FIELDS.forEach(function (k) { $('scr-' + k).value = isNum(f[k]) ? f[k] : ''; });
