@@ -6230,6 +6230,22 @@ function pfShareSheet(title, cap, initial) {
   });
 }
 
+/* Justin's layout call (2026-11-08): the Total Market list leads the
+ * scan card; the S&P 500 and Russell 2000 lists sit inside one
+ * discreet dropdown, collapsed by default. scanIxOpen survives the
+ * card's re-renders within the session. */
+var scanIxOpen = false;
+function scanIxDropdownHtml(inner) {
+  if (!inner) return '';
+  return '<button type="button" class="scan-ix-toggle' + (scanIxOpen ? ' open' : '') + '" data-scan-ixtoggle aria-expanded="' + (scanIxOpen ? 'true' : 'false') + '">' +
+    '<span>S&amp;P 500 &amp; Russell 2000</span><span class="scan-ix-chev">▾</span></button>' +
+    (scanIxOpen ? '<div class="scan-ix-body">' + inner + '</div>' : '');
+}
+function wireScanIxToggle(box) {
+  var t = box.querySelector('[data-scan-ixtoggle]');
+  if (t) t.addEventListener('click', function () { scanIxOpen = !scanIxOpen; renderScanCard(); });
+}
+
 function renderScanCard() {
   var box = $('scan-card');
   if (!box) return;
@@ -6243,9 +6259,11 @@ function renderScanCard() {
     if (!ds || !ds.recs || !Object.keys(ds.recs).length) return '';
     var ranked = scanRankFromData(ds);
     var out = '<div class="fineprint" style="margin:2px 0 8px">Last completed list \u00b7 data from ' + esc(ds.asOf || 'an earlier scan') + '</div>';
+    var secs = {};
     SCAN_IDXS.forEach(function (ix) {
       var n = Object.keys(ds.recs).filter(function (t) { return scanRecIx(ds.recs[t], ix.key); }).length;
       if (!n) return;
+      var out0 = out; out = '';
       var rows = ranked[ix.key] || [];
       out += '<div class="scan-group">' + esc(ix.label) + ' <span class="scan-count">' + n + ' stocks scored' + (scanNewList(ix.key).length ? ' \u00b7 ' + scanNewList(ix.key).length + ' new' : '') + '</span></div>';
       if (!rows.length) { out += '<div class="status">No scored stocks came back.</div>'; }
@@ -6256,8 +6274,9 @@ function renderScanCard() {
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
           '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
       });
+      secs[ix.key] = out; out = out0;
     });
-    return out;
+    return out + (secs.tot || '') + scanIxDropdownHtml((secs.spx || '') + (secs.rut || ''));
   };
   if (!s || s.date !== scanTodayKey()) {
     var prev0 = prevListsHtml();
@@ -6271,14 +6290,17 @@ function renderScanCard() {
         runSearch(T);
       });
     });
+    wireScanIxToggle(box);
     return;
   }
   var html = '<div class="card scan-card"><div class="scan-h">Top value + low risk today <span class="scan-date">' + esc(s.date) + '</span>' + infoDot('scanscore') + '</div>' + infoText('scanscore');
   var listsHtml = function () {
     var out = '';
+    var secs = {};
     SCAN_IDXS.forEach(function (ix) {
       var rows = (s.results && s.results[ix.key]) || [];
       var z = s.idx[ix.key];
+      var out0 = out; out = '';
       if (z.started === false) {
         out += '<div class="scan-group">' + esc(ix.label) + '</div>';
         if (ix.key === 'rut') {
@@ -6289,6 +6311,7 @@ function renderScanCard() {
           // shared daily scan.
           out += '<div class="fineprint" style="margin:0 0 8px">Runs in the shared daily scan.</div>';
         }
+        secs[ix.key] = out; out = out0;
         return;
       }
       var newCt = scanNewList(ix.key).length;
@@ -6302,8 +6325,9 @@ function renderScanCard() {
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
           '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
       });
+      secs[ix.key] = out; out = out0;
     });
-    return out;
+    return (secs.tot || '') + scanIxDropdownHtml((secs.spx || '') + (secs.rut || ''));
   };
   if (s.done && s.results) {
     html += listsHtml();
@@ -6379,6 +6403,7 @@ function renderScanCard() {
       runSearch(T);
     });
   });
+  wireScanIxToggle(box);
 }
 
 /* ---------- custom screener (over the stored scan dataset) ----------

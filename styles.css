@@ -576,6 +576,9 @@ table.factors.scen.micro td, table.factors.scen.micro th { padding: 7px 3px; }
 .scan-h { font-size: 17px; font-weight: 900; letter-spacing: .01em; margin-bottom: 6px; }
 .scan-date { color: var(--muted); font-size: 12px; font-weight: 700; margin-left: 6px; }
 .scan-group { font-size: 12px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); margin: 10px 0 4px; }
+.scan-ix-toggle { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none; border-top: 1px solid var(--line); margin-top: 12px; padding: 10px 2px 2px; color: var(--muted); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; text-align: left; }
+.scan-ix-chev { color: var(--gold); display: inline-block; transition: transform .25s var(--ease-out); }
+.scan-ix-toggle.open .scan-ix-chev { transform: rotate(180deg); }
 .scan-count { color: var(--muted); letter-spacing: 0; text-transform: none; font-weight: 700; }
 .scan-row { display: flex; align-items: center; gap: 9px; width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line); padding: 8px 2px; color: inherit; text-align: left; cursor: pointer; }
 .scan-row:last-of-type { border-bottom: 0; }
