@@ -106,6 +106,15 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
           </div>
           <button type="button" id="qm-csv" class="btn-ghost">Export CSV</button>
         </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <span class="fineprint" style="margin:0">History</span>
+          <div class="seg" role="group" aria-label="Chart history length">
+            <button type="button" data-qmwin="2" class="active">2Y</button>
+            <button type="button" data-qmwin="3">3Y</button>
+            <button type="button" data-qmwin="5">5Y</button>
+            <button type="button" data-qmwin="10">10Y</button>
+          </div>
+        </div>
         <div id="qm-grid"></div>
         <div id="qm-overlay" hidden>
         <div id="qm-detail">
@@ -141,6 +150,15 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
             <button type="button" data-qmview="values" class="active">Values</button>
             <button type="button" data-qmview="growth">Growth</button>
             <button type="button" data-qmview="csize">% of revenue</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+            <span class="fineprint" style="margin:0">History</span>
+            <div class="seg" role="group" aria-label="Chart history length">
+              <button type="button" data-qmwin="2" class="active">2Y</button>
+              <button type="button" data-qmwin="3">3Y</button>
+              <button type="button" data-qmwin="5">5Y</button>
+              <button type="button" data-qmwin="10">10Y</button>
+            </div>
           </div>
         </div>
         <div id="qm-chart"></div>

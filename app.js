@@ -4070,8 +4070,37 @@ function runProjection() {
 var QM_KEY = 'sr_qmetrics_v1';
 var qmMetric = 'revenue';
 var qmFreq = 'q';
+var qmWin = 2;
+var QM_WIN_CHOICES = [2, 3, 5, 10];
 var qmStore = { ticker: null, q: null, y: null };
 function qmData() { return qmStore[qmFreq]; }
+/* History window (Justin's ask, 2026-11-09): every chart shows the
+ * last qmWin years by default — 2 years of annual bars, 8 quarters
+ * of quarterly bars — adjustable up to 10 years via the History
+ * chips. Slicing happens at render time on the finished series, so
+ * Growth keeps its full-history lookback and estimates always ride
+ * along after the reported window. CSV exports keep the full data. */
+function qmWinCount() { return qmFreq === 'y' ? qmWin : qmWin * 4; }
+function qmTail(arr, n) { return arr.length > n ? arr.slice(arr.length - n) : arr; }
+function qmSegWindow(data) {
+  if (!data || !data.years || data.years.length <= qmWin) return data;
+  var cut = data.years.length - qmWin;
+  var out = Object.assign({}, data);
+  out.years = data.years.slice(cut);
+  out.segments = (data.segments || []).map(function (sg) {
+    var c = Object.assign({}, sg);
+    if (sg.rev) c.rev = sg.rev.slice(cut);
+    if (sg.op) c.op = sg.op.slice(cut);
+    return c;
+  });
+  if (data.total) {
+    var t = {};
+    if (data.total.rev) t.rev = data.total.rev.slice(cut);
+    if (data.total.op) t.op = data.total.op.slice(cut);
+    out.total = t;
+  }
+  return out;
+}
 /* Export the statements behind the Charts tool as CSV (Justin's
  * pick from the Fiscal.ai comparison, 2026-11-03): the actuals the
  * app already fetched for this ticker and period view, raw dollars,
@@ -4558,7 +4587,8 @@ function renderQmSegments(key) {
     note.textContent = '';
     return;
   }
-  box.innerHTML = '<div class="chart-wrap">' + qmStackedSVG(data, key) + '</div>' + qmSegLegend(data, key);
+  var wd = qmSegWindow(data);
+  box.innerHTML = '<div class="chart-wrap">' + qmStackedSVG(wd, key) + '</div>' + qmSegLegend(wd, key);
   note.textContent = 'Annual, as reported in the 10-K segment note (filed ' + data.filed + ') \u00b7 SEC EDGAR. Stacks sum to the reported total. The outlined column is the latest reported year.';
 }
 
@@ -4607,13 +4637,14 @@ function renderQmAv() {
     note.textContent = 'Reported-vs-estimate history comes from MarketBeat; coverage is US-listed stocks.';
     return;
   }
-  var beats = data.filter(function (p) { return p.act >= p.est; }).length;
-  box.innerHTML = '<div class="chart-wrap">' + qmPairsSVG(data) + '</div>' +
+  var shown = qmTail(data, qmWin * 4);
+  var beats = shown.filter(function (p) { return p.act >= p.est; }).length;
+  box.innerHTML = '<div class="chart-wrap">' + qmPairsSVG(shown) + '</div>' +
     '<div class="qm-legend">' +
     '<div class="qm-leg-row"><span class="qm-dot" style="background:#5a5546"></span><span class="qm-leg-name">Consensus estimate</span></div>' +
     '<div class="qm-leg-row"><span class="qm-dot" style="background:var(--neon-up)"></span><span class="qm-leg-name">Reported EPS</span></div>' +
     '</div>';
-  note.textContent = 'Reported EPS vs the consensus estimate for each quarter (MarketBeat) \u00b7 beat the estimate in ' + beats + ' of the last ' + data.length + ' quarters. The outlined bar is the most recent quarter.';
+  note.textContent = 'Reported EPS vs the consensus estimate for each quarter (MarketBeat) \u00b7 beat the estimate in ' + beats + ' of the last ' + shown.length + ' quarters. The outlined bar is the most recent quarter.';
 }
 
 function renderQmRatios(key) {
@@ -4630,7 +4661,7 @@ function renderQmRatios(key) {
     note.textContent = 'Year-by-year multiples come from the StockAnalysis ratios table.';
     return;
   }
-  var pts = series.map(function (p) { return { label: 'FY ' + p.fy, value: p.v, kind: 'actual', axis: String(p.fy) }; });
+  var pts = qmTail(series.map(function (p) { return { label: 'FY ' + p.fy, value: p.v, kind: 'actual', axis: String(p.fy) }; }), qmWin);
   box.innerHTML = '<div class="chart-wrap">' + qmBarsSVG(pts, QM_METRICS[key === 'pe' ? 'peHist' : 'psHist'].fmt) + '</div>';
   note.textContent = (key === 'pe' ? 'Price / earnings' : 'Price / sales') + ' at each fiscal year end (StockAnalysis ratios) \u00b7 the current multiple is on the scorecard. The outlined bar is the latest fiscal year.';
 }
@@ -4721,7 +4752,7 @@ function renderQmGrid() {
         var v = M.get(d, i);
         if (isNum(v)) pts.push({ label: qmShortQ(p), value: v });
       });
-      if (pts.length) out.push(qmCardHtml(id, M.name, M.fmt(pts[pts.length - 1].value), qmMiniBarsSVG(pts), false));
+      if (pts.length) out.push(qmCardHtml(id, M.name, M.fmt(pts[pts.length - 1].value), qmMiniBarsSVG(qmTail(pts, qmWinCount())), false));
     });
     return out;
   }
@@ -4737,7 +4768,7 @@ function renderQmGrid() {
       var series = ratios[cfg[1]] || [];
       if (!series.length) return;
       var pts = series.map(function (p) { return { label: String(p.fy), value: p.v }; });
-      valCards.push(qmCardHtml(cfg[0], cfg[2], QM_METRICS[cfg[0]].fmt(series[series.length - 1].v), qmMiniBarsSVG(pts), false));
+      valCards.push(qmCardHtml(cfg[0], cfg[2], QM_METRICS[cfg[0]].fmt(series[series.length - 1].v), qmMiniBarsSVG(qmTail(pts, qmWin)), false));
     });
   }
   groups.push(['Valuation', valCards]);
@@ -4746,15 +4777,15 @@ function renderQmGrid() {
   if (seg === 'loading') { segCards.push(qmLoadCardHtml('Segments')); }
   else if (seg && seg.ok) {
     var yi = seg.years.length - 1;
-    if (seg.revenue && seg.total && seg.total.rev) segCards.push(qmCardHtml('segRev', 'Segment revenue', fmtMoneyShort(seg.total.rev[yi]), qmStackedSVG(seg, 'rev', true), true));
-    if (seg.profit && seg.total && seg.total.op) segCards.push(qmCardHtml('segOp', 'Segment operating profit', fmtMoneyShort(seg.total.op[yi]), qmStackedSVG(seg, 'op', true), true));
+    if (seg.revenue && seg.total && seg.total.rev) segCards.push(qmCardHtml('segRev', 'Segment revenue', fmtMoneyShort(seg.total.rev[yi]), qmStackedSVG(qmSegWindow(seg), 'rev', true), true));
+    if (seg.profit && seg.total && seg.total.op) segCards.push(qmCardHtml('segOp', 'Segment operating profit', fmtMoneyShort(seg.total.op[yi]), qmStackedSVG(qmSegWindow(seg), 'op', true), true));
   }
   groups.push(['Segments', segCards]);
   var estCards = [];
   var mb = qmEnsure('mb', fetchMbPairs);
   if (mb === 'loading') { estCards.push(qmLoadCardHtml('EPS vs estimates')); }
   else if (mb && mb.length) {
-    estCards.push(qmCardHtml('avEps', 'EPS vs estimates', '$' + fmtNum(mb[mb.length - 1].act, 2), qmPairsSVG(mb, true), true));
+    estCards.push(qmCardHtml('avEps', 'EPS vs estimates', '$' + fmtNum(mb[mb.length - 1].act, 2), qmPairsSVG(qmTail(mb, qmWin * 4), true), true));
   }
   groups.push(['Estimates', estCards]);
   var html = '';
@@ -4770,6 +4801,9 @@ function renderQm() {
   document.querySelectorAll('[data-qmfreq]').forEach(function (b) {
     b.classList.toggle('active', b.getAttribute('data-qmfreq') === qmFreq);
     if (qmMode === 'grid') b.disabled = false;
+  });
+  document.querySelectorAll('[data-qmwin]').forEach(function (b) {
+    b.classList.toggle('active', parseInt(b.getAttribute('data-qmwin'), 10) === qmWin);
   });
   if (qmMode === 'grid') {
     if (ov) ov.hidden = true;
@@ -4841,6 +4875,12 @@ function renderQmDetail() {
   d.periods.forEach(function (p, i) {
     if (isNum(raw[i])) pts.push({ label: qmShortQ(p), value: raw[i], kind: 'actual' });
   });
+  // History window: trim the reported points to the chosen span.
+  // The view transforms above already ran on the full series, so a
+  // Growth bar at the window's edge still has its year-ago value;
+  // axis labels are computed on the shown points below, and the
+  // estimates append after them as usual.
+  pts = qmTail(pts, qmWinCount());
   // Sparse axis (Justin's ask): in quarterly view, mark only the first
   // bar of each year with the year; yearly view labels every bar.
   var lastYr = null;
@@ -8389,6 +8429,16 @@ function initApp() {
     qmBtn.setAttribute('aria-expanded', list.hidden ? 'false' : 'true');
   });
   try { qmFreq = lsGet('sr_qmfreq', 'q') === 'y' ? 'y' : 'q'; } catch (e) {}
+  try { var qw = parseInt(lsGet('sr_qmwin', 2), 10); if (QM_WIN_CHOICES.indexOf(qw) >= 0) qmWin = qw; } catch (e) {}
+  document.querySelectorAll('[data-qmwin]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var v = parseInt(b.getAttribute('data-qmwin'), 10);
+      if (QM_WIN_CHOICES.indexOf(v) < 0) return;
+      qmWin = v;
+      lsSet('sr_qmwin', v);
+      renderQm();
+    });
+  });
   document.querySelectorAll('[data-qmfreq]').forEach(function (b) {
     b.addEventListener('click', function () {
       qmFreq = b.getAttribute('data-qmfreq');
