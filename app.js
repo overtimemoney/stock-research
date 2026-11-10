@@ -5161,6 +5161,12 @@ var SCAN_IDXS = [
   { key: 'tot', label: 'Total Market' }
 ];
 var SCAN_KEY = 'sr_scan_v4';
+/* Rules stamp for saved scan states: bump when the ranking rules
+ * change (eligibility gates, scoring) so a list computed under older
+ * rules is recomputed from the stored dataset on the next open
+ * instead of being re-shown all day. States saved before the stamp
+ * existed read as undefined and mismatch once, by design. */
+var SCAN_RULES_V = 1;
 var scanRunning = false, scanActive = 0, scanCoolUntil = 0, scanTimer = null;
 
 function scanTodayKey() { return pfKeyToISO(pfDkey(new Date())); }
@@ -5265,7 +5271,7 @@ function scanFreshIdx(started) {
   return ix;
 }
 function scanFreshState() {
-  var s = { date: scanTodayKey(), done: false, partial: false, results: null, idx: {} };
+  var s = { date: scanTodayKey(), done: false, partial: false, results: null, idx: {}, rulesV: SCAN_RULES_V };
   SCAN_IDXS.forEach(function (ix) { s.idx[ix.key] = scanFreshIdx(ix.key === 'spx'); });
   return s;
 }
@@ -5948,6 +5954,7 @@ function scanShowDataResults(ds, refreshed) {
   s.fromData = true;
   s.dataAsOf = ds.asOf;
   s.refreshed = refreshed;
+  s.rulesV = SCAN_RULES_V;
   SCAN_IDXS.forEach(function (ix) {
     var n = Object.keys(ds.recs).filter(function (t) { return scanRecIx(ds.recs[t], ix.key); }).length;
     s.idx[ix.key].scored = n;
@@ -5963,13 +5970,14 @@ function scanShowDataResults(ds, refreshed) {
   scanEnrichTop(scanFullFromData(ds));
 }
 
-var scanRefreshing = false;
+var scanRefreshing = false, scanRefreshStartedAt = 0, scanRekickAt = 0;
 async function scanRefreshReporters() {
   var ds = getScanData();
   if (!ds || scanRefreshing) return;
   var today = scanTodayKey();
   if (ds.lastRefreshDay === today) { scanShowDataResults(ds, ds.lastRefreshCount || 0); return; }
   scanRefreshing = true;
+  scanRefreshStartedAt = Date.now();
   scanShowDataResults(ds, null); // stored lists instantly; counts update when the refresh lands
   try {
     // Earnings calendar for the days since the last refresh (plus a
@@ -6150,6 +6158,27 @@ function scanRestart() {
 
 function maybeStartScan() {
   var existing = getScan();
+  // Settled on-device (dataset) lists get two rescue checks before
+  // they are simply re-shown: (1) a list computed under older ranking
+  // rules (rules stamp mismatch) is recomputed from the dataset, and
+  // (2) a morning refresh that never landed (footer stuck on
+  // "refreshing…") is re-run, so the top-25 deep-dive it kicks off
+  // gets another chance instead of the preliminary list sitting all
+  // day. A refresh inside its first minutes counts as running; past
+  // that it is treated as stuck and released. (2026-11-09: a pre-gates
+  // list sat on Justin's phone all day with SNDK #1 at 98, unchecked.)
+  if (existing && existing.date === scanTodayKey() && existing.fromData) {
+    var dsFix = getScanData();
+    if (dsFix && existing.rulesV !== SCAN_RULES_V) { scanRefreshReporters(); return; }
+    if (dsFix && existing.refreshed === null && Date.now() - scanRekickAt > 10 * 60 * 1000) {
+      if (!scanRefreshing || Date.now() - scanRefreshStartedAt > 3 * 60 * 1000) {
+        scanRekickAt = Date.now();
+        scanRefreshing = false;
+        scanRefreshReporters();
+        return;
+      }
+    }
+  }
   if (!(existing && existing.date === scanTodayKey() && (existing.done || existing.partial || existing.fromData))) {
     scanAdoptShared().then(function (adopted) {
       if (adopted === true) { renderScanCard(); return; }
