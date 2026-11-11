@@ -10310,6 +10310,47 @@ if (typeof document !== 'undefined' && document.getElementById) {
   } catch (e) {}
 })();
 
+/* ---- Usage counters (privacy-minimal) ------------------------------
+ * Two of the three tallies live here ('landing' fires on the landing
+ * page). This module POSTs to the relay Worker's /stats-hit, which
+ * keeps ONE integer per event type per America/New_York day — no
+ * identity, no device info, nothing per-user ever leaves the phone.
+ *   'open' — the app opened, ONCE per browser session (a
+ *            sessionStorage flag, so reloads and in-app navigation
+ *            don't double count; a fresh visit counts again).
+ *   'quiz' — the 5% Quiz COMPLETED on a first run. The onboarding
+ *            block broadcasts 'sr-quiz-finished' with its mode; only
+ *            mode 'auto' counts — Settings replays never do.
+ * Every call is fire-and-forget and fails silently: counting must
+ * never affect the app. */
+(function srUsageStats() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  var STATS_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/stats-hit';
+  function hit(type) {
+    try {
+      fetch(STATS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: type }),
+        keepalive: true
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  try {
+    if (!sessionStorage.getItem('sr_stat_open')) {
+      sessionStorage.setItem('sr_stat_open', '1');
+      hit('open');
+    }
+  } catch (e) {}
+  try {
+    window.addEventListener('sr-quiz-finished', function (e) {
+      try {
+        if (e && e.detail && e.detail.mode === 'auto') hit('quiz');
+      } catch (err) {}
+    });
+  } catch (e) {}
+})();
+
 /* Node export for offline pipeline tests (ignored in the browser). */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { parseFinviz: parseFinviz, scoreStock: scoreStock, valueScreen: valueScreen, epsTrajectory: epsTrajectory, parseNum: parseNum, parseCapStr: parseCapStr, fetchStock: fetchStock, relayFetch: relayFetch, relayJSON: relayJSON, fillProjection: fillProjection, pjGrowths: pjGrowths, pjCaseEps: pjCaseEps, parseMBEarnings: parseMBEarnings, epsRecordStats: epsRecordStats, parseRevStr: parseRevStr, buildSwot: buildSwot, tickerSuggestions: tickerSuggestions, pfPaletteColors: pfPaletteColors, parseSAPeHistory: parseSAPeHistory, fetchPe5yAvg: fetchPe5yAvg };

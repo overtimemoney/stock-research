@@ -155,6 +155,14 @@ label input, label textarea { margin-top: 5px; font-weight: 500; }
 .compare-inputs, .wl-inputs { display: flex; gap: 8px; flex-wrap: wrap; }
 .compare-inputs input, .wl-inputs input { flex: 1 1 100px; text-transform: uppercase; font-weight: 700; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+/* Form explainers span the full row (Justin's ask, 2026-11-10: 'the
+ * explanation can fill the screen left to right'). In the Projection
+ * Builder the info text lives OUTSIDE its label as a direct grid
+ * child: it takes a full-width row under its field's row, and dense
+ * flow lets the remaining fields backfill their rows. Row gap is 0,
+ * so a closed explainer (max-height 0) adds no space. */
+.grid2:has(> .info-text) { grid-auto-flow: dense; }
+.grid2 > .info-text { grid-column: 1 / -1; }
 .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 10px; }
 @media (max-width: 560px) { .grid3 { grid-template-columns: 1fr; } }
 .row-between { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
