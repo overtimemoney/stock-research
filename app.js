@@ -1466,7 +1466,27 @@ function parseSAForecastMetrics(html) {
       push('netMargin', (isNum(ni) && isNum(rev) && rev !== 0) ? ni / rev * 100 : null);
     });
   });
+  var rs = parseSARevSummary(html);
+  if (rs) est.revFcst = rs;
   return est;
+}
+
+/* The forecast page's summary sentences carry the two growth rates
+ * the exit-P/E growth factor is keyed to -- "Revenue This Year XB
+ * from YB Increased by Z%" and the same for Next Year. The table
+ * itself only exposes one forecast year for free, so the pair has
+ * to come from the text. Returns signed growth percentages. */
+function parseSARevSummary(html) {
+  if (!html) return null;
+  var txt = String(html).replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ');
+  function grab(which) {
+    var m = txt.match(new RegExp('Revenue ' + which + ' Year\\s+[\\d.,]+[BM]\\s+from\\s+[\\d.,]+[BM]\\s+(Increased|Decreased) by\\s+([\\d.]+)%'));
+    if (!m) return null;
+    var v = parseFloat(m[2]);
+    return m[1] === 'Decreased' ? -v : v;
+  }
+  var gT = grab('This'), gN = grab('Next');
+  return (isNum(gT) && isNum(gN)) ? { gThis: gT, gNext: gN } : null;
 }
 
 /* The StockAnalysis ratios page carries a 'PE Ratio' row across the
@@ -1547,59 +1567,176 @@ async function pjEnsurePe5y(d) {
   return d;
 }
 
-/* ---- EPS-matched exit P/E (Justin's ask, 2026-11-01; was growth-matched 2026-10-29) ----
- * The plain 5-yr average P/E mixes years when the company grew at
- * different amounts. Instead: pair each historical year's P/E with
- * that year's EPS, then average the P/Es of the years whose EPS was
- * closest to the EPS projected for the projection's final year --
- * what the market paid last time earnings were at that level.
- * Falls back to the plain average when history is too thin. */
-function pjPePairs(d) {
-  var out = [];
-  if (!d || !d.peByYear || !d.epsByYear) return out;
-  d.peByYear.forEach(function (p) {
-    out.push({ fy: p.fy, pe: p.pe, eps: d.epsByYear[p.fy] });
+/* ---- Exit P/E v2 (Justin's spec, locked 2026-11-10; replaces the
+ * 2026-11-01 EPS-matched rule) ----
+ * Exit P/E = base x growth factor x margin factor.
+ * BASE: exponential-weighted average of the earnings yield (1 / P/E)
+ * over the current P/E (age 0) and each fiscal year's P/E, half-life
+ * 1.5 years, inverted back to a P/E -- recent years count most, like
+ * a 50-day moving average next to a 200-day. Two caps keep broken
+ * years out: a healthy year's P/E counts at most 1.5x the stock's own
+ * median P/E, and a DEPRESSED year -- EPS fell vs the year before, or
+ * a first small profit after a loss when earnings once ran at 2x+
+ * that level -- counts at most the median of the healthy years.
+ * GROWTH factor (0.65-1.15): forecast revenue deceleration dominates
+ * -- (next-year revenue growth - this-year growth) x 0.004 from the
+ * forecast page's summary pair, falling back to the revenue path's
+ * forecast years (last reported year's growth standing in when only
+ * one forecast year exists); recent quarterly revenue acceleration
+ * adds a small bonus (point change clamped to +/-20, x 0.0015); if
+ * consensus EPS falls in any forecast year, x 0.85. The 0.65-1.15
+ * bound is applied, then re-applied after the 0.85.
+ * MARGIN factor (0.85-1.10): direction = average point change in
+ * gross + operating margin, expected next year vs the latest reported
+ * year, x 0.01. Peak rule: when the expected gross margin sits in the
+ * stock's peak zone (>= 95% of its own 5-yr max), a positive direction
+ * earns nothing and a normalization haircut applies instead -- -0.01
+ * per point the expected margin sits above its own 5-yr average,
+ * capped at -0.10; a ratio penalty (0 at <=1.5x the average, up to
+ * -0.20 at >=2.5x) takes the larger of the two, never stacked. Net
+ * margin is excluded (tax / deal noise). Missing data leaves a
+ * factor at 1 rather than guessing. */
+var pjExitDetail = null;
+function pjMedian(vals) {
+  var s = vals.slice().sort(function (a, b) { return a - b; });
+  var n = s.length;
+  if (!n) return null;
+  return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+}
+function pjComputeExitPe(d) {
+  if (!d) return null;
+  var pts = [];
+  if (isNum(d.pe) && d.pe > 0 && d.pe < 1000) pts.push({ pe: d.pe, fy: null, cur: true });
+  (d.peByYear || []).filter(function (p) { return p && isNum(p.pe) && p.pe > 0 && p.pe < 1000; })
+    .slice().sort(function (a, b) { return b.fy - a.fy; })
+    .forEach(function (p) { pts.push({ pe: p.pe, fy: p.fy, cur: false }); });
+  if (pts.length < 2) return null;
+  var medAll = pjMedian(pts.map(function (p) { return p.pe; }));
+  var epsMap = d.epsByYear || {};
+  function epsAt(fy) { var v = epsMap[fy]; return isNum(v) ? v : null; }
+  pts.forEach(function (p) {
+    p.depressed = false;
+    if (p.cur) {
+      /* Today's P/E is depressed only on a clear earnings fall:
+       * TTM EPS well under the last fiscal year's EPS. */
+      var fys = Object.keys(epsMap).map(function (k) { return parseInt(k, 10); }).filter(isNum).sort(function (a, b) { return a - b; });
+      var lastEps = fys.length ? epsAt(fys[fys.length - 1]) : null;
+      if (isNum(d.epsTTM) && isNum(lastEps) && lastEps > 0 && d.epsTTM < 0.85 * lastEps) p.depressed = true;
+    } else {
+      var e = epsAt(p.fy), prev = epsAt(p.fy - 1);
+      if (isNum(e) && e > 0 && isNum(prev)) {
+        if (prev > 0 && e < prev) p.depressed = true;
+        else if (prev <= 0) {
+          var maxBefore = null;
+          Object.keys(epsMap).forEach(function (k) {
+            var fy2 = parseInt(k, 10), v = epsMap[k];
+            if (isNum(fy2) && fy2 < p.fy && isNum(v) && v > 0 && (maxBefore === null || v > maxBefore)) maxBefore = v;
+          });
+          if (isNum(maxBefore) && maxBefore >= 2 * e) p.depressed = true;
+        }
+      }
+    }
   });
-  return out;
-}
-
-function pjMatchPe(pairs, targetEps) {
-  var cand = (pairs || []).filter(function (p) { return isNum(p.pe) && p.pe > 0 && isNum(p.eps) && p.eps > 0; });
-  if (cand.length < 2 || !isNum(targetEps) || targetEps <= 0) return null;
-  function dist(p) { return Math.abs(p.eps - targetEps) / targetEps; }
-  var inBand = cand.filter(function (p) { return dist(p) <= 0.25; });
-  var used;
-  if (inBand.length >= 2) used = inBand;
-  else {
-    used = inBand.slice();
-    var rest = cand.filter(function (p) { return used.indexOf(p) === -1; }).sort(function (a, b) { return dist(a) - dist(b) || b.fy - a.fy; });
-    while (used.length < 2 && rest.length) used.push(rest.shift());
+  var healthy = pts.filter(function (p) { return !p.depressed; });
+  var medClean = healthy.length >= 2 ? pjMedian(healthy.map(function (p) { return p.pe; })) : medAll;
+  var capRel = 1.5 * medAll;
+  var wSum = 0, ySum = 0;
+  pts.forEach(function (p, i) {
+    var capped = p.depressed ? Math.min(p.pe, medClean) : Math.min(p.pe, capRel);
+    var w = Math.pow(0.5, i / 1.5);
+    wSum += w; ySum += w / capped;
+  });
+  var base = wSum / ySum;
+  /* --- growth factor --- */
+  var decel = 0, accelPts = 0;
+  var rp = (d.revPath || []).filter(function (r) { return r && isNum(r.rev) && r.rev > 0; });
+  if (d.revFcst && isNum(d.revFcst.gThis) && isNum(d.revFcst.gNext)) decel = (d.revFcst.gNext - d.revFcst.gThis) * 0.004;
+  var estIdx = [];
+  rp.forEach(function (r, i) { if (r.est) estIdx.push(i); });
+  function rpGrowth(k) { return (k >= 1 && rp[k - 1].rev > 0) ? (rp[k].rev / rp[k - 1].rev - 1) * 100 : null; }
+  if (!d.revFcst && estIdx.length >= 2) {
+    var gF = rpGrowth(estIdx[0]), gL = rpGrowth(estIdx[estIdx.length - 1]);
+    if (isNum(gF) && isNum(gL)) decel = (gL - gF) * 0.004;
+  } else if (!d.revFcst && estIdx.length === 1 && estIdx[0] >= 2) {
+    var gP = rpGrowth(estIdx[0] - 1), gO = rpGrowth(estIdx[0]);
+    if (isNum(gP) && isNum(gO)) decel = (gO - gP) * 0.004;
   }
-  return {
-    mult: used.reduce(function (a, p) { return a + p.pe; }, 0) / used.length,
-    years: used.map(function (p) { return p.fy; }),
-    avgEps: used.reduce(function (a, p) { return a + p.eps; }, 0) / used.length
-  };
+  var rq = d.revQ || [], yoy = [];
+  for (var qi = 4; qi < rq.length; qi++) {
+    if (isNum(rq[qi]) && isNum(rq[qi - 4]) && rq[qi - 4] > 0) yoy.push((rq[qi] / rq[qi - 4] - 1) * 100);
+  }
+  if (yoy.length >= 4) {
+    var l2 = (yoy[yoy.length - 1] + yoy[yoy.length - 2]) / 2;
+    var p2 = (yoy[yoy.length - 3] + yoy[yoy.length - 4]) / 2;
+    accelPts = Math.max(-20, Math.min(20, l2 - p2));
+  }
+  var fcEps = (d.epsForecasts || []).filter(function (r) { return r && isNum(r.eps); }).map(function (r) {
+    var m = String(r.fiscalEnd || '').match(/(\d{4})/);
+    return { y: m ? parseInt(m[1], 10) : 0, eps: r.eps };
+  }).sort(function (a, b) { return a.y - b.y; }).map(function (r) { return r.eps; });
+  var epsFall = false;
+  for (var fi = 1; fi < fcEps.length; fi++) { if (fcEps[fi] < fcEps[fi - 1]) { epsFall = true; break; } }
+  var growth = Math.max(0.65, Math.min(1.15, 1 + decel + accelPts * 0.0015));
+  if (epsFall) growth = Math.max(0.65, Math.min(1.15, growth * 0.85));
+  /* --- margin factor --- */
+  var margin = 1;
+  var yrs = (d.yearly || []).filter(function (y) { return y && isNum(y.gm); });
+  var lastY = (d.yearly && d.yearly.length) ? d.yearly[d.yearly.length - 1] : null;
+  if (isNum(d.estGmExp) && yrs.length >= 3 && lastY && isNum(lastY.gm)) {
+    var win = yrs.slice(-5);
+    var avgGm = win.reduce(function (a, y) { return a + y.gm; }, 0) / win.length;
+    var maxGm = Math.max.apply(null, win.map(function (y) { return y.gm; }));
+    var deltas = [d.estGmExp - lastY.gm];
+    if (isNum(d.estOmExp) && isNum(lastY.om)) deltas.push(d.estOmExp - lastY.om);
+    var dir = (deltas.reduce(function (a, b) { return a + b; }, 0) / deltas.length) * 0.01;
+    var inPeak = d.estGmExp >= 0.95 * maxGm;
+    var ratioPen = avgGm > 0 ? Math.max(0, Math.min(0.20, (d.estGmExp / avgGm - 1.5) * 0.20)) : 0;
+    var ptsPen = inPeak ? Math.min(0.10, Math.max(0, d.estGmExp - avgGm) * 0.01) : 0;
+    var pen = Math.max(ratioPen, ptsPen);
+    var dirApplied = (dir > 0 && inPeak) ? 0 : dir;
+    margin = Math.max(0.85, Math.min(1.10, 1 + dirApplied - pen));
+  }
+  var mult = base * growth * margin;
+  if (!isNum(mult) || mult <= 0) return null;
+  return { mult: mult, base: base, growth: growth, margin: margin };
 }
-
-/* The EPS projected for the projection's final year at the current
- * horizon (Base case: the path as entered) -- the level the exit
- * P/E match is keyed to. */
-function pjExitEps() {
-  var path = pjPath.slice(0, pjYearsWanted() + pjTtmOffset());
-  if (!path.length) return null;
-  return pjCaseEps(pjBaseEps(), path, 1);
+function pjExitNote(res) {
+  return 'exit P/E = ' + fmtNum(res.mult, 1) + '\u00d7 \u2014 recent-weighted avg ' + fmtNum(res.base, 1) + '\u00d7 \u00d7 growth ' + fmtNum(res.growth, 2) + ' \u00d7 margins ' + fmtNum(res.margin, 2);
+}
+/* Set the exit-P/E box from the v2 math, falling back to the plain
+ * 5-yr average, then today's P/E, when history is too thin. Always
+ * refreshes pjMultAuto / pjPeNote / pjExitDetail together. */
+function pjApplyAuto(d) {
+  var res = pjComputeExitPe(d);
+  if (res) {
+    $('pj-mult').value = Math.round(res.mult * 10) / 10;
+    pjMultAuto = $('pj-mult').value;
+    pjExitDetail = res;
+    pjPeNote = pjExitNote(res);
+    return true;
+  }
+  pjExitDetail = null;
+  if (isNum(d.pe5yAvg) && d.pe5yAvg > 0) {
+    $('pj-mult').value = Math.round(d.pe5yAvg * 10) / 10;
+    pjMultAuto = $('pj-mult').value;
+    pjPeNote = 'exit P/E = ' + (d.pe5yYears >= 5 ? '5-yr' : d.pe5yYears + '-yr') + ' avg P/E ' + fmtNum(d.pe5yAvg, 1) + '\u00d7';
+    return true;
+  }
+  if (isNum(d.pe) && d.pe > 0) {
+    $('pj-mult').value = Math.round(d.pe * 10) / 10;
+    pjMultAuto = $('pj-mult').value;
+    pjPeNote = 'exit P/E = current P/E ' + fmtNum(d.pe, 1) + '\u00d7 (no 5-yr history)';
+    return true;
+  }
+  return false;
 }
 
 /* The stock record behind the builder, kept so the auto exit P/E can
- * be re-matched when the horizon (or the path) changes the final
- * year's projected EPS. Null for saved-projection restores: those keep
- * their exact saved assumptions. */
+ * be recomputed when fresher inputs land. Null for saved-projection
+ * restores: those keep their exact saved assumptions. */
 var pjLoaded = null;
 
-/* Recompute the auto exit P/E for the current horizon (Justin's ask,
- * 2026-10-29: changing the years projected changes the exit year,
- * whose growth rate may match different historical years). Only ever
+/* Recompute the auto exit P/E from the loaded record. Only ever
  * touches the box while it still holds the auto value -- a manual
  * override is his and stays. */
 function pjRefreshAutoMult() {
@@ -1607,39 +1744,21 @@ function pjRefreshAutoMult() {
   var T = ($('pj-ticker').value || '').trim().toUpperCase();
   if (!T || pjLoaded.ticker !== T) return;
   if (String($('pj-mult').value) !== String(pjMultAuto)) return;
-  var targetEps = pjExitEps();
-  var match = isNum(targetEps) ? pjMatchPe(pjPePairs(pjLoaded), targetEps) : null;
-  var val = null, note = '';
-  if (match) {
-    val = Math.round(match.mult * 10) / 10;
-    note = pjMatchNote(match, targetEps);
-  } else if (isNum(pjLoaded.pe5yAvg) && pjLoaded.pe5yAvg > 0) {
-    val = Math.round(pjLoaded.pe5yAvg * 10) / 10;
-    note = 'exit P/E = ' + (pjLoaded.pe5yYears >= 5 ? '5-yr' : pjLoaded.pe5yYears + '-yr') + ' avg P/E ' + fmtNum(pjLoaded.pe5yAvg, 1) + '\u00d7';
-  } else if (isNum(pjLoaded.pe) && pjLoaded.pe > 0) {
-    val = Math.round(pjLoaded.pe * 10) / 10;
-    note = 'exit P/E = current P/E ' + fmtNum(pjLoaded.pe, 1) + '\u00d7 (no 5-yr history)';
-  }
-  if (val == null) return;
-  $('pj-mult').value = val;
-  pjMultAuto = $('pj-mult').value;
-  if (note && note !== pjPeNote) {
-    pjPeNote = note;
-    if (pjStatusBits && pjStatusBits.length) { pjStatusBits[0] = note; pjRenderLoadedStatus(); }
-    else pjSetLoadedStatus('Loaded ' + T + ' \u2014 ' + note + '.');
+  var before = pjPeNote;
+  if (!pjApplyAuto(pjLoaded)) return;
+  if (pjPeNote && pjPeNote !== before) {
+    if (pjStatusBits && pjStatusBits.length) { pjStatusBits[0] = pjPeNote; pjRenderLoadedStatus(); }
+    else pjSetLoadedStatus('Loaded ' + T + ' \u2014 ' + pjPeNote + '.');
   }
 }
 
-function pjMatchNote(match, targetEps) {
-  return 'exit P/E = ' + fmtNum(match.mult, 1) + '\u00d7 \u2014 avg P/E in ' +
-    match.years.slice().sort(function (x, y) { return x - y; }).map(function (y) { return 'FY' + String(y).slice(2); }).join(', ') +
-    ', when EPS was ~' + fmtMoney(match.avgEps) + ' (projected final-yr EPS ' + fmtMoney(targetEps) + ')';
-}
 
-/* Attach yearly revenue + EPS (EPS feeds the exit P/E pairing) to a stock record
- * from the Charts tool's annual statements, best-effort. */
+/* Attach yearly revenue + EPS, the expected next-year margins and
+ * (from the same annual statements) the yearly margin history to a
+ * stock record, best-effort. EPS feeds the depressed-year test in
+ * the exit-P/E math; the margins feed its margin factor. */
 async function pjEnsureRevByYear(d) {
-  if (!d || !d.ticker || (d.revByYear && d.epsByYear)) return d;
+  if (!d || !d.ticker || d.pjQmDone) return d;
   try {
     var qm = await fetchQMetrics(d.ticker, 'y');
     if (qm && qm.revenue) {
@@ -1658,7 +1777,30 @@ async function pjEnsureRevByYear(d) {
       });
       if (Object.keys(emap).length) d.epsByYear = emap;
     }
+    if (qm && qm.est) {
+      if (!isNum(d.estGmExp) && qm.est.grossMargin && qm.est.grossMargin.length) d.estGmExp = qm.est.grossMargin[0].value;
+      if (!isNum(d.estOmExp) && qm.est.operMargin && qm.est.operMargin.length) d.estOmExp = qm.est.operMargin[0].value;
+      if (!d.revFcst && qm.est.revFcst) d.revFcst = qm.est.revFcst;
+    }
+    if (qm && !d.yearly) buildYearly(d, qm);
+    d.pjQmDone = true;
   } catch (e) {}
+  return d;
+}
+
+/* Everything the exit-P/E v2 math reads, attached best-effort:
+ * P/E by year, EPS by year, expected margins, yearly margins and
+ * quarterly revenue (for the acceleration bonus). */
+async function pjEnsureExitData(d) {
+  if (!d || !d.ticker) return d;
+  await pjEnsurePe5y(d);
+  await pjEnsureRevByYear(d);
+  if (!d.yearly) {
+    try { var cy = await cycLoadYearly(d.ticker); if (cy && cy.yearly) d.yearly = cy.yearly; } catch (e) {}
+  }
+  if (!d.revQ) {
+    try { var qq = await fetchQMetrics(d.ticker, 'q'); if (qq && qq.revenue) d.revQ = qq.revenue.slice(); } catch (e) {}
+  }
   return d;
 }
 
@@ -3423,24 +3565,12 @@ function renderScorecard(d) {
     $('pj-ticker').value = d.ticker;
     fillProjection(d);
     runProjection();
-    if (!isNum(d.pe5yAvg) || !d.epsByYear) {
-      pjEnsurePe5y(d).then(function () { return pjEnsureRevByYear(d); }).then(function () {
-        if (String($('pj-mult').value) !== String(pjMultAuto) || ($('pj-ticker').value || '').trim().toUpperCase() !== d.ticker) return;
-        var targetEps = pjExitEps();
-        var match = isNum(targetEps) ? pjMatchPe(pjPePairs(d), targetEps) : null;
-        if (match) {
-          $('pj-mult').value = Math.round(match.mult * 10) / 10;
-          pjMultAuto = $('pj-mult').value;
-          pjPeNote = pjMatchNote(match, targetEps);
-        } else if (isNum(d.pe5yAvg)) {
-          $('pj-mult').value = Math.round(d.pe5yAvg * 10) / 10;
-          pjMultAuto = $('pj-mult').value;
-          pjPeNote = 'exit P/E = ' + (d.pe5yYears >= 5 ? '5-yr' : d.pe5yYears + '-yr') + ' avg P/E ' + fmtNum(d.pe5yAvg, 1) + '\u00d7';
-        } else return;
-        pjSetLoadedStatusParts('Loaded ' + d.ticker + ' from the scorecard', [pjPeNote]);
-        runProjection();
-      });
-    }
+    pjEnsureExitData(d).then(function () {
+      if (String($('pj-mult').value) !== String(pjMultAuto) || ($('pj-ticker').value || '').trim().toUpperCase() !== d.ticker) return;
+      if (!pjApplyAuto(d)) return;
+      pjSetLoadedStatusParts('Loaded ' + d.ticker + ' from the scorecard', [pjPeNote]);
+      runProjection();
+    });
   });
   $('sc-refresh').addEventListener('click', function () { runSearch(d.ticker, true); });
 }
@@ -3628,6 +3758,7 @@ function pjRestore(T) {
   if (!s) return;
   pjLoaded = null;
   pjMultAuto = null;
+  pjExitDetail = null;
   pjDivYieldTicker = T; pjDivYield = isNum(s.divYield) ? s.divYield : null;
   pjCurPeTicker = T; pjCurPe = (isNum(s.curPe) && s.curPe > 0) ? s.curPe : null;
   $('pj-ticker').value = T;
@@ -3857,6 +3988,7 @@ function fillProjection(d) {
   if (isNum(d.epsGrowth5Y)) $('pj-growth').value = Math.max(-20, Math.min(60, Math.round(d.epsGrowth5Y)));
   else if (isNum(d.epsGrowthNextY)) $('pj-growth').value = Math.round(Math.max(-20, Math.min(60, d.epsGrowthNextY)));
   pjPeNote = '';
+  pjExitDetail = null;
   // Year-by-year path: the first row is the current TTM position (EPS and
   // its actual TTM growth), then the analysts' forecast years, up to 5.
   var ttmRow = isNum(d.epsTTM) ? {
@@ -3875,27 +4007,11 @@ function fillProjection(d) {
     pjSynthPath(ttmRow);
   }
   renderPjPath();
-  // Exit P/E (Justin's EPS-matched rule, 2026-11-01): extend the
-  // path to the full horizon, read the final year's projected EPS,
-  // and set the multiple to the average P/E of the historical years
-  // whose EPS was closest to that level. Fallbacks: the plain 5-yr
-  // average P/E, then the current trailing P/E. Always editable.
-  pjEnsureYears(pjYearsWanted() + pjTtmOffset());
-  var targetEps = pjExitEps();
-  var match = isNum(targetEps) ? pjMatchPe(pjPePairs(d), targetEps) : null;
-  if (match) {
-    $('pj-mult').value = Math.round(match.mult * 10) / 10;
-    pjMultAuto = $('pj-mult').value;
-    pjPeNote = pjMatchNote(match, targetEps);
-  } else if (isNum(d.pe5yAvg) && d.pe5yAvg > 0) {
-    $('pj-mult').value = Math.round(d.pe5yAvg * 10) / 10;
-    pjMultAuto = $('pj-mult').value;
-    pjPeNote = 'exit P/E = ' + (d.pe5yYears >= 5 ? '5-yr' : d.pe5yYears + '-yr') + ' avg P/E ' + fmtNum(d.pe5yAvg, 1) + '\u00d7';
-  } else if (isNum(d.pe) && d.pe > 0) {
-    $('pj-mult').value = Math.round(d.pe * 10) / 10;
-    pjMultAuto = $('pj-mult').value;
-    pjPeNote = 'exit P/E = current P/E ' + fmtNum(d.pe, 1) + '\u00d7 (no 5-yr history)';
-  }
+  // Exit P/E (Justin's trend-and-factors rule, locked 2026-11-10):
+  // recent-weighted average P/E x growth factor x margin factor --
+  // see pjComputeExitPe. Fallbacks live in pjApplyAuto (plain 5-yr
+  // average P/E, then today's P/E). Always editable.
+  pjApplyAuto(d);
   renderPjPath();
 }
 /* The loaded blurb: one visible line, everything else (what was
@@ -3927,6 +4043,7 @@ async function loadProjectionTicker() {
   try {
     var peP = fetchPe5yAvg(T).catch(function () { return null; });
     var qmP = fetchQMetrics(T, 'y').catch(function () { return null; });
+    var qmQP = fetchQMetrics(T, 'q').catch(function () { return null; });
     var d = await fetchStock(T);
     var pe5 = await peP;
     if (pe5) { d.pe5yAvg = pe5.avg; d.pe5yYears = pe5.years; d.peByYear = pe5.byYear; }
@@ -3947,6 +4064,14 @@ async function loadProjectionTicker() {
         if (Object.keys(emap).length) d.epsByYear = emap;
       }
     }
+    if (qm && qm.est) {
+      if (qm.est.grossMargin && qm.est.grossMargin.length) d.estGmExp = qm.est.grossMargin[0].value;
+      if (qm.est.operMargin && qm.est.operMargin.length) d.estOmExp = qm.est.operMargin[0].value;
+      if (qm.est.revFcst) d.revFcst = qm.est.revFcst;
+    }
+    if (qm && !d.yearly) buildYearly(d, qm);
+    var qmQ = await qmQP;
+    if (qmQ && qmQ.revenue) d.revQ = qmQ.revenue.slice();
     fillProjection(d);
     var bits = [];
     if (pjPeNote) bits.push(pjPeNote);
@@ -4048,6 +4173,7 @@ function runProjection() {
     '<div class="pj-math">' +
     '<p><strong>Growth:</strong> each year\u2019s growth is scaled \u2014 Bear \u00d7 0.8, Base as entered, Bull \u00d7 1.2.' + exLine + '</p>' +
     '<p><strong>Exit P/E:</strong> your ' + fmtNum(mult, 1) + '\u00d7, scaled \u2014 Bear ' + fmtNum(bearMult, 1) + '\u00d7' + (bearPeUsed ? ' (today\u2019s P/E \u2014 lower than the scaled ' + fmtNum(mult * 0.8, 1) + '\u00d7, so the bear case uses it)' : ' (\u00d7 0.8)') + ' \u00b7 Bull ' + fmtNum(mult * 1.2, 1) + '\u00d7 (\u00d7 1.2).</p>' +
+    (pjExitDetail && String($('pj-mult').value) === String(pjMultAuto) ? '<p><strong>Where the auto exit P/E came from:</strong> recent-weighted average P/E ' + fmtNum(pjExitDetail.base, 1) + '\u00d7 \u00d7 growth factor ' + fmtNum(pjExitDetail.growth, 2) + ' \u00d7 margin factor ' + fmtNum(pjExitDetail.margin, 2) + ' = ' + fmtNum(pjExitDetail.mult, 1) + '\u00d7. Recent years count most; a year whose earnings fell counts at the stock\u2019s healthy-years median P/E, not its spiked one. The growth factor fades the multiple when forecast revenue growth is slowing; the margin factor trims it when expected margins sit at their peak.</p>' : '') +
     '<p><strong>Implied price</strong> = final-year EPS \u00d7 that case\u2019s exit P/E.</p>' +
     '</div></div>';
   if (divY > 0) html += '<p class="fineprint">Return and CAGR include dividends at the current ' + fmtNum(divY, 2) + '% yield, reinvested.</p>';
