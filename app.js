@@ -3815,6 +3815,60 @@ function pjSavedCagr(T) {
   var divF = isNum(s.divYield) && s.divYield > 0 ? Math.pow(1 + s.divYield / 100, s.years) : 1;
   return (Math.pow(fp / s.price * divF, 1 / s.years) - 1) * 100;
 }
+/* Headless base-case projection for the watchlist (Justin's ask,
+ * 2026-11-10): the SAME math as the Projection Builder -- consensus
+ * EPS path extended to 4 years at the trend growth rate, the auto
+ * exit P/E (pjComputeExitPe), dividends reinvested at today's yield
+ * -- but computed without touching the builder's UI state, so a
+ * watchlist row can show the 4-year CAGR. Returns %/yr or null when
+ * the stock has no analyst EPS path or no usable exit multiple. */
+var WL_PROJ_YEARS = 4;
+function wlProjectCagr(d) {
+  if (!d || !isNum(d.price) || d.price <= 0) return null;
+  var base = isNum(d.epsTTM) ? d.epsTTM : (isNum(d.epsNextY) ? d.epsNextY :
+    (d.epsForecasts && d.epsForecasts[0] ? d.epsForecasts[0].eps : null));
+  if (!isNum(base)) return null;
+  var years = WL_PROJ_YEARS;
+  var rows = [];
+  if (isNum(d.epsTTM)) rows.push({ label: 'TTM', eps: d.epsTTM, growth: isNum(d.epsGrowthTTM) ? d.epsGrowthTTM : null, ttm: true, extrapolated: false });
+  var fc = (d.epsForecasts || []).filter(function (r) { return r && isNum(r.eps); }).slice(0, 5);
+  if (!fc.length) return null;
+  fc.forEach(function (r, i) {
+    var ym = String(r.fiscalEnd || '').match(/(\d{4})/);
+    rows.push({ label: ym ? 'FY' + ym[1] : 'Year ' + (i + 1), eps: r.eps, extrapolated: false });
+  });
+  // Extend to `years` forecast rows at the trend rate, exactly like
+  // pjEnsureYears: fit on the real forecast growths only, clamp to
+  // that window's range, floor at -99.
+  var target = years + (rows[0].ttm ? 1 : 0);
+  var gAll = pjGrowths(base, rows), series = [], prevEps = base;
+  rows.forEach(function (r, i) {
+    if (!r.ttm && !r.extrapolated && isNum(gAll[i]) && isNum(prevEps) && prevEps > 0 && isNum(r.eps) && r.eps > 0) series.push(gAll[i]);
+    if (isNum(r.eps)) prevEps = r.eps;
+  });
+  var added = 0, guard = 0;
+  while (rows.length < target && guard++ < 5) {
+    var prev = rows.length ? rows[rows.length - 1].eps : base;
+    var g = pjTrendGrowthAt(series, added);
+    if (!isNum(g)) g = series.length ? series[series.length - 1] : (isNum(d.epsGrowthNextY) ? d.epsGrowthNextY : null);
+    if (!isNum(g) || !isNum(prev)) return null;
+    g = Math.max(g, -99);
+    added++;
+    rows.push({ label: 'Year ' + rows.length, eps: +(prev * (1 + g / 100)).toFixed(4), extrapolated: true });
+  }
+  var feps = pjCaseEps(base, rows.slice(0, target), 1);
+  if (!isNum(feps)) return null;
+  var res = pjComputeExitPe(d);
+  var mult = res ? res.mult : (isNum(d.pe5yAvg) ? d.pe5yAvg : (isNum(d.pe) ? d.pe : null));
+  if (!isNum(mult)) return null;
+  var fp = feps * mult;
+  if (fp < 0) fp = 0;
+  var divF = isNum(d.divYield) && d.divYield > 0 ? Math.pow(1 + d.divYield / 100, years) : 1;
+  var tot = fp > 0 ? (fp / d.price) * divF : fp / d.price;
+  var cagr = fp > 0 ? (Math.pow(tot, 1 / years) - 1) * 100 : -100;
+  return cagr < -100 ? -100 : cagr;
+}
+
 function pjSaveCurrent() {
   var T = ($('pj-ticker').value || '').trim().toUpperCase();
   if (!T) { window.alert('Load a stock first -- a saved projection needs a ticker.'); return; }
@@ -5375,6 +5429,25 @@ function wlValInner(v) {
     (isNum(v.risk) ? ' \u00b7 Risk <b style="color:hsl(' + Math.round((100 - v.risk) * 1.2) + ', 78%, var(--val-l))">' + v.risk + '</b>' : '');
 }
 
+/* Second watchlist line (2026-11-10): the projected 4-year CAGR and
+ * the risk/reward score Justin defined -- CAGR divided by the risk
+ * score, so it reads as growth earned per point of risk. A saved
+ * projection's CAGR (the user's own assumptions) wins over the
+ * auto-computed one when both exist. */
+function wlDispCagr(r) {
+  if (r && isNum(r.projCagr)) return r.projCagr;
+  if (r && isNum(r.autoCagr)) return r.autoCagr;
+  return null;
+}
+function wlProjInner(cagr, val) {
+  if (!isNum(cagr)) return '';
+  var s = '4-yr CAGR <b>' + (cagr >= 0 ? '+' : '') + fmtNum(cagr, 1) + '%/yr</b>';
+  if (val && isNum(val.risk) && val.risk > 0) {
+    s += ' \u00b7 R/R <b>' + fmtNum(cagr / val.risk, 2) + '</b>';
+  }
+  return s;
+}
+
 /* Background fill for stale watchlist scores. The old version fired
  * every stale ticker at once and blocked the first paint until the
  * slowest finished: a burst through one relay IP earns Finviz 403s,
@@ -5411,6 +5484,65 @@ async function wlFillPass(tickers) {
   }
   await Promise.all([worker(), worker()]);
   wlFillRunning = false;
+}
+
+/* Projected-CAGR cache: one full projection load per watchlist
+ * ticker per day (the sub-loads are day-cached at their own layers,
+ * so this is mostly assembly after the first run). A stored null
+ * means "no analyst path today" and is not retried until tomorrow. */
+var WLPROJ_KEY = 'sr_wlproj_v1';
+function wlProjEntry(T) {
+  var m = lsGet(WLPROJ_KEY, {});
+  var e = m[T];
+  return (e && e.day === new Date().toDateString()) ? e : null;
+}
+async function fetchWlProjCagr(T) {
+  var ent = wlProjEntry(T);
+  if (ent) return ent.cagr;
+  var cagr = null;
+  try {
+    var d = await fetchStock(T);
+    if (d) {
+      await pjEnsureExitData(d);
+      cagr = wlProjectCagr(d);
+    }
+  } catch (e) { cagr = null; }
+  var m = lsGet(WLPROJ_KEY, {});
+  m[T] = { day: new Date().toDateString(), cagr: isNum(cagr) ? cagr : null };
+  lsSet(WLPROJ_KEY, m);
+  return m[T].cagr;
+}
+var wlProjRunning = false;
+async function wlProjPass(tickers) {
+  if (wlProjRunning || !tickers.length) return;
+  wlProjRunning = true;
+  var queue = tickers.slice();
+  var changed = false;
+  async function worker() {
+    while (queue.length) {
+      var T = queue.shift();
+      try {
+        var cagr = await fetchWlProjCagr(T);
+        if (isNum(cagr)) {
+          changed = true;
+          var rowEls = document.querySelectorAll('#wl-list .wl-row');
+          for (var i = 0; i < rowEls.length; i++) {
+            if (rowEls[i].getAttribute('data-ticker') === T) {
+              var pEl = rowEls[i].querySelector('.wl-proj');
+              if (pEl) pEl.innerHTML = wlProjInner(cagr, wlValuationDisplay(T));
+              break;
+            }
+          }
+        }
+      } catch (e) {}
+      if (queue.length) await new Promise(function (res) { setTimeout(res, 250); });
+    }
+  }
+  await Promise.all([worker(), worker()]);
+  wlProjRunning = false;
+  // In risk/reward sort mode the order itself depends on these
+  // numbers, so re-render once they have all landed.
+  if (changed && getWlSort() === 'riskreward') renderWatchlist(false);
 }
 
 var SCAN_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/screen';
@@ -7096,7 +7228,8 @@ async function renderWatchlist(refresh) {
     var price = null, err = null;
     try { price = await fetchLightPrice(item.ticker); } catch (e) { err = e.message; }
     var projMap = getProjections();
-    rows.push({ item: item, price: price, err: err, val: wlValuationDisplay(item.ticker), proj: !!projMap[item.ticker], projCagr: projMap[item.ticker] ? pjSavedCagr(item.ticker) : null });
+    var projEnt = wlProjEntry(item.ticker);
+    rows.push({ item: item, price: price, err: err, val: wlValuationDisplay(item.ticker), proj: !!projMap[item.ticker], projCagr: projMap[item.ticker] ? pjSavedCagr(item.ticker) : null, autoCagr: projEnt ? projEnt.cagr : null });
   }
   // Stale or missing scores are filled by the paced background pass
   // after the rows paint (see wlFillPass) -- never by blocking here.
@@ -7121,6 +7254,12 @@ async function renderWatchlist(refresh) {
       var db = (isNum(b.price) && isNum(b.item.target) && b.item.target > 0) ? (b.price / b.item.target - 1) : Infinity;
       return da - db;
     }
+    if (mode === 'riskreward') {
+      var ca = wlDispCagr(a), cb = wlDispCagr(b);
+      var ra = (isNum(ca) && a.val && isNum(a.val.risk) && a.val.risk > 0) ? ca / a.val.risk : -Infinity;
+      var rb = (isNum(cb) && b.val && isNum(b.val.risk) && b.val.risk > 0) ? cb / b.val.risk : -Infinity;
+      return rb - ra;
+    }
     if (mode === 'ticker') return a.item.ticker.localeCompare(b.item.ticker);
     return (a.item.addedAt || 0) - (b.item.addedAt || 0);
   });
@@ -7133,6 +7272,7 @@ async function renderWatchlist(refresh) {
     // overview a tap opens.
     html += '<div class="wl-row" data-ticker="' + esc(item.ticker) + '">' + logoTile(item.ticker) + '<div class="wl-left"><span class="wl-t">' + esc(item.ticker) + '</span>' +
       '<div class="wl-meta wl-val">' + (r.val ? wlValInner(r.val) : '') + '</div>' +
+      '<div class="wl-meta wl-proj">' + wlProjInner(wlDispCagr(r), r.val) + '</div>' +
       '</div>' +
       '<div class="wl-right"><div class="wl-price">' + (isNum(price) ? fmtMoney(price) : '\u2014') + '</div>' +
       (r.err ? '<div style="text-align:right"><span class="factor-note">price unavailable</span></div>' : '') +
@@ -7141,6 +7281,9 @@ async function renderWatchlist(refresh) {
   $('wl-status').textContent = '';
   box.innerHTML = html;
   if (staleTickers.length) wlFillPass(staleTickers);
+  var missProj = [];
+  rows.forEach(function (r) { if (!wlProjEntry(r.item.ticker)) missProj.push(r.item.ticker); });
+  if (missProj.length) wlProjPass(missProj);
   box.querySelectorAll('.wl-row').forEach(function (row) {
     row.addEventListener('click', function (e) {
       if (e.target.closest('button, a, select, input')) return;
