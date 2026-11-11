@@ -88,9 +88,11 @@ var RELAYS = [
   // route: fast and reliable. The free public relays below stay as backup.
   function (u) { return 'https://stock-research-relay.supplessayings-6e6.workers.dev/?url=' + encodeURIComponent(u); },
   function (u) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); },
-  function (u) { return 'https://api.cors.lol/?url=' + encodeURIComponent(u); },
-  function (u) { return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u); },
-  function (u) { return 'https://corsproxy.io/?url=' + encodeURIComponent(u); }
+  function (u) { return 'https://api.cors.lol/?url=' + encodeURIComponent(u); }
+  /* codetabs and corsproxy.io were dropped 2026-11-10: codetabs
+   * returned origin-error 522s after ~20 s on every probe, and
+   * corsproxy.io sits behind a 401 auth wall -- both were dead weight
+   * in the race, stretching every failure out to the full timeout. */
 ];
 function fetchWithTimeout(url, ms) {
   if (typeof AbortController === 'undefined') return fetch(url);
@@ -659,7 +661,7 @@ async function fetchStock(ticker, opts) {
     var html = await new Promise(function (resolve, reject) {
       var pending = urls.length, done = false;
       urls.forEach(function (u) {
-        relayFetch(u, { timeout: 15000, validate: function (t) { return t.indexOf('Reported EPS') !== -1 && t.indexOf('Consensus Estimate') !== -1; } })
+        relayFetch(u, { timeout: 8000, validate: function (t) { return t.indexOf('Reported EPS') !== -1 && t.indexOf('Consensus Estimate') !== -1; } })
           .then(function (text) { if (!done) { done = true; resolve(text); } })
           .catch(function (e) { pending--; if (pending === 0 && !done) reject(e || new Error('no earnings history')); });
       });
@@ -2055,6 +2057,22 @@ async function cycLoadTtmGrowth(T) {
  * because the figure feeds BOTH scores (15 pts of Value, 20 pts of
  * Risk), one stale input swung its list score by 18 points. Day-
  * cached in the same sr_cyc_v1 entry as the TTM growth. */
+/* The StockAnalysis forecast page's summary sentences carry an EPS
+ * pair -- "EPS This Year 0.22 from 5.66 ..." / "EPS Next Year 3.75
+ * from 0.22 ..." -- the same fiscal-year-over-fiscal-year definition
+ * as the Nasdaq pair. Fallback outlook source when Nasdaq publishes
+ * no yearly forecast (added 2026-11-10). */
+function parseSAEpsSummary(html) {
+  if (!html) return null;
+  var txt = String(html).replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ');
+  function grab(which) {
+    var m = txt.match(new RegExp('EPS ' + which + ' Year\\s+(-?[\\d.]+)\\s+from\\s+-?[\\d.]+'));
+    return m ? parseFloat(m[1]) : null;
+  }
+  var cur = grab('This'), nxt = grab('Next');
+  return (isNum(cur) && isNum(nxt) && cur > 0) ? { cur: cur, nxt: nxt } : null;
+}
+
 async function cycLoadGrowthOutlook(T) {
   var all0 = lsGet(CYC_KEY, {});
   var hit = all0 && all0[T];
@@ -2065,16 +2083,32 @@ async function cycLoadGrowthOutlook(T) {
       .map(function (r) {
         return typeof r.consensusEPSForecast === 'number' ? r.consensusEPSForecast : parseNum(r.consensusEPSForecast);
       }).filter(function (v) { return isNum(v); });
-    if (rows.length < 2 || !(rows[0] > 0)) return null;
-    var g = (rows[1] / rows[0] - 1) * 100;
-    var all = lsGet(CYC_KEY, {});
-    var cur = all[T] || { day: new Date().toDateString() };
-    cur.epsN = g;
-    cur.epsNDay = new Date().toDateString();
-    all[T] = cur;
-    lsSet(CYC_KEY, all);
-    return g;
-  } catch (e) { return null; }
+    if (rows.length >= 2 && rows[0] > 0) {
+      var g = (rows[1] / rows[0] - 1) * 100;
+      var all = lsGet(CYC_KEY, {});
+      var cur = all[T] || { day: new Date().toDateString() };
+      cur.epsN = g;
+      cur.epsNDay = new Date().toDateString();
+      all[T] = cur;
+      lsSet(CYC_KEY, all);
+      return g;
+    }
+  } catch (e) { /* fall through to the StockAnalysis pair */ }
+  try {
+    var html = await relayFetch('https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/forecast/');
+    var pair = parseSAEpsSummary(html);
+    if (pair) {
+      var g2 = (pair.nxt / pair.cur - 1) * 100;
+      var all2 = lsGet(CYC_KEY, {});
+      var cur2 = all2[T] || { day: new Date().toDateString() };
+      cur2.epsN = g2;
+      cur2.epsNDay = new Date().toDateString();
+      all2[T] = cur2;
+      lsSet(CYC_KEY, all2);
+      return g2;
+    }
+  } catch (e) {}
+  return null;
 }
 
 function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
@@ -5725,7 +5759,13 @@ async function scanEnrichTop(fullByIx) {
         }));
       }
       top.sort(function (a, b) { return b.score - a.score; });
-      var final10 = top.slice(0, 10).map(function (e) { return scanDisplayEntry(e); });
+      /* Fully-checked-only Top 10 (Justin's rule, 2026-11-10, mirrors
+       * the server scan): a finalist whose deep-dive could not verify
+       * every input does not take a Top-10 slot -- the next fully
+       * checked finalist is promoted instead. If fewer than 10 fully
+       * check, the list is shorter rather than padded with partials. */
+      var final10 = top.filter(function (e) { return e.full && !e.partial; }).slice(0, 10)
+        .map(function (e) { return scanDisplayEntry(e); });
       var sNow = getScan();
       if (sNow && sNow.done && sNow.date === scanTodayKey() && sNow.results) {
         sNow.results[ixKey] = final10;
