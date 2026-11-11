@@ -524,6 +524,12 @@ async function fetchStock(ticker, opts) {
     if (cycData) {
       d.yearly = cycData.yearly;
       if (!d.revPath && cycData.revPath) d.revPath = cycData.revPath;
+      if (cycData.bs) {
+        d.bsCash = cycData.bs.cash;
+        d.bsDebt = cycData.bs.debt;
+        d.bsNet = cycData.bs.net;
+        d.bsPeriod = cycData.bs.period;
+      }
       d.sources.push('StockAnalysis');
     }
   } catch (e) { d.errors.push('Yearly statements: ' + e.message); } };
@@ -2004,9 +2010,28 @@ function cycCachePeek(T) {
   if (hit && hit.day === new Date().toDateString() && hit.yearly) return hit;
   return null;
 }
+/* Latest balance-sheet snapshot from a yearly metrics pull: cash &
+ * investments, total debt and net cash (debt) at the most recent
+ * reported period, for the scorecard's Cash & debt section. Net
+ * falls back to cash - debt when StockAnalysis' own net row is
+ * missing at that period. */
+function bsLatestFromQm(qm) {
+  if (!qm || !qm.periods) return null;
+  for (var i = qm.periods.length - 1; i >= 0; i--) {
+    var cash = qm.bsCash ? qm.bsCash[i] : null;
+    var debt = qm.bsDebt ? qm.bsDebt[i] : null;
+    if (!isNum(cash) && !isNum(debt)) continue;
+    var net = qm.bsNet ? qm.bsNet[i] : null;
+    if (!isNum(net) && isNum(cash) && isNum(debt)) net = cash - debt;
+    return { cash: isNum(cash) ? cash : null, debt: isNum(debt) ? debt : null,
+      net: isNum(net) ? net : null, period: qm.periods[i] || '' };
+  }
+  return null;
+}
+
 async function cycLoadYearly(T) {
   var hit = cycCachePeek(T);
-  if (hit) return { yearly: hit.yearly, revPath: hit.revPath || null };
+  if (hit && hit.bs) return { yearly: hit.yearly, revPath: hit.revPath || null, bs: hit.bs };
   try {
     var qm = await fetchQMetrics(T, 'y');
     if (!qm) return null;
@@ -2014,10 +2039,11 @@ async function cycLoadYearly(T) {
     buildYearly(tmp, qm);
     if (!tmp.yearly) return null;
     var rp = revPathFromQm(qm);
+    var bs = bsLatestFromQm(qm);
     var all = lsGet(CYC_KEY, {});
-    all[T] = { day: new Date().toDateString(), yearly: tmp.yearly, revPath: rp };
+    all[T] = { day: new Date().toDateString(), yearly: tmp.yearly, revPath: rp, bs: bs };
     lsSet(CYC_KEY, all);
-    return { yearly: tmp.yearly, revPath: rp };
+    return { yearly: tmp.yearly, revPath: rp, bs: bs };
   } catch (e) { return null; }
 }
 
@@ -2839,6 +2865,9 @@ var INFO_TEXT = {
   belowhigh: 'How far below its one-year high the price sits, as a %. A big gap can be a bargain \u2014 or a warning that something is wrong. It is a starting clue, never proof.',
   divyield: 'Dividend yield = the yearly dividend per share as a % of the price. 2% on a $100 stock means about $2 a year in cash payments while you hold it. 0% means no dividend.',
   payout: 'Payout ratio = the % of earnings paid out as dividends. Under about 60% leaves a comfortable cushion \u2014 the dividend is covered even in a bad year. 60\u201385% uses most of earnings, and above 100% means paying out more than the company earns, which rarely lasts.',
+  cashinv: 'Cash & investments = the cash in the bank plus short- and long-term investments the company could sell -- everything it could turn into money to pay its debts.',
+  totdebt: 'Total debt = all the money the company owes lenders, short-term and long-term, as StockAnalysis totals it from the balance sheet.',
+  netcash: 'Net cash = cash & investments minus total debt. Positive means the company could pay off every debt today and still have cash left over. Negative (net debt) means it owes more than it holds.',
   instown: 'Institutional ownership = the % of the company\u2019s shares held by big professional investors \u2014 mutual funds, pension funds, hedge funds. High means the pros have committed real money after doing their own homework; very high can also mean a crowded trade if they all head for the exit at once.',
   target: 'Analysts who cover this stock each publish a 12-month price target \u2014 where they think the price is headed. The bar shows the average of those targets: the white dot is today\u2019s price, the gold dot is the average target, and the % is the gap between them. Treat it as a sentiment check, not a promise \u2014 targets are opinions, they are often wrong, and they tend to chase the price after it moves rather than predict it.',
   mktcap: 'Market cap = share price \u00d7 total shares \u2014 what the whole company is worth at today\'s price. Big (over $200B) usually means steadier; small (under $2B) usually means swingier.',
@@ -3368,6 +3397,35 @@ function radarCardHtml(d) {
     radarFlexHtml(axes, cliffFlag(d), false);
 }
 
+/* Cash & debt section (Justin's ask, 2026-11-10): how much cash the
+ * company holds, how much debt it carries, and in one line how
+ * easily it could pay that debt off. Figures are the latest reported
+ * balance sheet from StockAnalysis (via cycLoadYearly's bs snapshot).
+ * Renders nothing when no balance sheet came back. */
+function cashDebtVerdict(cash, debt) {
+  if (!isNum(cash) || !isNum(debt)) return null;
+  if (debt <= 0) return { cls: 'ok', text: 'No debt on the balance sheet \u2014 nothing to pay off.' };
+  if (cash >= debt) {
+    return { cls: 'ok', text: 'Cash covers every dollar of debt ' + (cash / debt).toFixed(1) + '\u00d7 over \u2014 it could pay off all its debt today and still have cash left.' };
+  }
+  return { cls: 'warn', text: 'Cash covers ' + Math.round(cash / debt * 100) + '% of the debt \u2014 the rest would have to come from earnings or new borrowing.' };
+}
+
+function cashDebtHtml(d) {
+  if (!isNum(d.bsCash) && !isNum(d.bsDebt)) return '';
+  var html = '<div class="section-h">Cash & <span class="gold-text">debt</span></div><div class="kv-grid">';
+  html += kvItem('Cash & investments', isNum(d.bsCash) ? fmtCap(d.bsCash) : '—', 'cashinv');
+  html += kvItem('Total debt', isNum(d.bsDebt) ? fmtCap(d.bsDebt) : '—', 'totdebt');
+  if (isNum(d.bsNet)) {
+    html += kvItem(d.bsNet >= 0 ? 'Net cash' : 'Net debt', fmtCap(Math.abs(d.bsNet)), 'netcash');
+  }
+  html += '</div>';
+  var v = cashDebtVerdict(d.bsCash, d.bsDebt);
+  if (v) html += '<div class="alert ' + v.cls + '">' + (v.cls === 'ok' ? '\u2713 ' : '\u26a0 ') + esc(v.text) + '</div>';
+  if (d.bsPeriod) html += '<p class="fineprint">Latest balance sheet \u00b7 ' + esc(d.bsPeriod) + ' \u00b7 StockAnalysis</p>';
+  return html;
+}
+
 function renderScorecard(d) {
   lastStock = d;
   var sc = scoreStock(d);
@@ -3522,6 +3580,8 @@ function renderScorecard(d) {
   html += kvItem('Analyst 1-yr target', isNum(d.target1Y) ? fmtMoney(d.target1Y) : '—', 'target');
   if (isNum(d.instOwn)) html += kvItem('Institutional ownership', fmtNum(d.instOwn, 1) + '%', 'instown');
   html += '</div>';
+
+  html += cashDebtHtml(d);
 
   html += dividendHtml(d);
 
