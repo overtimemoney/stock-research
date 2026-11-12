@@ -5921,10 +5921,21 @@ var scanEnriching = false, scanLastFull = null;
 async function scanEnrichTop(fullByIx) {
   if (scanEnriching) return;
   scanEnriching = true;
+  var gen0 = (getScan() || {}).resultsGen;
   try {
     var changed = false;
+    /* Phase 1: deep-dive each index's top 25, collecting every fully
+     * checked finalist into one shared pool. The indexes overlap
+     * (Total Market contains the S&P 500 and Russell 2000), and a
+     * stock checked in one list must compete in every list it
+     * belongs to -- per-index silos let a checked 78 sit out of
+     * Total Market while an unchecked-crowded pool left that list
+     * with only low checked scores (Justin's catch, 2026-11-12). */
+    var pool = {};   // ticker -> entry that fully checked in some index's pass
+    var ownFull = {}; // ixKey -> this index's own fully checked finalists
     for (var ii = 0; ii < SCAN_IDXS.length; ii++) {
       var ixKey = SCAN_IDXS[ii].key;
+      ownFull[ixKey] = [];
       var ranked = fullByIx[ixKey];
       if (!ranked || !ranked.length) continue;
       var top = ranked.slice(0, 25);
@@ -5950,24 +5961,71 @@ async function scanEnrichTop(fullByIx) {
           }
         }));
       }
-      top.sort(function (a, b) { return b.score - a.score; });
+      top.forEach(function (e) {
+        if (e.full && !e.partial) {
+          ownFull[ixKey].push(e);
+          if (!pool[e.t]) pool[e.t] = e;
+        }
+      });
+    }
+    /* Phase 2: build each index's Top 10 from its own checked
+     * finalists PLUS every pooled name that belongs to the index and
+     * passes the same ranking gates (forward P/E >= 1, market cap
+     * >= $100M), all at their checked scores. */
+    for (var jj = 0; jj < SCAN_IDXS.length; jj++) {
+      var jxKey = SCAN_IDXS[jj].key;
+      if (!fullByIx[jxKey] || !fullByIx[jxKey].length) continue;
+      var cand = {};
+      ownFull[jxKey].forEach(function (e) { cand[e.t] = e; });
+      Object.keys(pool).forEach(function (t) {
+        if (cand[t]) return;
+        var pe = pool[t];
+        if (!scanRecIx(pe.rec, jxKey)) return;
+        if (!(isNum(pe.rec.forwardPE) && pe.rec.forwardPE >= 1)) return;
+        if (!(isNum(pe.rec.marketCap) && pe.rec.marketCap >= 1e8)) return;
+        cand[t] = pe;
+      });
       /* Fully-checked-only Top 10 (Justin's rule, 2026-11-10, mirrors
        * the server scan): a finalist whose deep-dive could not verify
        * every input does not take a Top-10 slot -- the next fully
        * checked finalist is promoted instead. If fewer than 10 fully
        * check, the list is shorter rather than padded with partials. */
-      var final10 = top.filter(function (e) { return e.full && !e.partial; }).slice(0, 10)
+      var final10 = Object.keys(cand).map(function (t) { return cand[t]; })
+        .sort(function (a, b) { return b.score - a.score; }).slice(0, 10)
         .map(function (e) { return scanDisplayEntry(e); });
       var sNow = getScan();
       if (sNow && sNow.done && sNow.date === scanTodayKey() && sNow.results) {
-        sNow.results[ixKey] = final10;
+        sNow.results[jxKey] = final10;
         setScan(sNow);
         changed = true;
       }
     }
     if (changed) {
       var s2 = getScan();
-      if (s2 && s2.results) scanUpdateNewBadges(s2.results, true);
+      if (s2 && s2.results) {
+        scanUpdateNewBadges(s2.results, true);
+        if (s2.resultsGen === gen0) {
+          // This pass enriched the current result set end to end:
+          // it is now the checked list -- safe to show, and the
+          // snapshot future pending windows fall back to.
+          s2.checked = true;
+          setScan(s2);
+          var scMap = {};
+          SCAN_IDXS.forEach(function (ix) { scMap[ix.key] = s2.idx[ix.key] ? s2.idx[ix.key].scored : null; });
+          scanSaveChecked(s2.date, s2.results, scMap);
+        } else {
+          // The results were replaced mid-pass (a refresh landed):
+          // re-run once against the current dataset so the new
+          // lists get their checks too, rather than blessing the
+          // stale writes.
+          var dsNow = getScanData();
+          if (dsNow) {
+            scanEnriching = false;
+            scanEnrichTop(scanFullFromData(dsNow));
+            return;
+          }
+        }
+      }
       renderScanCard();
     }
   } catch (e) {}
@@ -6187,6 +6245,21 @@ function getScanData() {
 }
 function setScanData(s) { try { localStorage.setItem(SCAN_DATA_KEY, JSON.stringify(s)); } catch (e) {} }
 
+/* Last fully-checked scan lists (Justin's rule, 2026-11-12: never
+ * show a list until its deep checks have landed). Written when a
+ * server pass is adopted and when the on-device top-25 deep-dive
+ * completes; shown -- under its own date -- while today's checks
+ * are still running, so the unchecked preliminary ranking is never
+ * what renders. */
+var SCAN_CHECKED_KEY = 'sr_scan_checked_v1';
+function scanSaveChecked(date, results, scored) {
+  try { lsSet(SCAN_CHECKED_KEY, { date: date, results: results, scored: scored || null }); } catch (e) {}
+}
+function scanGetChecked() {
+  var c = lsGet(SCAN_CHECKED_KEY, null);
+  return (c && c.results) ? c : null;
+}
+
 /* NEW badges (2026-10-30): when a completed Top-10 list replaces the
  * last shown one, names that weren't in the previous list carry a
  * NEW pill until the next completed list lands. The first-ever list
@@ -6353,6 +6426,8 @@ function scanShowDataResults(ds, refreshed) {
   s.dataAsOf = ds.asOf;
   s.refreshed = refreshed;
   s.rulesV = SCAN_RULES_V;
+  s.checked = false; // preliminary ranking only -- the deep-dive below decides what may be shown
+  s.resultsGen = (s.resultsGen || 0) + 1;
   SCAN_IDXS.forEach(function (ix) {
     var n = Object.keys(ds.recs).filter(function (t) { return scanRecIx(ds.recs[t], ix.key); }).length;
     s.idx[ix.key].scored = n;
@@ -6542,6 +6617,9 @@ async function scanAdoptShared() {
     if (rut) scanPersistIdx('rut', rut.recs);
     if (tot) scanPersistIdx('tot', tot.recs);
     scanUpdateNewBadges(s.results);
+    s.checked = true;
+    setScan(s);
+    scanSaveChecked(s.date, s.results, counts);
     scanDiag('shared scan adopted: spx ' + spx.top.length + ' rows, asOf ' + spx.asOf);
     renderScanCard();
     return true;
@@ -6575,6 +6653,14 @@ function maybeStartScan() {
         scanRefreshReporters();
         return;
       }
+    }
+    if (dsFix && existing.checked === false && !scanEnriching && Date.now() - scanRekickAt > 10 * 60 * 1000) {
+      // The reporters refresh landed but the deep-dive never did
+      // (app closed mid-pass): give the checks another run, or the
+      // card sits on the last checked list all day.
+      scanRekickAt = Date.now();
+      scanEnrichTop(scanFullFromData(dsFix));
+      return;
     }
   }
   if (!(existing && existing.date === scanTodayKey() && (existing.done || existing.partial || existing.fromData))) {
@@ -6689,17 +6775,16 @@ function renderScanCard() {
    * away while a new scan loads -- it stays on screen, even if it is
    * from yesterday, until the new stocks have actually landed. */
   var prevListsHtml = function () {
-    var ds = getScanData();
-    if (!ds || !ds.recs || !Object.keys(ds.recs).length) return '';
-    var ranked = scanRankFromData(ds);
-    var out = '<div class="fineprint" style="margin:2px 0 8px">Last completed list \u00b7 data from ' + esc(ds.asOf || 'an earlier scan') + '</div>';
+    var snap = scanGetChecked();
+    if (!snap) return '';
+    var out = '<div class="fineprint" style="margin:2px 0 8px">Last checked list \u00b7 ' + esc(snap.date || 'an earlier scan') + '</div>';
     var secs = {};
     SCAN_IDXS.forEach(function (ix) {
-      var n = Object.keys(ds.recs).filter(function (t) { return scanRecIx(ds.recs[t], ix.key); }).length;
-      if (!n) return;
+      var rows = snap.results[ix.key] || [];
+      var n = snap.scored ? snap.scored[ix.key] : null;
+      if (!rows.length && !isNum(n)) return;
       var out0 = out; out = '';
-      var rows = ranked[ix.key] || [];
-      out += '<div class="scan-group">' + esc(ix.label) + ' <span class="scan-count">' + n + ' stocks scored' + (scanNewList(ix.key).length ? ' \u00b7 ' + scanNewList(ix.key).length + ' new' : '') + '</span></div>';
+      out += '<div class="scan-group">' + esc(ix.label) + (isNum(n) ? ' <span class="scan-count">' + n + ' stocks scored' + (scanNewList(ix.key).length ? ' \u00b7 ' + scanNewList(ix.key).length + ' new' : '') + '</span>' : '') + '</div>';
       if (!rows.length) { out += '<div class="status">No scored stocks came back.</div>'; }
       rows.forEach(function (row, i) {
         out += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
@@ -6727,7 +6812,9 @@ function renderScanCard() {
     wireScanIxToggle(box);
     return;
   }
-  var html = '<div class="card scan-card"><div class="scan-h">Top value + low risk today <span class="scan-date">' + esc(s.date) + '</span>' + infoDot('scanscore') + '</div>' + infoText('scanscore');
+  var snapC = scanGetChecked();
+  var pendingGate = !!(s.done && s.results && s.checked === false);
+  var html = '<div class="card scan-card"><div class="scan-h">Top value + low risk today <span class="scan-date">' + esc(pendingGate && snapC ? snapC.date : s.date) + '</span>' + infoDot('scanscore') + '</div>' + infoText('scanscore');
   var listsHtml = function () {
     var out = '';
     var secs = {};
@@ -6763,7 +6850,17 @@ function renderScanCard() {
     });
     return (secs.tot || '') + scanIxDropdownHtml((secs.spx || '') + (secs.rut || ''));
   };
-  if (s.done && s.results) {
+  if (pendingGate) {
+    // Today's lists exist only as an unchecked preliminary ranking:
+    // show the last checked list (or a checking note) until the
+    // deep-dive lands -- never the prelim scores (2026-11-12).
+    html += prevListsHtml();
+    if (snapC) {
+      html += '<div class="scan-foot">Checking today\u2019s stocks\u2026<button type="button" class="btn-mini" id="scan-rescan">Rescan</button></div>';
+    } else {
+      html += '<div class="status"><span class="spinner"></span>Running today\u2019s checks\u2026</div>';
+    }
+  } else if (s.done && s.results) {
     html += listsHtml();
     html += '<div class="scan-foot">' +
       (s.shared
