@@ -3780,6 +3780,8 @@ async function runCompare() {
     html += '</tr>';
   });
   html += '</table><p class="fineprint">★ = strongest value on that row. Lower is better where marked ↓. Same scoring rubric as the Scorecard tab.</p></div>';
+  var failed = results.filter(function (r) { return r.error; }).map(function (r) { return r.ticker; });
+  if (failed.length) html += '<div class="alert warn">Couldn\'t load ' + esc(failed.join(', ')) + ' — check the ticker, or try again in a moment.</div>';
   $('compare-result').innerHTML = html;
 }
 
@@ -3930,7 +3932,7 @@ function renderPjSaved() {
   if (!box) return;
   var all = getProjections();
   var ts = Object.keys(all).sort();
-  if (!ts.length) { box.innerHTML = ''; return; }
+  if (!ts.length) { box.innerHTML = '<p class="fineprint">No saved projections yet — build one above and tap "Save projection" to keep it here.</p>'; return; }
   // Collapsible (Justin's call, 2026-10-25): the list only grows, and
   // restoring is occasional — collapsed by default, state remembered.
   var open = !!lsGet('sr_pjsaved_open', false);
@@ -7045,10 +7047,14 @@ function runScreener() {
       '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
       '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
   });
-  if (!out.length && isNum(f.dy) && !anyYield) html += '<div class="status">Dividend yield isn\'t in the stored data yet \u2014 it arrives with the next scan, or tap Rescan on the Watchlist scan card to get it now.</div>';
-  else if (!out.length && f.sector && f.sector !== 'all' && !anyInd) html += '<div class="status">Sector data isn\'t in the stored data yet \u2014 it arrives with the next scan, or tap Rescan on the Watchlist scan card to get it now.</div>';
-  else if (!out.length) html += '<div class="status">No stored stocks match those filters.</div>';
+  if (!out.length && isNum(f.dy) && !anyYield) html += '<div class="status">Dividend yield isn\'t in the stored data yet \u2014 it arrives with the next scan, or tap Rescan on the Watchlist scan card to get it now. <button type="button" class="link-btn" data-scr-gocard="1">Open the scan card</button></div>';
+  else if (!out.length && f.sector && f.sector !== 'all' && !anyInd) html += '<div class="status">Sector data isn\'t in the stored data yet \u2014 it arrives with the next scan, or tap Rescan on the Watchlist scan card to get it now. <button type="button" class="link-btn" data-scr-gocard="1">Open the scan card</button></div>';
+  else if (!out.length) html += '<div class="status">No stored stocks match those filters. <button type="button" class="link-btn" data-scr-clear="1">Clear the filters</button></div>';
   box.innerHTML = html;
+  var scb = box.querySelector('[data-scr-clear]');
+  if (scb) scb.addEventListener('click', function () { scrApplyControls({ ix: 'both', sort: 'combined' }); runScreener(); });
+  var sgb = box.querySelector('[data-scr-gocard]');
+  if (sgb) sgb.addEventListener('click', function () { switchTab('watchlist'); });
   box.querySelectorAll('[data-scr-research]').forEach(function (b) {
     b.addEventListener('click', function () {
       var T = b.getAttribute('data-scr-research');
@@ -7305,7 +7311,9 @@ function openOverview(T) {
     wireOverviewActions(d);
   }).catch(function (e) {
     if (ovTicker !== T || (hit && hit.data)) return;
-    body.innerHTML = '<div class="card"><div class="alert warn">Could not load ' + esc(T) + ' \u2014 ' + esc((e && e.message) || 'fetch failed') + '</div></div>';
+    body.innerHTML = '<div class="card"><div class="alert warn">Could not load ' + esc(T) + ' \u2014 ' + esc((e && e.message) || 'fetch failed') + '</div><button type="button" class="btn-gold" id="ov-retry">Retry</button></div>';
+    var rb = $('ov-retry');
+    if (rb) rb.addEventListener('click', function () { openOverview(T); });
   });
 }
 
@@ -7314,7 +7322,22 @@ async function renderWatchlist(refresh) {
   var wl = getWatchlist();
   var box = $('wl-list');
   if (!wl.length) {
-    box.innerHTML = '<div class="empty-note"><h2>Nothing here yet</h2><p>Add a ticker and the buy price you\'re waiting for.</p></div>';
+    // Zero-moment fix (2026-11-12): example chips pre-fill the add
+    // form above — they never add anything on their own.
+    box.innerHTML = '<div class="empty-note"><h2>Nothing here yet</h2><p>Add a ticker and the buy price you\'re waiting for.</p>' +
+      '<div class="ex-row">' +
+      '<button type="button" class="w-chip" data-wl-ex="AAPL">Try AAPL</button>' +
+      '<button type="button" class="w-chip" data-wl-ex="NVDA">Try NVDA</button>' +
+      '<button type="button" class="w-chip" data-wl-ex="MSFT">Try MSFT</button>' +
+      '</div></div>';
+    box.querySelectorAll('[data-wl-ex]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var ti = $('wl-ticker'), tg = $('wl-target'), fm = $('wl-form');
+        if (ti) ti.value = b.getAttribute('data-wl-ex');
+        if (fm) fm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (tg) { try { tg.focus({ preventScroll: true }); } catch (e) { tg.focus(); } }
+      });
+    });
     return;
   }
   if (refresh) $('wl-status').innerHTML = '<span class="spinner"></span>Refreshing\u2026';
@@ -7620,7 +7643,7 @@ function renderPfNews() {
   var head = '<div class="row-between"><span class="scan-h">News for your holdings</span>' +
     '<button type="button" class="btn-mini" id="pf-news-refresh">Refresh</button></div>';
   if (!tickers.length) {
-    box.innerHTML = head + '<div class="empty-note"><p>Add a holding and its latest headlines will show up here.</p></div>';
+    box.innerHTML = head + '<div class="empty-note"><p>Add a holding and its latest headlines will show up here.</p><div class="ex-row"><button type="button" class="btn-gold" id="pf-news-add">Add a holding</button></div></div>';
   } else {
     var c = getPfNews();
     if (pfNewsLoading) {
@@ -7644,6 +7667,20 @@ function renderPfNews() {
   }
   var rb = $('pf-news-refresh');
   if (rb) rb.addEventListener('click', function () { refreshPfNews(true); });
+  var ab = $('pf-news-add');
+  if (ab) ab.addEventListener('click', function () {
+    // Jump to the Overview's add-a-holding form (same open state the
+    // toggle controls) and put the cursor in the ticker box.
+    pfSetView('overview');
+    var fb = $('pf-add-body'), card = document.querySelector('.pf-add-card'), tg = $('pf-add-toggle');
+    if (fb && fb.hidden) {
+      fb.hidden = false;
+      if (card) card.classList.add('open');
+      if (tg) tg.setAttribute('aria-expanded', 'true');
+    }
+    var ti = $('pf-ticker');
+    if (ti) { ti.scrollIntoView({ behavior: 'smooth', block: 'center' }); try { ti.focus({ preventScroll: true }); } catch (e) { ti.focus(); } }
+  });
 }
 
 async function refreshPfNews(force) {
@@ -8312,7 +8349,14 @@ function renderJournal() {
   var tickers = Object.keys(j).sort();
   var box = $('journal-list');
   if (!tickers.length) {
-    box.innerHTML = '<div class="empty-note"><h2>No journal entries yet</h2><p>Write down your thesis before you buy — future you will want to know what past you was thinking.</p></div>';
+    box.innerHTML = '<div class="empty-note"><h2>No journal entries yet</h2><p>Write down your thesis before you buy — future you will want to know what past you was thinking.</p>' +
+      '<div class="ex-row"><button type="button" class="btn-gold" data-j-start="1">Write your first entry</button></div></div>';
+    var jb = box.querySelector('[data-j-start]');
+    if (jb) jb.addEventListener('click', function () {
+      var card = $('journal-editor-card'), ti = $('j-ticker');
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (ti) { try { ti.focus({ preventScroll: true }); } catch (e) { ti.focus(); } }
+    });
     return;
   }
   var html = '';
@@ -8477,7 +8521,12 @@ function renderGlossary(filter, exactTerm) {
       (GLOSS_ART[g[0]] ? '<div class="gloss-art"><svg viewBox="0 0 300 84" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + GLOSS_ART[g[0]] + '</svg></div>' : '') +
       '<div class="g-def">' + glossLinkify(g[1], g[0]) + '</div></div>';
   });
-  $('gloss-list').innerHTML = html || '<p class="fineprint">No terms match that search.</p>';
+  $('gloss-list').innerHTML = html || '<div class="empty-note"><h2>No matches</h2><p>No glossary term matches that search.</p><div class="ex-row"><button type="button" class="btn-gold" id="gloss-clear">Clear search</button></div></div>';
+  var gc = $('gloss-clear');
+  if (gc) gc.addEventListener('click', function () {
+    var gs = $('gloss-search'); if (gs) gs.value = '';
+    renderGlossary('');
+  });
   fitGlossText();
 }
 
@@ -8856,6 +8905,22 @@ function initApp() {
   if (pfBtn) pfBtn.addEventListener('click', function () { renderPortfolio(!pfFetchedOnce); });
   renderPortfolio(false);
   $('compare-form').addEventListener('submit', function (e) { e.preventDefault(); runCompare(); });
+  /* Zero-moment examples (2026-11-12): the static empty states offer
+   * one-tap real lookups instead of dead ends. The scorecard chips run
+   * the lookup; the compare example fills all three boxes and runs. */
+  document.querySelectorAll('#score-empty [data-ex]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var T = b.getAttribute('data-ex');
+      if (!T) return;
+      $('search-input').value = T;
+      runSearch(T);
+    });
+  });
+  var cmpEx = document.querySelector('[data-cmp-ex]');
+  if (cmpEx) cmpEx.addEventListener('click', function () {
+    $('cmp-1').value = 'AAPL'; $('cmp-2').value = 'MSFT'; $('cmp-3').value = 'NVDA';
+    runCompare();
+  });
   document.querySelectorAll('.toolseg button').forEach(function (b) {
     b.addEventListener('click', function () { setTool(b.getAttribute('data-tool')); });
   });

@@ -127,6 +127,7 @@ main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; over
 .empty-note { text-align: center; padding: 42px 18px; color: var(--muted); }
 .empty-note h2 { color: var(--ink); margin: 0 0 8px; }
 .empty-note p { max-width: 460px; margin: 0 auto; line-height: 1.55; font-size: 14px; }
+.ex-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
 
 /* ---------- forms & buttons ---------- */
 input, textarea, select {

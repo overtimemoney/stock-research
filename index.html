@@ -37,6 +37,11 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
     <div id="score-empty" class="empty-note">
       <h2>Look up any stock</h2>
       <p>A valuation scorecard with the math shown, a risk score, and an EPS cliff check — pulled live.</p>
+      <div class="ex-row">
+        <button type="button" class="w-chip" data-ex="AAPL">Try AAPL</button>
+        <button type="button" class="w-chip" data-ex="NVDA">Try NVDA</button>
+        <button type="button" class="w-chip" data-ex="MSFT">Try MSFT</button>
+      </div>
     </div>
   </section>
 
@@ -50,7 +55,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
       <button type="submit" class="btn-gold">Compare</button>
     </form>
     <div id="compare-status" class="status" role="status"></div>
-    <div id="compare-result"></div>
+    <div id="compare-result"><div class="empty-note"><h2>Nothing to compare yet</h2><p>Enter two or three tickers above to see them side by side — price, valuation, growth, risk and score, with the strongest value on each row starred.</p><div class="ex-row"><button type="button" class="btn-gold" data-cmp-ex="1">Try AAPL · MSFT · NVDA</button></div></div></div>
   </section>
 
   <!-- TOOLS -->
