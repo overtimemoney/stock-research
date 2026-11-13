@@ -5540,9 +5540,9 @@ async function wlProjPass(tickers) {
   }
   await Promise.all([worker(), worker()]);
   wlProjRunning = false;
-  // In risk/reward sort mode the order itself depends on these
-  // numbers, so re-render once they have all landed.
-  if (changed && getWlSort() === 'riskreward') renderWatchlist(false);
+  // In risk/reward or CAGR sort mode the order itself depends on
+  // these numbers, so re-render once they have all landed.
+  if (changed && (getWlSort() === 'riskreward' || getWlSort() === 'cagr')) renderWatchlist(false);
 }
 
 var SCAN_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/screen';
@@ -7356,6 +7356,13 @@ async function renderWatchlist(refresh) {
       var ra = (isNum(ca) && a.val && isNum(a.val.risk) && a.val.risk > 0) ? ca / a.val.risk : -Infinity;
       var rb = (isNum(cb) && b.val && isNum(b.val.risk) && b.val.risk > 0) ? cb / b.val.risk : -Infinity;
       return rb - ra;
+    }
+    if (mode === 'cagr') {
+      // Raw base-case CAGR alone (Justin's ask, 2026-11-12): the
+      // risk/reward sort divides by risk; this one ranks on the
+      // growth figure itself. No CAGR (no analyst path) sorts last.
+      var ga = wlDispCagr(a), gb = wlDispCagr(b);
+      return (isNum(gb) ? gb : -Infinity) - (isNum(ga) ? ga : -Infinity);
     }
     if (mode === 'ticker') return a.item.ticker.localeCompare(b.item.ticker);
     return (a.item.addedAt || 0) - (b.item.addedAt || 0);
