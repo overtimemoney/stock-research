@@ -2874,7 +2874,7 @@ var INFO_TEXT = {
   size: 'Company size by market cap (price \u00d7 shares). Smaller companies tend to swing harder, get less analyst coverage, and can be harder to sell in a panic \u2014 so small size adds risk points here.',
   currentratio: 'Current ratio = short-term assets \u00f7 short-term bills. Above 1 means the company can cover what it owes within the year. Below 1 can mean cash stress if business dips.',
   boombust: 'Some businesses boom then bust in cycles (memory chips are the classic case). This flags it when the forecast shows a big earnings peak followed by a cliff, after revenue roughly doubled into the peak \u2014 peak earnings make a stock look deceptively cheap.',
-  scanscore: 'Every stock in the index gets two 0\u2013100 scores: a Value score (cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt) and a Risk score (debt, volatility, size, earnings trend, boom-bust pattern). The Score on this list = 60% Value + 40% safety, where safety = 100 \u2212 Risk. Only stocks with enough data to score fairly can appear, and it shows the Top 10 for each index. Scores refresh when a company reports earnings, and the full index is rescanned about once a week. The list is computed once a day on the server, so every phone shows the same scores; tapping Rescan still runs a fresh scan on this phone.',
+  scanscore: 'Every stock in the index gets two 0\u2013100 scores: a Value score (cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt) and a Risk score (debt, volatility, size, earnings trend, boom-bust pattern). The Score starts at 60% Value + 40% safety, where safety = 100 \u2212 Risk. Before the list is final, each top stock is deep-checked, and its Score becomes 75% of that value-and-safety score plus 25% growth points from its projected 4-year CAGR \u2014 the yearly return its forecast earnings path works out to, shown on the row (\u221220%/yr earns 0 points, +40%/yr earns 100). A stock with no analyst forecast keeps its value-and-safety score. Only stocks with enough data to score fairly can appear, and it shows the Top 10 for each index. Scores refresh when a company reports earnings, and the full index is rescanned about once a week. The list is computed once a day on the server, so every phone shows the same scores; tapping Rescan still runs a fresh scan on this phone.',
   radar: 'Five 0\u2013100 measures drawn as a snowflake: Value (the valuation score), Future (forecast EPS growth), Past (recent revenue growth), Health (debt, liquidity, margins) and Dividend (the yield). The further a point reaches, the stronger that measure \u2014 a big, even snowflake is strong all round. If the Future point is red, the cliff check fired \u2014 earnings are forecast to fall off a peak.',
 };
 var FACTOR_INFO = {
@@ -5560,7 +5560,7 @@ var SCAN_KEY = 'sr_scan_v4';
  * rules is recomputed from the stored dataset on the next open
  * instead of being re-shown all day. States saved before the stamp
  * existed read as undefined and mismatch once, by design. */
-var SCAN_RULES_V = 1;
+var SCAN_RULES_V = 2;
 var scanRunning = false, scanActive = 0, scanCoolUntil = 0, scanTimer = null;
 
 function scanTodayKey() { return pfKeyToISO(pfDkey(new Date())); }
@@ -5905,6 +5905,7 @@ function scanRankAll(idxs) {
 function scanDisplayEntry(e, partialOverride) {
   var o = { t: e.t, name: e.name, score: e.score, price: e.price };
   if (isNum(e.sev) && e.sev >= 0.5) o.sev = e.sev;
+  if (isNum(e.cagr)) o.cagr = Math.round(e.cagr * 10) / 10;
   if (partialOverride || e.partial) o.partial = true;
   return o;
 }
@@ -5953,8 +5954,21 @@ async function scanEnrichTop(fullByIx) {
             if (data.revPath) entry.rec.revPath = data.revPath;
             var s = scoreStock(entry.rec, STD_W), rk = riskScore(entry.rec, STD_W);
             if (s && isNum(s.score) && rk && isNum(rk.score)) {
-              entry.score = Math.round(0.6 * s.score + 0.4 * (100 - rk.score));
+              var combined = Math.round(0.6 * s.score + 0.4 * (100 - rk.score));
+              entry.score = combined;
               entry.sev = rk.cyc ? rk.cyc.severity : 0;
+              /* CAGR blend (Justin's pick, 2026-11-12): the checked
+               * score is 75% value + safety and 25% growth, where
+               * growth is the same base-case 4-yr CAGR the watchlist
+               * shows, mapped -20%/yr -> 0 points and +40%/yr -> 100.
+               * A finalist with no analyst forecast path keeps its
+               * unblended score -- no growth evidence either way. */
+              var cg = await fetchWlProjCagr(entry.t);
+              if (isNum(cg)) {
+                entry.cagr = cg;
+                var cpts = Math.max(0, Math.min(100, (cg + 20) / 60 * 100));
+                entry.score = Math.round(0.75 * combined + 0.25 * cpts);
+              }
             }
             entry.full = true;
             if (!isNum(g) || !isNum(nY)) entry.partial = true; // yearly loaded, growth basis unverified
@@ -6791,7 +6805,7 @@ function renderScanCard() {
       rows.forEach(function (row, i) {
         out += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
           '<span class="scan-rank">' + (i + 1) + '</span>' +
-          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span class="scan-sub"><span class="scan-nm">' + esc(row.name) + '</span>' + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">\u26a0 Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">\u26a0 partial check</span>' : '') + '</span></span>' +
+          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span class="scan-sub"><span class="scan-nm">' + esc(row.name) + '</span>' + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">\u26a0 Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">\u26a0 partial check</span>' : '') + (isNum(row.cagr) ? ' <span class="scan-cagr">CAGR ' + (row.cagr >= 0 ? '+' : '') + fmtNum(row.cagr, 0) + '%/yr</span>' : '') + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
           '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
       });
@@ -6844,7 +6858,7 @@ function renderScanCard() {
       rows.forEach(function (row, i) {
         out += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
           '<span class="scan-rank">' + (i + 1) + '</span>' +
-          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span class="scan-sub"><span class="scan-nm">' + esc(row.name) + '</span>' + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">\u26a0 Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">\u26a0 partial check</span>' : '') + '</span></span>' +
+          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span class="scan-sub"><span class="scan-nm">' + esc(row.name) + '</span>' + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">\u26a0 Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">\u26a0 partial check</span>' : '') + (isNum(row.cagr) ? ' <span class="scan-cagr">CAGR ' + (row.cagr >= 0 ? '+' : '') + fmtNum(row.cagr, 0) + '%/yr</span>' : '') + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
           '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
       });
