@@ -3536,6 +3536,13 @@ function renderScorecard(d) {
     '<div class="sc-sub">' + esc([d.exchange, d.sector, d.industry].filter(Boolean).join(' · ')) + '</div></div></div>' +
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
+  /* Projected 4-yr CAGR, same number the watchlist rows and scan
+   * tags show (a saved projection's CAGR wins, then the day-cached
+   * auto value; the async fill below refreshes it). Justin asked for
+   * it on tap-through from the scan rows, 2026-11-13. */
+  var scSavedCagr = pjSavedCagr(d.ticker);
+  var scCachedCagr = isNum(scSavedCagr) ? scSavedCagr : (wlProjEntry(d.ticker) || {}).cagr;
+  html += '<div class="sc-proj" id="sc-proj">' + (isNum(scCachedCagr) ? 'Projected 4-yr CAGR <b>' + (scCachedCagr >= 0 ? '+' : '') + fmtNum(scCachedCagr, 1) + '%/yr</b>' : '') + '</div>';
   if (d.about) html += '<div class="sc-about">' + esc(d.about) + '</div>';
   html += moreBlockHtml(d);
   if (!d.earnEst) html += earnLineHtml(d);
@@ -3727,6 +3734,14 @@ function renderScorecard(d) {
   html += '</div>';
   $('score-result').innerHTML = html;
   $('score-empty').style.display = 'none';
+  if (!isNum(scSavedCagr)) {
+    fetchWlProjCagr(d.ticker).then(function (cg) {
+      var el = $('sc-proj');
+      if (el && lastStock && lastStock.ticker === d.ticker && isNum(cg)) {
+        el.innerHTML = 'Projected 4-yr CAGR <b>' + (cg >= 0 ? '+' : '') + fmtNum(cg, 1) + '%/yr</b>';
+      }
+    }).catch(function () {});
+  }
   loadStockNews('sc', d.ticker);
 
   /* The zone's button is "Regenerate" when a saved SWOT is showing
