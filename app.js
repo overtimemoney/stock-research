@@ -1622,14 +1622,17 @@ function pjComputeExitPe(d) {
    * P/E must always calculate. d.peMed is the median trailing P/E of
    * the stock's industry across the whole market, resolved by the
    * caller (scan finalize on the server, pjEnsurePeMed in the app).
-   * With no P/E history of its own, the base IS the industry median.
-   * With only thin history (today plus fewer than 3 past years), a
-   * base above the median is pulled down to it -- a short, rich
-   * history does not earn an above-market exit multiple. The stock's
-   * own growth and margin factors still apply on top either way. */
+   * The base is the LOWER of the stock's own multiple and the
+   * industry median whenever history is thin (Justin's refinement,
+   * 2026-11-13): no P/E points at all -> the median is the base; a
+   * thin blend (today plus fewer than 3 past years) above the median
+   * is pulled down to it, and one below it stays -- a short, rich
+   * history does not earn an above-market exit multiple, and a cheap
+   * one is never lifted to the median. The stock's own growth and
+   * margin factors still apply on top either way. */
   var peMed = isNum(d.peMed) && d.peMed > 0 && d.peMed < 1000 ? d.peMed : null;
   var peSrc = 'history';
-  if (pts.length < 2) {
+  if (pts.length === 0) {
     if (!peMed) return null;
     peSrc = 'sector';
   }
