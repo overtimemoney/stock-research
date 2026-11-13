@@ -1618,8 +1618,22 @@ function pjComputeExitPe(d) {
   (d.peByYear || []).filter(function (p) { return p && isNum(p.pe) && p.pe > 0 && p.pe < 1000; })
     .slice().sort(function (a, b) { return b.fy - a.fy; })
     .forEach(function (p) { pts.push({ pe: p.pe, fy: p.fy, cur: false }); });
-  if (pts.length < 2) return null;
-  var medAll = pjMedian(pts.map(function (p) { return p.pe; }));
+  /* Sector-median fallback (Justin's call, 2026-11-13): the exit
+   * P/E must always calculate. d.peMed is the median trailing P/E of
+   * the stock's industry across the whole market, resolved by the
+   * caller (scan finalize on the server, pjEnsurePeMed in the app).
+   * With no P/E history of its own, the base IS the industry median.
+   * With only thin history (today plus fewer than 3 past years), a
+   * base above the median is pulled down to it -- a short, rich
+   * history does not earn an above-market exit multiple. The stock's
+   * own growth and margin factors still apply on top either way. */
+  var peMed = isNum(d.peMed) && d.peMed > 0 && d.peMed < 1000 ? d.peMed : null;
+  var peSrc = 'history';
+  if (pts.length < 2) {
+    if (!peMed) return null;
+    peSrc = 'sector';
+  }
+  var medAll = pts.length ? pjMedian(pts.map(function (p) { return p.pe; })) : peMed;
   var epsMap = d.epsByYear || {};
   function epsAt(fy) { var v = epsMap[fy]; return isNum(v) ? v : null; }
   pts.forEach(function (p) {
@@ -1654,7 +1668,8 @@ function pjComputeExitPe(d) {
     var w = Math.pow(0.5, i / 1.5);
     wSum += w; ySum += w / capped;
   });
-  var base = wSum / ySum;
+  var base = peSrc === 'sector' ? peMed : wSum / ySum;
+  if (peSrc === 'history' && pts.length < 4 && peMed && base > peMed) { base = peMed; peSrc = 'capped'; }
   /* --- growth factor --- */
   var decel = 0, accelPts = 0;
   var rp = (d.revPath || []).filter(function (r) { return r && isNum(r.rev) && r.rev > 0; });
@@ -1706,10 +1721,62 @@ function pjComputeExitPe(d) {
   }
   var mult = base * growth * margin;
   if (!isNum(mult) || mult <= 0) return null;
-  return { mult: mult, base: base, growth: growth, margin: margin };
+  return { mult: mult, base: base, growth: growth, margin: margin, src: peSrc, peMed: peMed };
 }
+/* Industry-median P/E for the exit-P/E fallback: the Worker computes
+ * the median trailing P/E of every StockAnalysis industry from the
+ * Total Market scan (GET /sector-pe; ?t= resolves one ticker's
+ * industry). Day-cached on device. Sets d.peMed (and d.peMedInd), or
+ * d.peMedTried when the ticker's industry has no usable median, so
+ * thin-history names still get an exit P/E and rich thin bases get
+ * capped -- see pjComputeExitPe. */
+var PEMED_KEY = 'sr_pemed_v1';
+async function pjEnsurePeMed(d) {
+  if (!d || isNum(d.peMed) || d.peMedTried) return;
+  var today = new Date().toDateString();
+  var c = lsGet(PEMED_KEY, null);
+  if (!c || typeof c !== 'object' || c.day !== today) c = { day: today, map: null, byT: {} };
+  if (!c.byT) c.byT = {};
+  var T = d.ticker ? String(d.ticker).toUpperCase() : '';
+  function save() { try { lsSet(PEMED_KEY, c); } catch (e) {} }
+  if (d.industry && c.map && isNum(c.map[d.industry])) { d.peMed = c.map[d.industry]; d.peMedInd = d.industry; return; }
+  if (T && c.byT[T]) {
+    if (isNum(c.byT[T].med)) { d.peMed = c.byT[T].med; d.peMedInd = c.byT[T].ind || ''; }
+    else d.peMedTried = true;
+    return;
+  }
+  if (!c.map) {
+    try {
+      var r = await fetch(RELAYS[0] + '/sector-pe');
+      if (r && r.ok) { var j = await r.json(); if (j && j.ind) { c.map = j.ind; save(); } }
+    } catch (e) {}
+    if (d.industry && c.map && isNum(c.map[d.industry])) { d.peMed = c.map[d.industry]; d.peMedInd = d.industry; return; }
+  }
+  if (T) {
+    try {
+      var r2 = await fetch(RELAYS[0] + '/sector-pe?t=' + encodeURIComponent(T));
+      if (r2 && r2.ok) {
+        var j2 = await r2.json();
+        var bt = j2 && j2.byTicker ? j2.byTicker[T] : null;
+        if (bt && isNum(bt.med)) { c.byT[T] = { ind: bt.ind || '', med: bt.med }; d.peMed = bt.med; d.peMedInd = bt.ind || ''; }
+        else { c.byT[T] = { ind: bt && bt.ind ? bt.ind : '', med: null }; d.peMedTried = true; }
+        save();
+        return;
+      }
+    } catch (e) {}
+  }
+  /* Lookup failed (offline / medians not ready): leave peMed unset
+   * and un-tried so a later load can retry; the older fallbacks in
+   * pjApplyAuto / wlProjectCagr still apply in the meantime. */
+}
+
 function pjExitNote(res) {
-  return 'exit P/E = ' + fmtNum(res.mult, 1) + '\u00d7 \u2014 recent-weighted avg ' + fmtNum(res.base, 1) + '\u00d7 \u00d7 growth ' + fmtNum(res.growth, 2) + ' \u00d7 margins ' + fmtNum(res.margin, 2);
+  var baseTxt = res.src === 'sector'
+    ? 'industry median ' + fmtNum(res.base, 1) + '\u00d7 (not enough P/E history of its own)'
+    : res.src === 'capped'
+      ? 'industry median ' + fmtNum(res.base, 1) + '\u00d7 caps it (thin P/E history)'
+      : 'recent-weighted avg ' + fmtNum(res.base, 1) + '\u00d7';
+  return 'exit P/E = ' + fmtNum(res.mult, 1) + '\u00d7 \u2014 ' + baseTxt + ' \u00d7 growth ' + fmtNum(res.growth, 2) + ' \u00d7 margins ' + fmtNum(res.margin, 2);
 }
 /* Set the exit-P/E box from the v2 math, falling back to the plain
  * 5-yr average, then today's P/E, when history is too thin. Always
@@ -1809,6 +1876,7 @@ async function pjEnsureExitData(d) {
   if (!d.revQ) {
     try { var qq = await fetchQMetrics(d.ticker, 'q'); if (qq && qq.revenue) d.revQ = qq.revenue.slice(); } catch (e) {}
   }
+  await pjEnsurePeMed(d);
   return d;
 }
 
@@ -3176,41 +3244,66 @@ function aiSwotGridHtml(entry) {
     swotBox('O', 'Opportunities', entry.swot.O, 'sw-o') + swotBox('T', 'Threats', entry.swot.T, 'sw-t') + '</div>' +
     '<div style="margin-top:8px"><button class="btn-ghost" id="ai-swot-btn" type="button">↻ Regenerate</button></div>';
 }
-function bindAiSwotBtn(d) {
+function bindAiSwotBtn(d, refresh) {
   var b = $('ai-swot-btn');
-  if (b) b.addEventListener('click', function () { runAiSwot(d); });
+  if (b) b.addEventListener('click', function () { runAiSwot(d, refresh === true); });
 }
-async function runAiSwot(d) {
+async function runAiSwot(d, refresh) {
   var zone = $('ai-swot-zone');
   if (!zone) return;
+  var prevHtml = zone.innerHTML;
   zone.innerHTML = '<p class="fineprint"><span class="spinner"></span>Writing the SWOT — reading the numbers, headlines, insider trades and 10-K risks…</p>';
   try {
     var ctrl = ('AbortController' in window) ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 90000) : null;
+    var payload = {
+      ticker: d.ticker,
+      name: d.companyName || d.ticker,
+      sector: d.sector || '',
+      industry: d.industry || '',
+      metrics: aiMetricsText(d)
+    };
+    /* Regenerate is a deliberate fresh take: it carries the refresh
+     * flag so the Worker skips its shared-cache answer (and counts
+     * against the generation throttle). Plain Generate sends no flag
+     * and gets the cached answer instantly when one is fresh. */
+    if (refresh === true) payload.refresh = true;
     var resp = await fetch(AI_SWOT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ticker: d.ticker,
-        name: d.companyName || d.ticker,
-        sector: d.sector || '',
-        industry: d.industry || '',
-        metrics: aiMetricsText(d)
-      }),
+      body: JSON.stringify(payload),
       signal: ctrl ? ctrl.signal : undefined
     });
     if (timer) clearTimeout(timer);
     var data = await resp.json();
+    if (resp.status === 429 || (data && (data.error === 'rate_limited' || data.error === 'daily_cap'))) {
+      /* Throttled or the daily AI cap is hit: keep whatever SWOT was
+       * on screen and put the plain reason above it. */
+      var msg = (data && data.error === 'daily_cap')
+        ? 'Today\'s AI limit is reached — the shared analysis above is today\'s; try again tomorrow.'
+        : 'Lots of people are generating right now — try again in a minute.';
+      var z9 = $('ai-swot-zone');
+      if (z9) {
+        if (prevHtml && prevHtml.indexOf('ai-swot-btn') >= 0) {
+          z9.innerHTML = '<div class="alert warn" style="margin-bottom:8px">' + esc(msg) + '</div>' + prevHtml;
+          bindAiSwotBtn(d, refresh === true);
+        } else {
+          z9.innerHTML = '<div class="alert warn">' + esc(msg) + ' <button class="btn-ghost" id="ai-swot-btn" type="button">Try again</button></div>';
+          bindAiSwotBtn(d, refresh === true);
+        }
+      }
+      return;
+    }
     if (!resp.ok || !data.swot) throw new Error((data && data.error) || ('HTTP ' + resp.status));
     var entry = { asOf: data.asOf || '', swot: data.swot, tenk: data.tenk || null };
     saveAiSwot(d.ticker, entry);
     var z2 = $('ai-swot-zone');
-    if (z2) { z2.innerHTML = aiSwotGridHtml(entry); bindAiSwotBtn(d); }
+    if (z2) { z2.innerHTML = aiSwotGridHtml(entry); bindAiSwotBtn(d, true); }
   } catch (e) {
     var z3 = $('ai-swot-zone');
     if (z3) {
       z3.innerHTML = '<div class="alert warn">The AI SWOT didn\'t come back (' + esc(e.message || 'network error') + '). <button class="btn-ghost" id="ai-swot-btn" type="button">Try again</button></div>';
-      bindAiSwotBtn(d);
+      bindAiSwotBtn(d, refresh === true);
     }
   }
 }
@@ -3633,7 +3726,10 @@ function renderScorecard(d) {
   $('score-empty').style.display = 'none';
   loadStockNews('sc', d.ticker);
 
-  bindAiSwotBtn(d);
+  /* The zone's button is "Regenerate" when a saved SWOT is showing
+   * (a deliberate fresh take -> refresh flag) and "Generate" when it
+   * isn't (cache-first is fine there). */
+  bindAiSwotBtn(d, !!(aiSaved && aiSaved.swot));
   maybeShowSharedSwot(d);
   document.querySelectorAll('[data-stoggle]').forEach(function (b) {
     b.addEventListener('click', function () {
@@ -5492,7 +5588,7 @@ async function wlFillPass(tickers) {
  * ticker per day (the sub-loads are day-cached at their own layers,
  * so this is mostly assembly after the first run). A stored null
  * means "no analyst path today" and is not retried until tomorrow. */
-var WLPROJ_KEY = 'sr_wlproj_v1';
+var WLPROJ_KEY = 'sr_wlproj_v2';
 function wlProjEntry(T) {
   var m = lsGet(WLPROJ_KEY, {});
   var e = m[T];
@@ -5560,7 +5656,7 @@ var SCAN_KEY = 'sr_scan_v4';
  * rules is recomputed from the stored dataset on the next open
  * instead of being re-shown all day. States saved before the stamp
  * existed read as undefined and mismatch once, by design. */
-var SCAN_RULES_V = 2;
+var SCAN_RULES_V = 3;
 var scanRunning = false, scanActive = 0, scanCoolUntil = 0, scanTimer = null;
 
 function scanTodayKey() { return pfKeyToISO(pfDkey(new Date())); }
