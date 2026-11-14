@@ -3746,6 +3746,7 @@ function renderScorecard(d) {
     '<button class="btn-ghost" id="sc-watch" type="button">◎ Add to watchlist</button>' +
     '<button class="btn-ghost" id="sc-journal" type="button">✎ Journal this stock</button>' +
     '<button class="btn-ghost" id="sc-project" type="button">✦ Project it</button>' +
+    '<button class="btn-ghost" id="sc-charts" type="button">📊 Charts</button>' +
     '<button class="btn-ghost" id="sc-refresh" type="button">↻ Refresh data</button>' +
     '<a class="btn-ghost sc-ext" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=' + esc(d.ticker) + '&type=&dateb=&owner=include&count=10" target="_blank" rel="noopener">SEC filings ↗</a></div>';
 
@@ -3797,6 +3798,12 @@ function renderScorecard(d) {
       pjSetLoadedStatusParts('Loaded ' + d.ticker + ' from the scorecard', [pjPeNote]);
       runProjection();
     });
+  });
+  $('sc-charts').addEventListener('click', function () {
+    switchTab('tools');
+    setTool('charts');
+    $('qm-ticker').value = d.ticker;
+    loadQm();
   });
   $('sc-refresh').addEventListener('click', function () { runSearch(d.ticker, true); });
 }
@@ -7381,6 +7388,7 @@ function renderOverview(d, item) {
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' +
     '<button type="button" class="btn-ghost" id="ov-scorecard">Full scorecard</button>' +
     '<button type="button" class="btn-ghost" id="ov-project">Projection</button>' +
+    '<button type="button" class="btn-ghost" id="ov-charts">Charts</button>' +
     '<button type="button" class="btn-ghost" id="ov-edit-target">Edit target</button>' +
     '<button type="button" class="btn-ghost" id="ov-remove">Remove</button>' +
     '<a class="btn-ghost" style="text-decoration:none" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&ticker=' + encodeURIComponent(d.ticker) + '&type=10-Q&dateb=&owner=include&count=10" target="_blank" rel="noopener">Earnings report</a>' +
@@ -7417,6 +7425,15 @@ function wireOverviewActions(d) {
       $('pj-ticker').value = d.ticker;
       loadProjectionTicker();
     }
+  });
+  var ch = $('ov-charts');
+  if (ch) ch.addEventListener('click', function () {
+    ovReturnTicker = d.ticker; showBackChips();
+    closeOverview();
+    switchTab('tools');
+    setTool('charts');
+    $('qm-ticker').value = d.ticker;
+    loadQm();
   });
   var et = $('ov-edit-target');
   if (et) et.addEventListener('click', function () {
