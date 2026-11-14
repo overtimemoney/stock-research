@@ -8980,7 +8980,7 @@ function switchTab(name) {
  * tool used is remembered; jumps into the builder land on its page. */
 var TOOL_KEY = 'sr_tool_v1';
 function setTool(name) {
-  var names = ['pj', 'charts', 'cc', 'scr'];
+  var names = ['pj', 'charts', 'cmp', 'cc', 'scr'];
   if (names.indexOf(name) === -1) name = 'pj';
   try { localStorage.setItem(TOOL_KEY, name); } catch (e) {}
   document.querySelectorAll('.toolseg button').forEach(function (b, i) {
