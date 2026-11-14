@@ -4719,7 +4719,7 @@ async function fetchQMetrics(T, freq) {
  * the same arithmetic every data vendor uses (validated against SA's
  * published quarters). Only the small extracted series are cached,
  * never the multi-MB raw facts file. */
-var EDGAR_KEY = 'sr_edgar_v1';
+var EDGAR_KEY = 'sr_edgar_v2';
 var edgarCikMap = null;
 
 async function edgarCik(T) {
@@ -4754,6 +4754,24 @@ function edgarLabelYear(e) {
  * (~70-100d, Q1-Q3), 'ytd9' nine-month durations (~230-300d, for the
  * Q4 derivation), 'aInst' annual instants, 'qInst' any-quarter
  * instants (balance sheet). */
+/* Mode filter shared by edgarMap and edgarEras: returns undefined
+ * to reject an entry, a string label for annual modes, or null for
+ * quarterly modes (their labels are assigned at assembly time from
+ * the fiscal-year windows — see edgarAssemble: a Dec-ending Q1
+ * belongs to the fiscal year ending the following autumn for some
+ * filers and to the calendar year for others, and only the filer's
+ * own FY ends can say which). */
+function edgarModeLabel(e, mode) {
+  var hasStart = !!e.start;
+  var span = hasStart ? Math.round((Date.parse(e.end) - Date.parse(e.start)) / 86400000) : 0;
+  if (mode === 'aDur') return (e.fp === 'FY' && hasStart && span >= 300 && span <= 400) ? 'FY ' + edgarLabelYear(e) : undefined;
+  if (mode === 'qDur') return ((e.fp === 'Q1' || e.fp === 'Q2' || e.fp === 'Q3') && hasStart && span >= 70 && span <= 100) ? null : undefined;
+  if (mode === 'ytd9') return (e.fp === 'Q3' && hasStart && span >= 230 && span <= 300) ? null : undefined;
+  if (mode === 'aInst') return (e.fp === 'FY' && !hasStart) ? 'FY ' + edgarLabelYear(e) : undefined;
+  if (mode === 'qInst') return (!hasStart && (e.fp === 'Q1' || e.fp === 'Q2' || e.fp === 'Q3' || e.fp === 'FY')) ? null : undefined;
+  return undefined;
+}
+
 function edgarMap(facts, concepts, unitPref, mode) {
   var tax = (facts && facts['us-gaap']) || {};
   var combined = {};
@@ -4766,28 +4784,8 @@ function edgarMap(facts, concepts, unitPref, mode) {
     var byEnd = {};
     node.units[unit].forEach(function (e) {
       if (!e || !e.end || !isNum(e.val)) return;
-      var hasStart = !!e.start;
-      var span = hasStart ? Math.round((Date.parse(e.end) - Date.parse(e.start)) / 86400000) : 0;
-      var ok = false, label = null;
-      if (mode === 'aDur') {
-        ok = e.fp === 'FY' && hasStart && span >= 300 && span <= 400;
-        label = 'FY ' + edgarLabelYear(e);
-      } else if (mode === 'qDur') {
-        /* Quarterly labels are assigned at assembly time from the
-         * fiscal-year windows (see edgarAssemble): a Dec-ending Q1
-         * belongs to the fiscal year that ends the following autumn
-         * for some filers and to the calendar year for others, and
-         * only the filer's own FY ends can say which. */
-        ok = (e.fp === 'Q1' || e.fp === 'Q2' || e.fp === 'Q3') && hasStart && span >= 70 && span <= 100;
-      } else if (mode === 'ytd9') {
-        ok = e.fp === 'Q3' && hasStart && span >= 230 && span <= 300;
-      } else if (mode === 'aInst') {
-        ok = e.fp === 'FY' && !hasStart;
-        label = 'FY ' + edgarLabelYear(e);
-      } else if (mode === 'qInst') {
-        ok = !hasStart && (e.fp === 'Q1' || e.fp === 'Q2' || e.fp === 'Q3' || e.fp === 'FY');
-      }
-      if (!ok) return;
+      var label = edgarModeLabel(e, mode);
+      if (label === undefined) return;
       var cur = byEnd[e.end];
       if (!cur || String(e.filed || '') > String(cur.filed || '')) {
         byEnd[e.end] = { v: e.val, label: label, filed: e.filed || '', fy: e.fy, end: e.end };
@@ -4802,12 +4800,135 @@ function edgarMap(facts, concepts, unitPref, mode) {
   return combined;
 }
 
+/* Like edgarMap, but keeps every DISTINCT value a period was ever
+ * filed with: end -> { vals: [{v, first, last, fy, label}] } sorted
+ * by first filing. A period's value changes across filings almost
+ * only when a stock split restates it — that is what makes split
+ * reconstruction possible. */
+function edgarEras(facts, concepts, unitPref, mode) {
+  var tax = (facts && facts['us-gaap']) || {};
+  var combined = {};
+  for (var ci = 0; ci < concepts.length; ci++) {
+    var node = tax[concepts[ci]];
+    if (!node || !node.units) continue;
+    var unit = null;
+    for (var ui = 0; ui < unitPref.length; ui++) if (node.units[unitPref[ui]]) { unit = unitPref[ui]; break; }
+    if (!unit) continue;
+    var byEnd = {};
+    node.units[unit].forEach(function (e) {
+      if (!e || !e.end || !isNum(e.val)) return;
+      var label = edgarModeLabel(e, mode);
+      if (label === undefined) return;
+      var vm = byEnd[e.end] || (byEnd[e.end] = {});
+      var rec = vm[e.val];
+      var filed = e.filed || '';
+      if (!rec) vm[e.val] = { v: e.val, first: filed, last: filed, fy: e.fy, label: label };
+      else {
+        if (filed < rec.first) rec.first = filed;
+        if (filed > rec.last) rec.last = filed;
+      }
+    });
+    Object.keys(byEnd).forEach(function (end) {
+      if (combined[end]) return;
+      var vals = Object.keys(byEnd[end]).map(function (k) { return byEnd[end][k]; });
+      vals.sort(function (a, b) { return a.first < b.first ? -1 : 1; });
+      combined[end] = { vals: vals };
+    });
+  }
+  return combined;
+}
+
+/* Detect stock splits from the EPS eras themselves. When a split
+ * restates history, the same period shows up with a new value whose
+ * ratio to the old one is the split factor (11.89 -> 2.97 across
+ * Apple's 4:1). Candidates from many periods cluster into one event
+ * (a lone changed value is a restatement, not a split, so an event
+ * needs support from at least two distinct periods). The event's
+ * date is the last day the old values were still being filed —
+ * necessarily just before the split took effect, since post-split
+ * filings restate every period they present. */
+function edgarSplitEvents(facts) {
+  var cands = [];
+  [edgarEras(facts, EDGAR_CONCEPTS.eps, ['USD/shares'], 'aDur'),
+   edgarEras(facts, EDGAR_CONCEPTS.eps, ['USD/shares'], 'qDur')].forEach(function (eras) {
+    Object.keys(eras).forEach(function (end) {
+      var vals = eras[end].vals;
+      for (var i = 1; i < vals.length; i++) {
+        var k = vals[i - 1].v / vals[i].v;
+        if (isNum(k) && (k >= 1.4 || k <= 1 / 1.4)) cands.push({ k: k, lastOld: vals[i - 1].last, end: end });
+      }
+    });
+  });
+  cands.sort(function (a, b) { return a.lastOld < b.lastOld ? -1 : 1; });
+  var clusters = [];
+  cands.forEach(function (c) {
+    var cl = clusters[clusters.length - 1];
+    if (cl && Math.abs(Math.log(c.k / cl.k)) <= 0.05 && (Date.parse(c.lastOld) - Date.parse(cl.date)) <= 370 * 86400000) {
+      cl.ends[c.end] = true;
+      cl.ks.push(c.k);
+      if (c.lastOld > cl.date) cl.date = c.lastOld;
+      var sorted = cl.ks.slice().sort(function (a, b) { return a - b; });
+      cl.k = sorted[Math.floor(sorted.length / 2)];
+    } else {
+      var ends0 = {}; ends0[c.end] = true;
+      clusters.push({ k: c.k, ks: [c.k], date: c.lastOld, ends: ends0 });
+    }
+  });
+  /* Events older than ~13 years are dropped: they could only
+   * affect periods outside every window the app shows, and the
+   * earliest EDGAR data is noisy enough to fake one (a k=0.69
+   * "event" in Apple's 2009 filings). */
+  var cutoff = new Date(Date.now() - 13 * 366 * 86400000).toISOString().slice(0, 10);
+  return clusters.filter(function (cl) { return Object.keys(cl.ends).length >= 2 && cl.date >= cutoff; })
+    .map(function (cl) { return { date: cl.date, k: cl.k }; })
+    .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+}
+
+/* Per-share map (EPS, share count) with split reconstruction. Each
+ * period starts from its originally-filed value and is carried
+ * across every split that took effect after the period ended
+ * (EPS divides by the cumulative factor, share count multiplies).
+ * Where EDGAR's own latest value already reflects every split —
+ * it agrees with the reconstruction, or it is a genuinely restated
+ * value filed after the last applicable split — the filed value
+ * itself is used, so reconstructed years sit seamlessly beside
+ * restated ones. This is what lets P/E by year run the full ten
+ * years even for stocks that split along the way (Justin's ask,
+ * 2026-11-13). */
+function edgarPerShareMap(facts, concepts, unitPref, mode, events, isShares) {
+  var eras = edgarEras(facts, concepts, unitPref, mode);
+  var out = {};
+  Object.keys(eras).forEach(function (end) {
+    var vals = eras[end].vals;
+    var earliest = vals[0], latest = vals[0];
+    vals.forEach(function (r) { if (r.last > latest.last) latest = r; });
+    var F = 1, lastEv = null;
+    (events || []).forEach(function (ev) { if (end < ev.date) { F *= ev.k; lastEv = ev.date; } });
+    var v;
+    if (F === 1) v = latest.v;
+    else {
+      var adj = isShares ? earliest.v * F : earliest.v / F;
+      if (Math.abs(latest.v - adj) <= 0.03 * Math.abs(adj)) v = latest.v;
+      else if (lastEv && latest.last > lastEv && Math.abs(latest.v - earliest.v) > 0.01 * Math.abs(earliest.v)) v = latest.v;
+      else v = adj;
+    }
+    out[end] = { v: v, label: latest.label, filed: latest.last, fy: latest.fy, end: end };
+  });
+  return out;
+}
+
 /* Quarterly map for a flow concept: direct quarters plus Q4 derived
- * as FY minus the 9-month YTD ending ~one quarter before the FY end. */
-function edgarQuarterMap(facts, concepts, unitPref) {
-  var out = edgarMap(facts, concepts, unitPref, 'qDur');
-  var fy = edgarMap(facts, concepts, unitPref, 'aDur');
-  var ytd = edgarMap(facts, concepts, unitPref, 'ytd9');
+ * as FY minus the 9-month YTD ending ~one quarter before the FY end.
+ * Per-share concepts route through the split reconstruction, and the
+ * Q4 derivation then runs on adjusted values throughout. */
+function edgarQuarterMap(facts, concepts, unitPref, perShare) {
+  function pick(mode) {
+    return perShare ? edgarPerShareMap(facts, concepts, unitPref, mode, perShare.events, perShare.isShares)
+                    : edgarMap(facts, concepts, unitPref, mode);
+  }
+  var out = pick('qDur');
+  var fy = pick('aDur');
+  var ytd = pick('ytd9');
   Object.keys(fy).forEach(function (fEnd) {
     if (out[fEnd]) return;
     var fT = Date.parse(fEnd);
@@ -4941,14 +5062,16 @@ async function fetchEdgarHistory(T) {
   } catch (e) {}
   if (!facts) return null; /* transient failure: not cached, next open retries */
   var MONEY = ['USD'], SHARES = ['shares'], PER = ['USD/shares'];
+  var splitEvents = [];
+  try { splitEvents = edgarSplitEvents(facts); } catch (e) {}
   function mapsFor(modeDur, modeInst) {
     return {
       revenue: edgarMap(facts, EDGAR_CONCEPTS.revenue, MONEY, modeDur),
       grossProfit: edgarMap(facts, EDGAR_CONCEPTS.grossProfit, MONEY, modeDur),
       operIncome: edgarMap(facts, EDGAR_CONCEPTS.operIncome, MONEY, modeDur),
       netIncome: edgarMap(facts, EDGAR_CONCEPTS.netIncome, MONEY, modeDur),
-      eps: edgarMap(facts, EDGAR_CONCEPTS.eps, PER, modeDur),
-      shares: edgarMap(facts, EDGAR_CONCEPTS.shares, SHARES, modeDur),
+      eps: edgarPerShareMap(facts, EDGAR_CONCEPTS.eps, PER, 'aDur', splitEvents, false),
+      shares: edgarPerShareMap(facts, EDGAR_CONCEPTS.shares, SHARES, 'aDur', splitEvents, true),
       ocf: edgarMap(facts, EDGAR_CONCEPTS.ocf, MONEY, modeDur),
       capex: edgarMap(facts, EDGAR_CONCEPTS.capex, MONEY, modeDur),
       cashEq: edgarMap(facts, EDGAR_CONCEPTS.cashEq, MONEY, modeInst),
@@ -4962,7 +5085,9 @@ async function fetchEdgarHistory(T) {
     var m = mapsFor('qDur', 'qInst');
     ['revenue', 'grossProfit', 'operIncome', 'netIncome', 'eps', 'shares', 'ocf', 'capex'].forEach(function (k) {
       var unit = k === 'eps' ? PER : (k === 'shares' ? SHARES : MONEY);
-      m[k] = edgarQuarterMap(facts, EDGAR_CONCEPTS[k], unit);
+      var ps = (k === 'eps') ? { events: splitEvents, isShares: false }
+             : (k === 'shares') ? { events: splitEvents, isShares: true } : null;
+      m[k] = edgarQuarterMap(facts, EDGAR_CONCEPTS[k], unit, ps);
     });
     return m;
   }
@@ -4983,19 +5108,20 @@ async function fetchEdgarHistory(T) {
   return data;
 }
 
-/* Split guard. Per-share history has an era problem: filings made
- * before a stock split report pre-split EPS and share counts, and a
- * 10-K only restates two prior years, so deep pre-split years can
- * never be made consistent with today's prices (AAPL's FY2016 EPS
- * exists only as the pre-split $8.31; its split-adjusted $2.08 was
- * never filed). Rather than chart a fake 4x cliff, detect the split
- * signature in the annual series and blank the per-share metrics
- * (EPS, shares) on the old side of the boundary, quarters included.
- * The signature is the share count
- * jumping by 1.8x or more in a year when revenue and net income
- * moved only smoothly -- a real business almost never does that;
- * a split (or a recap with the same comparability problem) does.
- * Money totals are split-immune and keep their full history. */
+/* Split guard (safety net). edgarPerShareMap rebuilds per-share
+ * history on today's share basis using split factors measured from
+ * EDGAR's own restated values, so this guard should find nothing.
+ * It stays for splits the reconstruction could not measure (no
+ * restated period to learn the factor from): pre-split EPS and
+ * share counts would otherwise chart as a fake cliff at the split.
+ * Rather than show that, detect the split signature in the annual
+ * series and blank the per-share metrics (EPS, shares) on the old
+ * side of the boundary, quarters included. The signature is the
+ * share count jumping by 1.8x or more in a year when revenue and
+ * net income moved only smoothly -- a real business almost never
+ * does that; a split (or a recap with the same comparability
+ * problem) does. Money totals are split-immune and keep their full
+ * history. */
 function edgarSplitGuard(data) {
   var a = data.annual;
   if (!a || !a.shares) return;
@@ -5214,14 +5340,14 @@ function parseSARatioByYear(html, label) {
 }
 
 async function fetchRatiosByYear(T) {
-  var cache = lsGet('sr_ratios_v1', {});
+  var cache = lsGet('sr_ratios_v2', {});
   var day = new Date().toDateString();
   if (cache[T] && cache[T].day === day) {
     var cd = cache[T].data;
     if (cd && !cd.extended) {
       var exd = null;
       try { exd = await extendRatios(T, cd); } catch (e) {}
-      if (exd) { cache[T].data = exd; lsSet('sr_ratios_v1', cache); }
+      if (exd) { cache[T].data = exd; lsSet('sr_ratios_v2', cache); }
     }
     return cache[T].data;
   }
@@ -5239,29 +5365,34 @@ async function fetchRatiosByYear(T) {
     if (ex2) data = ex2;
   }
   cache[T] = { day: day, data: data };
-  lsSet('sr_ratios_v1', cache);
+  lsSet('sr_ratios_v2', cache);
   return data;
 }
 
 /* Daily closes for 10 years (Yahoo), day-cached as two flat arrays.
  * Used to price fiscal-year ends for the long P/E and P/S history. */
 async function fetchYahooDaily(T) {
-  var cache = lsGet('sr_yhist_v1', {});
+  var cache = lsGet('sr_yhist_v2', {});
   var day = new Date().toDateString();
   if (cache[T] && cache[T].day === day) return cache[T].data;
   var data = null;
   try {
-    var j = await relayJSON('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(T) + '?range=10y&interval=1d');
+    /* Explicit 13-year window: a 10y range no longer reaches the
+     * oldest fiscal years the SEC backfill covers, and range=max
+     * makes Yahoo silently downgrade to monthly bars. */
+    var p2 = Math.floor(Date.now() / 1000), p1 = p2 - 13 * 366 * 86400;
+    var j = await relayJSON('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(T) + '?period1=' + p1 + '&period2=' + p2 + '&interval=1d');
     var r = j && j.chart && j.chart.result && j.chart.result[0];
     var ts = (r && r.timestamp) || [];
     var cl = r && r.indicators && r.indicators.quote && r.indicators.quote[0] && r.indicators.quote[0].close;
     if (ts.length && cl && cl.length === ts.length) {
+      var cutoff = ts[ts.length - 1] - 13 * 366 * 86400;
       var t2 = [], c2 = [];
-      ts.forEach(function (t, i) { if (isNum(cl[i])) { t2.push(t); c2.push(Math.round(cl[i] * 100) / 100); } });
+      ts.forEach(function (t, i) { if (t >= cutoff && isNum(cl[i])) { t2.push(t); c2.push(Math.round(cl[i] * 100) / 100); } });
       if (t2.length > 100) data = { ts: t2, cl: c2 };
     }
   } catch (e) {}
-  if (data) { cache[T] = { day: day, data: data }; lsSet('sr_yhist_v1', cache); }
+  if (data) { cache[T] = { day: day, data: data }; lsSet('sr_yhist_v2', cache); }
   return data;
 }
 
