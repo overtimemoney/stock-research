@@ -4611,8 +4611,8 @@ function parseSAQuarterly(htmlIs, htmlCf, yearly, htmlBs) {
       if (!rows.length || rows[0][0] !== head) return;
       if (!periods) {
         periods = rows[0].slice(1);
-        if (yearly) periods = periods.filter(function (p) { return p !== 'TTM'; }).slice(0, 8);
-        else periods = periods.slice(0, 12);
+        if (yearly) periods = periods.filter(function (p) { return p !== 'TTM'; }).slice(0, 12);
+        else periods = periods.slice(0, 44);
       }
       rows.slice(1).forEach(function (r) {
         if (byLabel[r[0]]) return;
@@ -4705,6 +4705,365 @@ async function fetchQMetrics(T, freq) {
   cache[T][freq] = data;
   lsSet(QM_KEY, cache);
   return data;
+}
+
+/* ---- Long history from SEC filings (EDGAR company facts) ---------
+ * StockAnalysis publishes only 5 fiscal years / 20 quarters, so the
+ * 10Y history window had nothing to show beyond that (Justin's
+ * report, 2026-11-13: the P/E-by-year chart stopped at 2021 with 10Y
+ * selected). EDGAR's company-facts feed carries the same line items
+ * back a decade or more. The extracted series are merged UNDER the
+ * StockAnalysis data: SA wins every period it covers, EDGAR only
+ * prepends older periods. Quarterly Q4 is never filed on its own --
+ * it is derived as fiscal year minus the 9-month year-to-date figure,
+ * the same arithmetic every data vendor uses (validated against SA's
+ * published quarters). Only the small extracted series are cached,
+ * never the multi-MB raw facts file. */
+var EDGAR_KEY = 'sr_edgar_v1';
+var edgarCikMap = null;
+
+async function edgarCik(T) {
+  if (!edgarCikMap) {
+    var tj = await relayJSON('https://www.sec.gov/files/company_tickers.json');
+    edgarCikMap = {};
+    Object.keys(tj || {}).forEach(function (k) {
+      var r = tj[k];
+      if (r && r.ticker) edgarCikMap[String(r.ticker).toUpperCase()] = r.cik_str;
+    });
+  }
+  return edgarCikMap[T] || null;
+}
+
+/* The fiscal-year label for a filing entry. EDGAR's fy field names
+ * the year of the FILING a value rode in on, so a comparative column
+ * in a later 10-K carries that later year. Values are taken from the
+ * LATEST filing that reports a period (restated, split-adjusted --
+ * the form a modern chart should show), and the min() guard keeps
+ * that later filing year from labelling the period later than its
+ * own end allows. */
+function edgarLabelYear(e) {
+  var endY = parseInt(String(e.end).slice(0, 4), 10);
+  if (!isNum(endY)) return null;
+  if (!e.fy) return endY;
+  return Math.min(e.fy, endY);
+}
+
+/* One concept's entries -> { end: {v, label} }, latest filed wins
+ * (the most recent restatement of that period).
+ * mode: 'aDur' annual durations (~300-400d), 'qDur' true quarters
+ * (~70-100d, Q1-Q3), 'ytd9' nine-month durations (~230-300d, for the
+ * Q4 derivation), 'aInst' annual instants, 'qInst' any-quarter
+ * instants (balance sheet). */
+function edgarMap(facts, concepts, unitPref, mode) {
+  var tax = (facts && facts['us-gaap']) || {};
+  var combined = {};
+  for (var ci = 0; ci < concepts.length; ci++) {
+    var node = tax[concepts[ci]];
+    if (!node || !node.units) continue;
+    var unit = null;
+    for (var ui = 0; ui < unitPref.length; ui++) if (node.units[unitPref[ui]]) { unit = unitPref[ui]; break; }
+    if (!unit) continue;
+    var byEnd = {};
+    node.units[unit].forEach(function (e) {
+      if (!e || !e.end || !isNum(e.val)) return;
+      var hasStart = !!e.start;
+      var span = hasStart ? Math.round((Date.parse(e.end) - Date.parse(e.start)) / 86400000) : 0;
+      var ok = false, label = null;
+      if (mode === 'aDur') {
+        ok = e.fp === 'FY' && hasStart && span >= 300 && span <= 400;
+        label = 'FY ' + edgarLabelYear(e);
+      } else if (mode === 'qDur') {
+        /* Quarterly labels are assigned at assembly time from the
+         * fiscal-year windows (see edgarAssemble): a Dec-ending Q1
+         * belongs to the fiscal year that ends the following autumn
+         * for some filers and to the calendar year for others, and
+         * only the filer's own FY ends can say which. */
+        ok = (e.fp === 'Q1' || e.fp === 'Q2' || e.fp === 'Q3') && hasStart && span >= 70 && span <= 100;
+      } else if (mode === 'ytd9') {
+        ok = e.fp === 'Q3' && hasStart && span >= 230 && span <= 300;
+      } else if (mode === 'aInst') {
+        ok = e.fp === 'FY' && !hasStart;
+        label = 'FY ' + edgarLabelYear(e);
+      } else if (mode === 'qInst') {
+        ok = !hasStart && (e.fp === 'Q1' || e.fp === 'Q2' || e.fp === 'Q3' || e.fp === 'FY');
+      }
+      if (!ok) return;
+      var cur = byEnd[e.end];
+      if (!cur || String(e.filed || '') > String(cur.filed || '')) {
+        byEnd[e.end] = { v: e.val, label: label, filed: e.filed || '', fy: e.fy, end: e.end };
+      }
+    });
+    /* Concepts are in priority order, but filers migrate between
+     * them (pre/post ASC 606 revenue is the classic case), so a
+     * lower-priority concept still contributes the periods the
+     * higher one never reported. */
+    Object.keys(byEnd).forEach(function (end) { if (!combined[end]) combined[end] = byEnd[end]; });
+  }
+  return combined;
+}
+
+/* Quarterly map for a flow concept: direct quarters plus Q4 derived
+ * as FY minus the 9-month YTD ending ~one quarter before the FY end. */
+function edgarQuarterMap(facts, concepts, unitPref) {
+  var out = edgarMap(facts, concepts, unitPref, 'qDur');
+  var fy = edgarMap(facts, concepts, unitPref, 'aDur');
+  var ytd = edgarMap(facts, concepts, unitPref, 'ytd9');
+  Object.keys(fy).forEach(function (fEnd) {
+    if (out[fEnd]) return;
+    var fT = Date.parse(fEnd);
+    var best = null;
+    Object.keys(ytd).forEach(function (yEnd) {
+      var gap = Math.round((fT - Date.parse(yEnd)) / 86400000);
+      if (gap >= 60 && gap <= 130 && (!best || yEnd > best)) best = yEnd;
+    });
+    if (best) out[fEnd] = { v: fy[fEnd].v - ytd[best].v, label: null, filed: fy[fEnd].filed, fy: fy[fEnd].fy, end: fEnd };
+  });
+  return out;
+}
+
+/* Quarterly labels from the filer's own fiscal-year windows:
+ * fyWin is the annual series' [{end, year}] — a quarter takes the
+ * year of the first FY end at or after it, numbered from that FY
+ * end backwards (the FY-end quarter is Q4), and quarters past the
+ * last filed FY end belong to the in-progress year. This reproduces
+ * each filer's own convention (Apple's Dec quarter is Q1 of the
+ * fiscal year ending the next autumn; JPMorgan's is Q4 of the
+ * calendar year) without hardcoding any calendar. */
+function edgarQuarterLabels(ends, fyWin) {
+  var labels = new Array(ends.length);
+  var groups = [], tail = [], wi = 0, curWi = -1;
+  ends.forEach(function (end, i) {
+    while (wi < fyWin.length && end > fyWin[wi].end) wi++;
+    if (wi >= fyWin.length) { tail.push(i); return; }
+    if (wi !== curWi) { groups.push({ year: fyWin[wi].year, idxs: [] }); curWi = wi; }
+    groups[groups.length - 1].idxs.push(i);
+  });
+  groups.forEach(function (g) {
+    var n = g.idxs.length;
+    for (var k = 0; k < n; k++) {
+      var fromEnd = n - 1 - k;
+      labels[g.idxs[k]] = 'Q' + (4 - (fromEnd % 4)) + ' ' + (g.year - Math.floor(fromEnd / 4));
+    }
+  });
+  var baseYear = fyWin[fyWin.length - 1].year;
+  tail.forEach(function (idxPos, k) {
+    labels[idxPos] = 'Q' + ((k % 4) + 1) + ' ' + (baseYear + 1 + Math.floor(k / 4));
+  });
+  return labels;
+}
+
+/* Assemble per-end concept maps into the qm data shape (parallel
+ * arrays, oldest first, capped to the most recent `cap` periods).
+ * Backbone = union of every map's period ends; a period's label
+ * comes from its revenue entry when there is one (annual), or from
+ * the fiscal-year windows when fyWin is given (quarterly). */
+function edgarAssemble(maps, cap, fyWin) {
+  var endSet = {};
+  Object.keys(maps).forEach(function (k) { Object.keys(maps[k]).forEach(function (e) { endSet[e] = true; }); });
+  var ends = Object.keys(endSet).sort().slice(-cap);
+  if (!ends.length) return null;
+  var winLabels = (fyWin && fyWin.length) ? edgarQuarterLabels(ends, fyWin) : null;
+  function labelFor(end, idx) {
+    if (winLabels) return winLabels[idx];
+    if (maps.revenue && maps.revenue[end]) return maps.revenue[end].label;
+    var ks = Object.keys(maps);
+    for (var i = 0; i < ks.length; i++) if (maps[ks[i]][end]) return maps[ks[i]][end].label;
+    return end;
+  }
+  function col(name) {
+    return ends.map(function (e) { var r = maps[name] && maps[name][e]; return r ? r.v : null; });
+  }
+  function sumCol(names) {
+    return ends.map(function (e) {
+      var tot = null;
+      names.forEach(function (n) { var r = maps[n] && maps[n][e]; if (r) tot = (tot === null ? 0 : tot) + r.v; });
+      return tot;
+    });
+  }
+  function diffCol(a, b) {
+    return ends.map(function (e) {
+      var ra = maps[a] && maps[a][e], rb = maps[b] && maps[b][e];
+      return (ra && rb) ? ra.v - rb.v : null;
+    });
+  }
+  var bsCash = ends.map(function (e) {
+    var c = maps.cashEq && maps.cashEq[e];
+    if (!c) return null;
+    var tot = c.v;
+    ['stInvest', 'ltInvest'].forEach(function (n) { var r = maps[n] && maps[n][e]; if (r) tot += r.v; });
+    return tot;
+  });
+  var bsDebt = sumCol(['debtCur', 'debtNoncur']);
+  var out = {
+    periods: ends.map(function (e, i) { return labelFor(e, i); }), ends: ends,
+    revenue: col('revenue'), grossProfit: col('grossProfit'), operIncome: col('operIncome'),
+    netIncome: col('netIncome'), eps: col('eps'), shares: col('shares'),
+    fcf: diffCol('ocf', 'capex'), bsCash: bsCash, bsDebt: bsDebt,
+    bsNet: ends.map(function (e, i) { return (isNum(bsCash[i]) && isNum(bsDebt[i])) ? bsCash[i] - bsDebt[i] : null; })
+  };
+  return out;
+}
+
+var EDGAR_CONCEPTS = {
+  revenue: ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'RevenueFromContractWithCustomerIncludingAssessedTax', 'SalesRevenueNet', 'RevenuesNetOfInterestExpense'],
+  grossProfit: ['GrossProfit'],
+  operIncome: ['OperatingIncomeLoss'],
+  netIncome: ['NetIncomeLoss', 'ProfitLoss'],
+  eps: ['EarningsPerShareDiluted'],
+  shares: ['WeightedAverageNumberOfDilutedSharesOutstanding', 'WeightedAverageNumberOfSharesOutstandingBasic'],
+  ocf: ['NetCashProvidedByUsedInOperatingActivities', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations'],
+  capex: ['PaymentsToAcquirePropertyPlantAndEquipment'],
+  cashEq: ['CashAndCashEquivalentsAtCarryingValue'],
+  stInvest: ['MarketableSecuritiesCurrent', 'AvailableForSaleSecuritiesDebtSecuritiesCurrent', 'AvailableForSaleSecuritiesCurrent', 'ShortTermInvestments'],
+  ltInvest: ['MarketableSecuritiesNoncurrent', 'AvailableForSaleSecuritiesNoncurrent', 'LongTermInvestments'],
+  debtCur: ['DebtCurrent', 'LongTermDebtCurrent', 'ShortTermBorrowings'],
+  debtNoncur: ['LongTermDebtNoncurrent', 'LongTermDebt', 'LongTermDebtAndCapitalLeaseObligationsNoncurrent']
+};
+
+async function fetchEdgarHistory(T) {
+  var cache = lsGet(EDGAR_KEY, {});
+  var day = new Date().toDateString();
+  if (cache[T] && cache[T].day === day) return cache[T].data;
+  var cik = null;
+  try { cik = await edgarCik(T); } catch (e) {}
+  if (!edgarCikMap) return null; /* ticker map itself failed to load: retry next open */
+  if (!cik) {
+    /* No CIK = not an SEC filer: a definitive answer, safe to cache
+     * for the day. */
+    cache[T] = { day: day, data: null };
+    lsSet(EDGAR_KEY, cache);
+    return null;
+  }
+  var facts = null;
+  try {
+    var raw = await relayJSON('https://data.sec.gov/api/xbrl/companyfacts/CIK' + String(cik).padStart(10, '0') + '.json');
+    facts = (raw && raw.facts) || null;
+  } catch (e) {}
+  if (!facts) return null; /* transient failure: not cached, next open retries */
+  var MONEY = ['USD'], SHARES = ['shares'], PER = ['USD/shares'];
+  function mapsFor(modeDur, modeInst) {
+    return {
+      revenue: edgarMap(facts, EDGAR_CONCEPTS.revenue, MONEY, modeDur),
+      grossProfit: edgarMap(facts, EDGAR_CONCEPTS.grossProfit, MONEY, modeDur),
+      operIncome: edgarMap(facts, EDGAR_CONCEPTS.operIncome, MONEY, modeDur),
+      netIncome: edgarMap(facts, EDGAR_CONCEPTS.netIncome, MONEY, modeDur),
+      eps: edgarMap(facts, EDGAR_CONCEPTS.eps, PER, modeDur),
+      shares: edgarMap(facts, EDGAR_CONCEPTS.shares, SHARES, modeDur),
+      ocf: edgarMap(facts, EDGAR_CONCEPTS.ocf, MONEY, modeDur),
+      capex: edgarMap(facts, EDGAR_CONCEPTS.capex, MONEY, modeDur),
+      cashEq: edgarMap(facts, EDGAR_CONCEPTS.cashEq, MONEY, modeInst),
+      stInvest: edgarMap(facts, EDGAR_CONCEPTS.stInvest, MONEY, modeInst),
+      ltInvest: edgarMap(facts, EDGAR_CONCEPTS.ltInvest, MONEY, modeInst),
+      debtCur: edgarMap(facts, EDGAR_CONCEPTS.debtCur, MONEY, modeInst),
+      debtNoncur: edgarMap(facts, EDGAR_CONCEPTS.debtNoncur, MONEY, modeInst)
+    };
+  }
+  function qMaps() {
+    var m = mapsFor('qDur', 'qInst');
+    ['revenue', 'grossProfit', 'operIncome', 'netIncome', 'eps', 'shares', 'ocf', 'capex'].forEach(function (k) {
+      var unit = k === 'eps' ? PER : (k === 'shares' ? SHARES : MONEY);
+      m[k] = edgarQuarterMap(facts, EDGAR_CONCEPTS[k], unit);
+    });
+    return m;
+  }
+  var annualObj = edgarAssemble(mapsFor('aDur', 'aInst'), 12);
+  var fyWin = null;
+  if (annualObj) {
+    fyWin = annualObj.ends.map(function (e, i) {
+      var m = String(annualObj.periods[i]).match(/(\d{4})/);
+      return m ? { end: e, year: parseInt(m[1], 10) } : null;
+    }).filter(function (w) { return !!w; });
+    if (!fyWin.length) fyWin = null;
+  }
+  var data = { annual: annualObj, quarterly: edgarAssemble(qMaps(), 44, fyWin) };
+  if (!data.annual && !data.quarterly) data = null;
+  if (data) edgarSplitGuard(data);
+  cache[T] = { day: day, data: data };
+  lsSet(EDGAR_KEY, cache);
+  return data;
+}
+
+/* Split guard. Per-share history has an era problem: filings made
+ * before a stock split report pre-split EPS and share counts, and a
+ * 10-K only restates two prior years, so deep pre-split years can
+ * never be made consistent with today's prices (AAPL's FY2016 EPS
+ * exists only as the pre-split $8.31; its split-adjusted $2.08 was
+ * never filed). Rather than chart a fake 4x cliff, detect the split
+ * signature in the annual series and blank the per-share metrics
+ * (EPS, shares) on the old side of the boundary, quarters included.
+ * The signature is the share count
+ * jumping by 1.8x or more in a year when revenue and net income
+ * moved only smoothly -- a real business almost never does that;
+ * a split (or a recap with the same comparability problem) does.
+ * Money totals are split-immune and keep their full history. */
+function edgarSplitGuard(data) {
+  var a = data.annual;
+  if (!a || !a.shares) return;
+  var boundaryEnd = null;
+  for (var i = 1; i < a.periods.length; i++) {
+    var s0 = a.shares[i - 1], s1 = a.shares[i];
+    if (!isNum(s0) || !isNum(s1) || s0 <= 0 || s1 <= 0) continue;
+    var shR = s1 / s0;
+    if (shR < 1.8 && shR > 1 / 1.8) continue;
+    /* A split multiplies the share count while the business barely
+     * moves. (EPS can't testify: at the boundary it is usually
+     * nominal on one side and adjusted on the other, which is the
+     * very inconsistency being guarded against.) */
+    var r0 = a.revenue[i - 1], r1 = a.revenue[i], n0 = a.netIncome[i - 1], n1 = a.netIncome[i];
+    var revOk = (isNum(r0) && isNum(r1) && r0 > 0) ? (r1 / r0 >= 0.45 && r1 / r0 <= 2.2) : null;
+    var niOk = (isNum(n0) && isNum(n1) && n0 > 0) ? (n1 / n0 >= 0.4 && n1 / n0 <= 2.5) : null;
+    if (revOk === false || niOk === false) continue;
+    if (revOk === null && niOk === null) continue;
+    for (var j = 0; j < i; j++) { a.eps[j] = null; a.shares[j] = null; }
+    boundaryEnd = a.ends[i - 1];
+  }
+  if (boundaryEnd && data.quarterly) {
+    var q = data.quarterly;
+    for (var qi = 0; qi < q.periods.length; qi++) {
+      if (q.ends[qi] <= boundaryEnd) { q.eps[qi] = null; q.shares[qi] = null; }
+    }
+  }
+}
+
+/* Merge the EDGAR history under the loaded SA data: only periods
+ * strictly older than SA's first period are prepended, so every
+ * value SA publishes stays exactly as published. Idempotent per
+ * data object (the _ext flag). */
+function qmMergeEdgar() {
+  var ext = qmStore.edgar;
+  if (!ext || ext === 'loading') return;
+  [['y', ext.annual, qmKeyAnnual], ['q', ext.quarterly, qmKeyQuarter]].forEach(function (cfg) {
+    var d = qmStore[cfg[0]];
+    if (!d || d._ext || !d.periods || !d.periods.length || !cfg[1]) return;
+    d._ext = true;
+    var firstKey = cfg[2](d.periods[0]);
+    if (firstKey === null) return;
+    var older = [];
+    cfg[1].periods.forEach(function (p, i) {
+      var k = cfg[2](p);
+      if (k !== null && k < firstKey) older.push(i);
+    });
+    if (!older.length) return;
+    function pre(arr, src) {
+      return older.map(function (i) { return src ? src[i] : null; }).concat(arr || []);
+    }
+    d.periods = pre(d.periods, cfg[1].periods);
+    ['revenue', 'grossProfit', 'operIncome', 'netIncome', 'eps', 'shares', 'fcf', 'bsCash', 'bsDebt', 'bsNet'].forEach(function (k) {
+      d[k] = pre(d[k], cfg[1][k]);
+    });
+    if (qmFreq === cfg[0]) {
+      var st = $('qm-status');
+      if (st) st.textContent = d.ticker + ' · last ' + d.periods.length + ' reported ' + (cfg[0] === 'y' ? 'years' : 'quarters');
+    }
+  });
+}
+function qmKeyAnnual(label) {
+  var m = String(label).match(/(\d{4})/);
+  return m ? parseInt(m[1], 10) : null;
+}
+function qmKeyQuarter(label) {
+  var m = String(label).match(/Q([1-4])\D+(\d{4})/);
+  return m ? parseInt(m[2], 10) * 10 + parseInt(m[1], 10) : null;
 }
 
 function fmtSharesShort(v) {
@@ -4857,7 +5216,15 @@ function parseSARatioByYear(html, label) {
 async function fetchRatiosByYear(T) {
   var cache = lsGet('sr_ratios_v1', {});
   var day = new Date().toDateString();
-  if (cache[T] && cache[T].day === day) return cache[T].data;
+  if (cache[T] && cache[T].day === day) {
+    var cd = cache[T].data;
+    if (cd && !cd.extended) {
+      var exd = null;
+      try { exd = await extendRatios(T, cd); } catch (e) {}
+      if (exd) { cache[T].data = exd; lsSet('sr_ratios_v1', cache); }
+    }
+    return cache[T].data;
+  }
   var data = null;
   try {
     var html = await relayFetch('https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/financials/ratios/', {
@@ -4866,8 +5233,87 @@ async function fetchRatiosByYear(T) {
     var pe = parseSARatioByYear(html, 'PE Ratio'), ps = parseSARatioByYear(html, 'PS Ratio');
     if (pe.length || ps.length) data = { pe: pe, ps: ps };
   } catch (e) {}
+  if (data) {
+    var ex2 = null;
+    try { ex2 = await extendRatios(T, data); } catch (e) {}
+    if (ex2) data = ex2;
+  }
   cache[T] = { day: day, data: data };
   lsSet('sr_ratios_v1', cache);
+  return data;
+}
+
+/* Daily closes for 10 years (Yahoo), day-cached as two flat arrays.
+ * Used to price fiscal-year ends for the long P/E and P/S history. */
+async function fetchYahooDaily(T) {
+  var cache = lsGet('sr_yhist_v1', {});
+  var day = new Date().toDateString();
+  if (cache[T] && cache[T].day === day) return cache[T].data;
+  var data = null;
+  try {
+    var j = await relayJSON('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(T) + '?range=10y&interval=1d');
+    var r = j && j.chart && j.chart.result && j.chart.result[0];
+    var ts = (r && r.timestamp) || [];
+    var cl = r && r.indicators && r.indicators.quote && r.indicators.quote[0] && r.indicators.quote[0].close;
+    if (ts.length && cl && cl.length === ts.length) {
+      var t2 = [], c2 = [];
+      ts.forEach(function (t, i) { if (isNum(cl[i])) { t2.push(t); c2.push(Math.round(cl[i] * 100) / 100); } });
+      if (t2.length > 100) data = { ts: t2, cl: c2 };
+    }
+  } catch (e) {}
+  if (data) { cache[T] = { day: day, data: data }; lsSet('sr_yhist_v1', cache); }
+  return data;
+}
+
+function yCloseOnOrBefore(hist, endStr) {
+  if (!hist) return null;
+  var endTs = Date.parse(endStr + 'T23:59:59Z') / 1000;
+  var lo = 0, hi = hist.ts.length - 1, ans = -1;
+  while (lo <= hi) {
+    var mid = (lo + hi) >> 1;
+    if (hist.ts[mid] <= endTs) { ans = mid; lo = mid + 1; } else hi = mid - 1;
+  }
+  return ans >= 0 ? hist.cl[ans] : null;
+}
+
+/* Older P/E and P/S years computed from SEC filings: the close on
+ * the fiscal-year end over that year's diluted EPS (P/E), and the
+ * same close times diluted shares over revenue (P/S) -- the same
+ * recipe StockAnalysis uses for the years it publishes, so the seam
+ * is invisible in practice (checked against SA's own years: within
+ * ~1%). SA's years always win; this only prepends older ones. */
+async function extendRatios(T, data) {
+  var ed = await fetchEdgarHistory(T);
+  if (!ed || !ed.annual) return null;
+  var hist = await fetchYahooDaily(T);
+  if (!hist) return null;
+  var a = ed.annual;
+  function fyOf(label) { var m = String(label).match(/(\d{4})/); return m ? parseInt(m[1], 10) : null; }
+  function olderThan(minFy, need) {
+    var out = [];
+    a.periods.forEach(function (p, i) {
+      var fy = fyOf(p);
+      if (fy === null || fy >= minFy) return;
+      var px = yCloseOnOrBefore(hist, a.ends[i]);
+      if (!isNum(px)) return;
+      var v = need(i, px);
+      if (isNum(v) && v > 0 && v < 1000) out.push({ fy: fy, v: Math.round(v * 10) / 10 });
+    });
+    return out;
+  }
+  var minPe = data.pe.length ? data.pe[0].fy : Infinity;
+  var minPs = data.ps.length ? data.ps[0].fy : Infinity;
+  var peAdd = olderThan(minPe, function (i, px) {
+    var e = a.eps[i];
+    return (isNum(e) && e > 0) ? px / e : null;
+  });
+  var psAdd = olderThan(minPs, function (i, px) {
+    var s = a.shares[i], r = a.revenue[i];
+    return (isNum(s) && isNum(r) && r > 0) ? px * s / r : null;
+  });
+  if (peAdd.length) data.pe = peAdd.concat(data.pe);
+  if (psAdd.length) data.ps = psAdd.concat(data.ps);
+  data.extended = true;
   return data;
 }
 
@@ -5083,7 +5529,7 @@ function renderQmRatios(key) {
   }
   var pts = qmTail(series.map(function (p) { return { label: 'FY ' + p.fy, value: p.v, kind: 'actual', axis: String(p.fy) }; }), qmWin);
   box.innerHTML = '<div class="chart-wrap">' + qmBarsSVG(pts, QM_METRICS[key === 'pe' ? 'peHist' : 'psHist'].fmt) + '</div>';
-  note.textContent = (key === 'pe' ? 'Price / earnings' : 'Price / sales') + ' at each fiscal year end (StockAnalysis ratios) \u00b7 the current multiple is on the scorecard. The outlined bar is the latest fiscal year.';
+  note.textContent = (key === 'pe' ? 'Price / earnings' : 'Price / sales') + ' at each fiscal year end (StockAnalysis ratios; older years from SEC filings) \u00b7 the current multiple is on the scorecard. The outlined bar is the latest fiscal year.';
 }
 
 /* Mini bar chart for grid cards: shape only (the card header
@@ -5231,6 +5677,13 @@ function setMainLock(key, on) {
 }
 
 function renderQm() {
+  /* Long-history backfill: kicks off the EDGAR load on first render
+   * and merges it under the SA data once it lands (qmEnsure calls
+   * renderQm again when the load resolves). */
+  if (qmStore.ticker) {
+    var edg = qmEnsure('edgar', fetchEdgarHistory);
+    if (edg && edg !== 'loading') qmMergeEdgar();
+  }
   var ov = $('qm-overlay'), det = $('qm-detail');
   document.querySelectorAll('[data-qmfreq]').forEach(function (b) {
     b.classList.toggle('active', b.getAttribute('data-qmfreq') === qmFreq);
