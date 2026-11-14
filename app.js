@@ -9881,6 +9881,14 @@ if (typeof document !== 'undefined' && document.getElementById) {
     currentUser = user || null;
     showAuthState();
     if (!currentUser) return;
+    /* Beta spot claims ride on SESSION ESTABLISHMENT (sign-in, or a
+     * session restored on load), never on signUp: with Confirm email
+     * ON, signUp returns no session, and an unconfirmed sign-up must
+     * not consume a beta spot. The Worker claim is idempotent per
+     * userId, so firing on every session start is safe — a confirmed
+     * member's first sign-in claims their spot, and later sign-ins
+     * simply re-confirm it. Fire-and-forget, as before. */
+    try { betaClaim(currentUser.id); } catch (e) {}
     installWritePatch();
     await reconcile();
   }
@@ -9919,14 +9927,23 @@ if (typeof document !== 'undefined' && document.getElementById) {
       try {
         var r = await client.auth.signUp(c);
         if (r.error) throw r.error;
-        /* Claim a beta spot for the new account (fire-and-forget).
-         * Runs even if the beta was full on a stale status — the cap
-         * is soft and a completed sign-up is never turned away. */
-        try { if (r.data && r.data.user && r.data.user.id) betaClaim(r.data.user.id); } catch (e) {}
+        /* No beta claim here: claims fire on session establishment
+         * (afterSignIn), so an unconfirmed sign-up never takes a spot. */
         if (r.data && r.data.session && r.data.user) {
+          /* Autoconfirm projects: the session comes straight back and
+           * the user lands signed in, exactly as before. */
           await afterSignIn(r.data.user);
         } else {
-          setSyncStatus('Account created — confirm it from the email Supabase sent you, then sign in.');
+          /* Confirm email ON: the account exists but there is no
+           * session until the confirmation link is tapped. This is a
+           * SUCCESS state, not an error — keep the sign-in form in
+           * place with the email prefilled, so returning after the
+           * email is one password away from signed in. */
+          try {
+            var emEl = document.getElementById('sync-email');
+            if (emEl) emEl.value = c.email;
+          } catch (e) {}
+          setSyncStatus('Account created — check your email and tap the confirmation link, then come back here and sign in.');
         }
       } catch (e) {
         setSyncStatus('Sign-up failed: ' + (e && e.message ? e.message : 'unknown error'), true);
