@@ -5216,6 +5216,20 @@ function renderQmGrid() {
   grid.innerHTML = html || '<div class="status err">No chart data for ' + esc(qmStore.ticker || '') + '.</div>';
 }
 
+/* Scroll locks for sheets that open over a tab (chart popup,
+ * watchlist overview). The app's only scroller is <main> -- body
+ * never scrolls -- so locking body (the chart popup's original
+ * approach) changed nothing and the tab kept scrolling behind the
+ * open sheet (Justin's report, 2026-11-13). Locks are keyed so the
+ * two sheets can never unlock each other. */
+var mainLocks = {};
+function setMainLock(key, on) {
+  mainLocks[key] = !!on;
+  var any = Object.keys(mainLocks).some(function (k) { return mainLocks[k]; });
+  var mn = document.querySelector('main');
+  if (mn) mn.classList.toggle('scroll-lock', any);
+}
+
 function renderQm() {
   var ov = $('qm-overlay'), det = $('qm-detail');
   document.querySelectorAll('[data-qmfreq]').forEach(function (b) {
@@ -5227,7 +5241,7 @@ function renderQm() {
   });
   if (qmMode === 'grid') {
     if (ov) ov.hidden = true;
-    document.body.classList.remove('qm-lock');
+    setMainLock('qm', false);
     qmPrevMode = 'grid';
     renderQmGrid();
     return;
@@ -5236,7 +5250,7 @@ function renderQm() {
    * rendered underneath), so the chart appears where the user is
    * instead of swapping the page under their scroll position. */
   if (ov) ov.hidden = false;
-  document.body.classList.add('qm-lock');
+  setMainLock('qm', true);
   if (det && qmPrevMode !== 'detail') det.scrollTop = 0;
   qmPrevMode = 'detail';
   renderQmDetail();
@@ -7407,6 +7421,7 @@ function closeOverview() {
   ovTicker = null;
   var p = $('tab-overview');
   if (p) p.classList.remove('open');
+  setMainLock('ov', false);
 }
 
 function wireOverviewActions(d) {
@@ -7470,7 +7485,7 @@ function openOverview(T) {
   var item = null;
   getWatchlist().forEach(function (w) { if (w.ticker === T) item = w; });
   var panel = $('tab-overview');
-  if (panel) { panel.scrollTop = 0; panel.classList.add('open'); }
+  if (panel) { panel.scrollTop = 0; panel.classList.add('open'); setMainLock('ov', true); }
   var body = $('ov-body');
   var cache = lsGet(CACHE_KEY, {});
   var hit = cache[T];
@@ -8952,6 +8967,10 @@ function switchTab(name) {
       if (ib) { ib.classList.remove('open'); ib.setAttribute('aria-expanded', 'false'); }
     } else { ti.style.maxHeight = ''; ti.style.opacity = ''; ti.style.marginBottom = ''; }
   }
+  /* The chart popup lives inside the Tools tab: leaving the tab
+   * hides it, so its scroll lock must release or every other tab
+   * would stay frozen; coming back re-locks while it's still open. */
+  setMainLock('qm', name === 'tools' && typeof qmMode !== 'undefined' && qmMode !== 'grid');
   /* The glossary renders at init while its tab is hidden (getBBox is 0
    * there), so re-run the label fit once the tab is actually visible. */
   if (name === 'glossary' && typeof fitGlossText === 'function') fitGlossText();

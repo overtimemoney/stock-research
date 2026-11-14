@@ -658,15 +658,17 @@ table.factors.scen.micro td, table.factors.scen.micro th { padding: 7px 3px; }
 /* Chart popup: tapping a grid card opens the full chart in an
  * almost-full-screen sheet over the grid (2026-11-05, Justin's ask)
  * instead of swapping the page under his scroll position. */
-#qm-overlay { position: fixed; inset: 0; z-index: 150; background: rgba(0,0,0,.62); }
+#qm-overlay { position: fixed; inset: 0; z-index: 150; background: rgba(0,0,0,.62); overscroll-behavior: contain; }
 /* Bottom padding mirrors <main>'s nav clearance (88px + safe area):
  * the floating pill nav floats over this sheet too, and with only a
  * small pad the last content (the chart note) could never scroll out
  * from under it (Justin's report, 2026-11-09). */
-#qm-detail { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); left: 10px; background: var(--bg); border: 1.5px solid var(--line); border-radius: 20px; padding: 14px 14px calc(88px + env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch; }
+#qm-detail { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); left: 10px; background: var(--bg); border: 1.5px solid var(--line); border-radius: 20px; padding: 14px 14px calc(88px + env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 .qm-sheet-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .qm-x { background: var(--field); border: 1.5px solid var(--line); color: var(--ink); width: 38px; height: 38px; border-radius: 50%; font-size: 15px; font-weight: 800; cursor: pointer; flex: 0 0 auto; }
-body.qm-lock { overflow: hidden; }
+/* The real scroll lock for open sheets: <main> is the app's only
+   scroller, so this is what stops the tab behind a sheet. */
+main.scroll-lock { overflow-y: hidden; }
 #qm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .qm-grid-group { grid-column: 1 / -1; font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 6px 2px 0; }
 .qm-card { background: var(--field); border: 1.5px solid var(--line); border-radius: 14px; padding: 10px 10px 6px; text-align: left; cursor: pointer; font: inherit; color: var(--ink); box-sizing: border-box; min-width: 0; }
@@ -786,7 +788,7 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
  * over the watchlist and slides back out to the right on close
  * (Justin's ask, 2026-10-29). Lives outside the tab system so the
  * watchlist underneath never unloads. */
-.ov-panel { position: fixed; inset: 0; z-index: 85; background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; padding: calc(12px + env(safe-area-inset-top)) 14px calc(18px + env(safe-area-inset-bottom)); transform: translateX(103%); transition: transform .28s var(--ease-drawer); pointer-events: none; }
+.ov-panel { position: fixed; inset: 0; z-index: 85; background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: calc(12px + env(safe-area-inset-top)) 14px calc(18px + env(safe-area-inset-bottom)); transform: translateX(103%); transition: transform .28s var(--ease-drawer); pointer-events: none; }
 .ov-panel.open { transform: translateX(0); pointer-events: auto; }
 
 /* Compact state while scrolling down (Instagram-style shrink). */
