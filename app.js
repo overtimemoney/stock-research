@@ -10093,15 +10093,15 @@ if (typeof document !== 'undefined' && document.getElementById) {
       }
     }
 
-    /* Progress header (signage only): stage 1 = question 1 (incl. its
-     * reveal), stage 2 = question 2, stage 3 = final screen ("Done"). */
-    function setProgress(stage) {
+    /* Progress header (signage only): the bar fills evenly across the
+     * four steps of the flow — step 1 = Q1 question (25%), step 2 =
+     * Q1 reveal (50%), step 3 = Q2 question (75%), step 4 = final
+     * screen (100%) — while the label still counts questions. */
+    function setProgress(step) {
       var label = document.getElementById('ob-step-label');
-      var seg1 = document.getElementById('ob-seg-1');
-      var seg2 = document.getElementById('ob-seg-2');
-      if (seg1) seg1.classList.toggle('on', stage >= 1);
-      if (seg2) seg2.classList.toggle('on', stage >= 2);
-      if (label) label.textContent = stage >= 3 ? 'Done' : 'Question ' + Math.min(stage, 2) + ' of 2';
+      var fill = document.getElementById('ob-bar-fill');
+      if (fill) fill.style.width = (step * 25) + '%';
+      if (label) label.textContent = step >= 4 ? 'Done' : 'Question ' + (step <= 2 ? 1 : 2) + ' of 2';
     }
 
     function resetQuiz() {
@@ -10198,11 +10198,12 @@ if (typeof document !== 'undefined' && document.getElementById) {
          * callout + Next button share Q1's screen (see .ob-q1-done). */
         overlay.classList.add('ob-q1-done');
         renderChart('15');
+        setProgress(2); /* Q1 reveal: bar halfway */
         reveal('ob-reveal-1');
       } else {
         visible = ['10', '15', '20'];
         renderChart('20');
-        setProgress(3); /* final screen */
+        setProgress(4); /* final screen */
         reveal('ob-reveal-2');
       }
     }
@@ -10227,7 +10228,7 @@ if (typeof document !== 'undefined' && document.getElementById) {
       if (intro) intro.hidden = true;
       if (p1) p1.hidden = true;
       if (p2) p2.hidden = false;
-      setProgress(2);
+      setProgress(3);
       if (scroller) { try { scroller.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { scroller.scrollTop = 0; } }
     });
     var replayBtn = document.getElementById('menu-quiz');
