@@ -3538,7 +3538,7 @@ function projStripHtml(id, ticker) {
   var v = isNum(cached)
     ? '<span class="sc-proj-v ' + (cached >= 0 ? 'up' : 'down') + '">' + (cached >= 0 ? '+' : '') + fmtNum(cached, 1) + '%/yr</span>'
     : '<span class="sc-proj-v sc-proj-wait">Estimating\u2026</span>';
-  return '<div class="sc-proj" id="' + id + '" data-proj-ticker="' + esc(ticker) + '"><span class="sc-proj-l"><b>Estimated return</b><span>Projected 4-yr CAGR \u00b7 base case</span></span>' + v + '</div>';
+  return '<button type="button" class="sc-proj" id="' + id + '" data-proj-ticker="' + esc(ticker) + '" aria-label="Open the projection for ' + esc(ticker) + '"><span class="sc-proj-l"><b>Estimated return</b><span>Projected 4-yr CAGR \u00b7 base case</span></span><span class="sc-proj-r">' + v + '<span class="sc-proj-chev">\u203a</span></span></button>';
 }
 function projStripFill(id, ticker) {
   if (isNum(pjSavedCagr(ticker))) return;
@@ -3786,7 +3786,10 @@ function renderScorecard(d) {
     switchTab('journal');
     startJournalEdit(d.ticker);
   });
-  $('sc-project').addEventListener('click', function () {
+  /* The Estimated return strip opens the same projection as the
+   * Project it button (Justin's ask, 2026-11-13: tapping the return
+   * brings you to the company's projection). */
+  var scOpenProjection = function () {
     switchTab('tools');
     setTool('pj');
     $('pj-ticker').value = d.ticker;
@@ -3798,7 +3801,9 @@ function renderScorecard(d) {
       pjSetLoadedStatusParts('Loaded ' + d.ticker + ' from the scorecard', [pjPeNote]);
       runProjection();
     });
-  });
+  };
+  $('sc-project').addEventListener('click', scOpenProjection);
+  $('sc-proj').addEventListener('click', scOpenProjection);
   $('sc-charts').addEventListener('click', function () {
     switchTab('tools');
     setTool('charts');
@@ -7409,8 +7414,9 @@ function wireOverviewActions(d) {
   loadStockNews('ov', d.ticker);
   var sc = $('ov-scorecard');
   if (sc) sc.addEventListener('click', function () { ovReturnTicker = d.ticker; showBackChips(); closeOverview(); switchTab('scorecard'); $('search-input').value = d.ticker; runSearch(d.ticker); });
-  var pj = $('ov-project');
-  if (pj) pj.addEventListener('click', function () {
+  /* The Estimated return strip opens the same projection as the
+   * Projection button. */
+  var ovOpenProjection = function () {
     ovReturnTicker = d.ticker; showBackChips();
     closeOverview();
     switchTab('tools');
@@ -7425,7 +7431,11 @@ function wireOverviewActions(d) {
       $('pj-ticker').value = d.ticker;
       loadProjectionTicker();
     }
-  });
+  };
+  var pj = $('ov-project');
+  if (pj) pj.addEventListener('click', ovOpenProjection);
+  var ovp = $('ov-proj');
+  if (ovp) ovp.addEventListener('click', ovOpenProjection);
   var ch = $('ov-charts');
   if (ch) ch.addEventListener('click', function () {
     ovReturnTicker = d.ticker; showBackChips();

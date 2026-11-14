@@ -303,7 +303,9 @@ table.factors td:first-child:has(.info-dot) { padding-right: 28px; }
    watchlist overview (2026-11-13 evening): the projected 4-yr CAGR
    lives here, big and readable, instead of as a cramped tag on the
    daily scan rows. */
-.sc-proj { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; padding: 10px 12px; background: var(--chip-bg); border: 1px solid var(--line); border-radius: 12px; }
+.sc-proj { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; margin-top: 12px; padding: 10px 12px; background: var(--chip-bg); border: 1px solid var(--line); border-radius: 12px; font: inherit; color: inherit; text-align: left; cursor: pointer; -webkit-appearance: none; appearance: none; }
+.sc-proj-r { display: flex; align-items: center; gap: 3px; }
+.sc-proj-chev { color: var(--muted); font-size: 22px; font-weight: 700; line-height: 1; }
 .sc-proj-l { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .sc-proj-l b { font-size: 13.5px; font-weight: 900; color: var(--ink); }
 .sc-proj-l span { font-size: 11px; font-weight: 600; color: var(--muted); white-space: nowrap; }
