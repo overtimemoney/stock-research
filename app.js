@@ -3525,8 +3525,9 @@ function cashDebtHtml(d) {
 /* Estimated-return strip (Justin's call, 2026-11-13 evening): the
  * projected 4-yr CAGR sits at the TOP of the page a tap opens -- the
  * full scorecard and the watchlist overview both -- as an
- * "Estimated return" number, so the daily scan rows no longer carry
- * a cramped CAGR tag in their thumbnail. A saved projection's CAGR
+ * "Estimated return" number. (Scan thumbnails also carry it again,
+ * as their own third line, per his follow-up the same evening.)
+ * A saved projection's CAGR
  * wins, then the day-cached auto value; the fill below refreshes it
  * and hides the strip when no forecast path exists. The fill guards
  * on the strip's own ticker attribute, so a slow answer for a stock
@@ -6936,7 +6937,7 @@ function renderScanCard() {
       rows.forEach(function (row, i) {
         out += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
           '<span class="scan-rank">' + (i + 1) + '</span>' +
-          logoTile(row.t, 'sm') + '<span class="scan-id"><span class="scan-tline"><b>' + esc(row.t) + '</b>' + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">partial</span>' : '') + '</span><span class="scan-sub"><span class="scan-nm">' + esc(row.name) + '</span></span></span>' +
+          logoTile(row.t, 'sm') + '<span class="scan-id"><span class="scan-tline"><b>' + esc(row.t) + '</b>' + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">partial</span>' : '') + '</span><span class="scan-sub"><span class="scan-nm">' + esc(row.name) + '</span></span><span class="scan-cagr-line">' + (isNum(row.cagr) ? 'CAGR ' + (row.cagr >= 0 ? '+' : '') + fmtNum(row.cagr, 0) + '%/yr' : 'CAGR \u2014') + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
           '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
       });
@@ -6989,7 +6990,7 @@ function renderScanCard() {
       rows.forEach(function (row, i) {
         out += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
           '<span class="scan-rank">' + (i + 1) + '</span>' +
-          logoTile(row.t, 'sm') + '<span class="scan-id"><span class="scan-tline"><b>' + esc(row.t) + '</b>' + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">partial</span>' : '') + '</span><span class="scan-sub"><span class="scan-nm">' + esc(row.name) + '</span></span></span>' +
+          logoTile(row.t, 'sm') + '<span class="scan-id"><span class="scan-tline"><b>' + esc(row.t) + '</b>' + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">partial</span>' : '') + '</span><span class="scan-sub"><span class="scan-nm">' + esc(row.name) + '</span></span><span class="scan-cagr-line">' + (isNum(row.cagr) ? 'CAGR ' + (row.cagr >= 0 ? '+' : '') + fmtNum(row.cagr, 0) + '%/yr' : 'CAGR \u2014') + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
           '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
       });
