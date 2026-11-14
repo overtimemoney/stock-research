@@ -10582,7 +10582,8 @@ if (typeof document !== 'undefined' && document.getElementById) {
       ]) + gotItRow();
     } else if (variant === 'ios-safari') {
       inner = stepsHtml([
-        'Tap the <b>Share</b> button ' + SHARE_SVG + ' in Safari\u2019s toolbar',
+        'Tap the <b>•••</b> button in Safari\u2019s toolbar',
+        'Tap <b>Share</b> ' + SHARE_SVG,
         'Tap <b>\u201cAdd to Home Screen\u201d</b>',
         'Tap <b>\u201cAdd\u201d</b> \u2014 the app icon lands on your Home Screen.'
       ]) + gotItRow();
