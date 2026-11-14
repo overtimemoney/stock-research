@@ -2945,7 +2945,7 @@ var INFO_TEXT = {
   size: 'Company size by market cap (price \u00d7 shares). Smaller companies tend to swing harder, get less analyst coverage, and can be harder to sell in a panic \u2014 so small size adds risk points here.',
   currentratio: 'Current ratio = short-term assets \u00f7 short-term bills. Above 1 means the company can cover what it owes within the year. Below 1 can mean cash stress if business dips.',
   boombust: 'Some businesses boom then bust in cycles (memory chips are the classic case). This flags it when the forecast shows a big earnings peak followed by a cliff, after revenue roughly doubled into the peak \u2014 peak earnings make a stock look deceptively cheap.',
-  scanscore: 'Every stock in the index gets two 0\u2013100 scores: a Value score (cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt) and a Risk score (debt, volatility, size, earnings trend, boom-bust pattern). The Score starts at 60% Value + 40% safety, where safety = 100 \u2212 Risk. Before the list is final, each top stock is deep-checked, and its Score becomes 75% of that value-and-safety score plus 25% growth points from its projected 4-year CAGR \u2014 the yearly return its forecast earnings path works out to, shown on the row (\u221220%/yr earns 0 points, +40%/yr earns 100). A stock with no analyst forecast keeps its value-and-safety score. Only stocks with enough data to score fairly can appear, and it shows the Top 10 for each index. Scores refresh when a company reports earnings, and the full index is rescanned about once a week. The list is computed once a day on the server, so every phone shows the same scores; tapping Rescan still runs a fresh scan on this phone.',
+  scanscore: 'Every stock in the index gets two 0\u2013100 scores: a Value score (cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt) and a Risk score (debt, volatility, size, earnings trend, boom-bust pattern). The Score starts at 60% Value + 40% safety, where safety = 100 \u2212 Risk. Before the list is final, each top stock is deep-checked, and its Score becomes 75% of that value-and-safety score plus 25% growth points from its projected 4-year CAGR \u2014 the yearly return its forecast earnings path works out to, shown as the estimated return at the top of the stock\u2019s page when you tap it (\u221220%/yr earns 0 points, +40%/yr earns 100). A stock with no analyst forecast keeps its value-and-safety score. Only stocks with enough data to score fairly can appear, and it shows the Top 10 for each index. Scores refresh when a company reports earnings, and the full index is rescanned about once a week. The list is computed once a day on the server, so every phone shows the same scores; tapping Rescan still runs a fresh scan on this phone.',
   radar: 'Five 0\u2013100 measures drawn as a snowflake: Value (the valuation score), Future (forecast EPS growth), Past (recent revenue growth), Health (debt, liquidity, margins) and Dividend (the yield). The further a point reaches, the stronger that measure \u2014 a big, even snowflake is strong all round. If the Future point is red, the cliff check fired \u2014 earnings are forecast to fall off a peak.',
 };
 var FACTOR_INFO = {
@@ -3522,6 +3522,36 @@ function cashDebtHtml(d) {
   return html;
 }
 
+/* Estimated-return strip (Justin's call, 2026-11-13 evening): the
+ * projected 4-yr CAGR sits at the TOP of the page a tap opens -- the
+ * full scorecard and the watchlist overview both -- as an
+ * "Estimated return" number, so the daily scan rows no longer carry
+ * a cramped CAGR tag in their thumbnail. A saved projection's CAGR
+ * wins, then the day-cached auto value; the fill below refreshes it
+ * and hides the strip when no forecast path exists. The fill guards
+ * on the strip's own ticker attribute, so a slow answer for a stock
+ * the user has already tapped away from never lands. */
+function projStripHtml(id, ticker) {
+  var saved = pjSavedCagr(ticker);
+  var cached = isNum(saved) ? saved : (wlProjEntry(ticker) || {}).cagr;
+  var v = isNum(cached)
+    ? '<span class="sc-proj-v ' + (cached >= 0 ? 'up' : 'down') + '">' + (cached >= 0 ? '+' : '') + fmtNum(cached, 1) + '%/yr</span>'
+    : '<span class="sc-proj-v sc-proj-wait">Estimating\u2026</span>';
+  return '<div class="sc-proj" id="' + id + '" data-proj-ticker="' + esc(ticker) + '"><span class="sc-proj-l"><b>Estimated return</b><span>Projected 4-yr CAGR \u00b7 base case</span></span>' + v + '</div>';
+}
+function projStripFill(id, ticker) {
+  if (isNum(pjSavedCagr(ticker))) return;
+  fetchWlProjCagr(ticker).then(function (cg) {
+    var el = $(id);
+    if (!el || el.getAttribute('data-proj-ticker') !== ticker) return;
+    if (!isNum(cg)) { el.style.display = 'none'; return; }
+    var v = el.querySelector('.sc-proj-v');
+    if (!v) return;
+    v.className = 'sc-proj-v ' + (cg >= 0 ? 'up' : 'down');
+    v.textContent = (cg >= 0 ? '+' : '') + fmtNum(cg, 1) + '%/yr';
+  }).catch(function () {});
+}
+
 function renderScorecard(d) {
   lastStock = d;
   var sc = scoreStock(d);
@@ -3536,13 +3566,7 @@ function renderScorecard(d) {
     '<div class="sc-sub">' + esc([d.exchange, d.sector, d.industry].filter(Boolean).join(' · ')) + '</div></div></div>' +
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
-  /* Projected 4-yr CAGR, same number the watchlist rows and scan
-   * tags show (a saved projection's CAGR wins, then the day-cached
-   * auto value; the async fill below refreshes it). Justin asked for
-   * it on tap-through from the scan rows, 2026-11-13. */
-  var scSavedCagr = pjSavedCagr(d.ticker);
-  var scCachedCagr = isNum(scSavedCagr) ? scSavedCagr : (wlProjEntry(d.ticker) || {}).cagr;
-  html += '<div class="sc-proj" id="sc-proj">' + (isNum(scCachedCagr) ? 'Projected 4-yr CAGR <b>' + (scCachedCagr >= 0 ? '+' : '') + fmtNum(scCachedCagr, 1) + '%/yr</b>' : '') + '</div>';
+  html += projStripHtml('sc-proj', d.ticker);
   if (d.about) html += '<div class="sc-about">' + esc(d.about) + '</div>';
   html += moreBlockHtml(d);
   if (!d.earnEst) html += earnLineHtml(d);
@@ -3734,14 +3758,7 @@ function renderScorecard(d) {
   html += '</div>';
   $('score-result').innerHTML = html;
   $('score-empty').style.display = 'none';
-  if (!isNum(scSavedCagr)) {
-    fetchWlProjCagr(d.ticker).then(function (cg) {
-      var el = $('sc-proj');
-      if (el && lastStock && lastStock.ticker === d.ticker && isNum(cg)) {
-        el.innerHTML = 'Projected 4-yr CAGR <b>' + (cg >= 0 ? '+' : '') + fmtNum(cg, 1) + '%/yr</b>';
-      }
-    }).catch(function () {});
-  }
+  projStripFill('sc-proj', d.ticker);
   loadStockNews('sc', d.ticker);
 
   /* The zone's button is "Regenerate" when a saved SWOT is showing
@@ -6919,7 +6936,7 @@ function renderScanCard() {
       rows.forEach(function (row, i) {
         out += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
           '<span class="scan-rank">' + (i + 1) + '</span>' +
-          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span class="scan-sub"><span class="scan-nm">' + esc(row.name) + '</span>' + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">\u26a0 Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">\u26a0 partial check</span>' : '') + (isNum(row.cagr) ? ' <span class="scan-cagr">CAGR ' + (row.cagr >= 0 ? '+' : '') + fmtNum(row.cagr, 0) + '%/yr</span>' : '') + '</span></span>' +
+          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span class="scan-sub"><span class="scan-nm">' + esc(row.name) + '</span>' + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">\u26a0 Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">\u26a0 partial check</span>' : '') + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
           '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
       });
@@ -6972,7 +6989,7 @@ function renderScanCard() {
       rows.forEach(function (row, i) {
         out += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
           '<span class="scan-rank">' + (i + 1) + '</span>' +
-          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span class="scan-sub"><span class="scan-nm">' + esc(row.name) + '</span>' + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">\u26a0 Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">\u26a0 partial check</span>' : '') + (isNum(row.cagr) ? ' <span class="scan-cagr">CAGR ' + (row.cagr >= 0 ? '+' : '') + fmtNum(row.cagr, 0) + '%/yr</span>' : '') + '</span></span>' +
+          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span class="scan-sub"><span class="scan-nm">' + esc(row.name) + '</span>' + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">\u26a0 Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">\u26a0 partial check</span>' : '') + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
           '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
       });
@@ -7276,6 +7293,7 @@ function renderOverview(d, item) {
     '<div class="sc-sub">' + esc([d.exchange, d.sector, d.industry].filter(Boolean).join(' \u00b7 ')) + '</div></div></div>' +
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
+  html += projStripHtml('ov-proj', d.ticker);
   html += earnLineHtml(d);
   html += ceoBlockHtml(d);
   if (item && isNum(item.target) && item.target > 0 && isNum(d.price)) {
@@ -7378,6 +7396,7 @@ function closeOverview() {
 }
 
 function wireOverviewActions(d) {
+  projStripFill('ov-proj', d.ticker);
   loadStockNews('ov', d.ticker);
   var sc = $('ov-scorecard');
   if (sc) sc.addEventListener('click', function () { ovReturnTicker = d.ticker; showBackChips(); closeOverview(); switchTab('scorecard'); $('search-input').value = d.ticker; runSearch(d.ticker); });
