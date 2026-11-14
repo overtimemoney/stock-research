@@ -605,10 +605,17 @@ table.factors.scen.micro td, table.factors.scen.micro th { padding: 7px 3px; }
 .scan-id { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .scan-id b { font-size: 15px; font-weight: 900; }
 .scan-id span { color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* Name line is a flex row: the name keeps its full text but truncates
-   with an ellipsis to whatever room the pills leave (Justin's call,
-   2026-11-01: never drop or clip the NEW / cyclical pills). */
-.scan-id .scan-sub { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: visible; flex-wrap: wrap; }
+/* Ticker line carries the pills (Justin's call, 2026-11-13 evening):
+   NEW and Cyclical sit next to the ticker, and the name line below
+   is name-only, so every thumbnail is exactly two lines tall no
+   matter which pills a stock carries. Pills stay flex:none (the
+   2026-11-01 rule: never drop or clip them). */
+.scan-id .scan-tline { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: visible; flex-wrap: nowrap; }
+/* Ticker-line pills run a touch smaller and the Cyclical pill drops
+   its warning glyph (scan rows only) so a NEW + Cyclical pair fits
+   beside the ticker without reaching the price column. */
+.scan-tline .scan-new, .scan-tline .scan-cyc { font-size: 8.5px; padding: 1px 5px; letter-spacing: .03em; }
+.scan-id .scan-sub { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: visible; flex-wrap: nowrap; }
 .scan-id .scan-nm { min-width: 0; }
 .scan-row .scan-new, .scan-row .scan-cyc { flex: none; }
 .scan-px { font-weight: 800; font-size: 13px; }

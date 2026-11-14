@@ -6936,7 +6936,7 @@ function renderScanCard() {
       rows.forEach(function (row, i) {
         out += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
           '<span class="scan-rank">' + (i + 1) + '</span>' +
-          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span class="scan-sub"><span class="scan-nm">' + esc(row.name) + '</span>' + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">\u26a0 Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">\u26a0 partial check</span>' : '') + '</span></span>' +
+          logoTile(row.t, 'sm') + '<span class="scan-id"><span class="scan-tline"><b>' + esc(row.t) + '</b>' + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">partial</span>' : '') + '</span><span class="scan-sub"><span class="scan-nm">' + esc(row.name) + '</span></span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
           '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
       });
@@ -6989,7 +6989,7 @@ function renderScanCard() {
       rows.forEach(function (row, i) {
         out += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
           '<span class="scan-rank">' + (i + 1) + '</span>' +
-          logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span class="scan-sub"><span class="scan-nm">' + esc(row.name) + '</span>' + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">\u26a0 Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">\u26a0 partial check</span>' : '') + '</span></span>' +
+          logoTile(row.t, 'sm') + '<span class="scan-id"><span class="scan-tline"><b>' + esc(row.t) + '</b>' + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">partial</span>' : '') + '</span><span class="scan-sub"><span class="scan-nm">' + esc(row.name) + '</span></span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
           '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
       });
