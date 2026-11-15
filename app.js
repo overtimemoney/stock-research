@@ -9909,7 +9909,7 @@ function mktAsOfLabel(s) {
   var a = s.asOf || (s.points.length ? s.points[s.points.length - 1][0] : '');
   if (!a) return '';
   var p = String(a).split('-');
-  if (p.length === 3 && p[2] !== '01') return mktMonLabel(a) + ' ' + parseInt(p[2], 10);
+  if (p.length === 3 && p[2] !== '01') return MKT_MON[parseInt(p[1], 10) - 1] + ' ' + parseInt(p[2], 10) + ', ' + p[0];
   return mktMonLabel(a);
 }
 function mktLast(pts) { return pts && pts.length ? pts[pts.length - 1][1] : null; }
@@ -9932,23 +9932,35 @@ function mktRank(pts, v) {
   });
   return { above: above, n: (pts || []).length, peak: peak };
 }
-function mktRankText(pts, v, noun) {
+/* The rank reads are computed against the VISIBLE window, not the
+ * full history (Justin's call, 2026-11-15): switch the timeline
+ * and "higher than X%" answers for the years on screen. `win` is
+ * the range key ('All', '25Y', '10Y', ...). */
+function mktWinPhrase(pts, win) {
+  if (!win || win === 'All' || !pts || !pts.length) return 'since ' + String((pts && pts[0] ? pts[0][0] : '')).slice(0, 4);
+  var m = /^(\d+)([YM])$/.exec(win);
+  if (!m) return 'since ' + String(pts[0][0]).slice(0, 4);
+  if (m[2] === 'Y') return parseInt(m[1], 10) === 1 ? 'in the last year' : 'in the last ' + m[1] + ' years';
+  return parseInt(m[1], 10) === 1 ? 'in the last month' : 'in the last ' + m[1] + ' months';
+}
+function mktRankText(pts, v, noun, win) {
   var r = mktRank(pts, v);
   if (!r.n || !r.peak) return '';
-  var since = 'since ' + String(pts[0][0]).slice(0, 4);
-  if (r.above === 0) return 'The highest reading ' + since + ' — above every single ' + noun + ' in the data.';
+  var since = mktWinPhrase(pts, win);
+  var span = win && win !== 'All' ? 'in the window' : 'in the data';
+  if (r.above === 0) return 'The highest reading ' + since + ' — above every single ' + noun + ' ' + span + '.';
   if (r.above <= 3) return 'Only ' + r.above + (r.above === 1 ? ' ' + noun : ' ' + noun + 's') + ' ' + since + ' ranked higher — the highest was ' + mktMonLabel(r.peak[0]) + ' at ' + mktFmt2(r.peak[1]) + '.';
   var pct = Math.round(100 * (r.n - r.above) / r.n);
   return 'Higher than ' + pct + '% of ' + noun + 's ' + since + '.';
 }
-function mktLowText(pts, v, noun) {
+function mktLowText(pts, v, noun, win) {
   var below = 0, low = null;
   (pts || []).forEach(function (p) {
     if (p[1] < v) below++;
     if (!low || p[1] < low[1]) low = p;
   });
   if (!pts.length || !low) return '';
-  var since = 'since ' + String(pts[0][0]).slice(0, 4);
+  var since = mktWinPhrase(pts, win);
   if (below === 0) return 'The lowest reading ' + since + '.';
   if (below <= 3) return 'Only ' + below + (below === 1 ? ' ' + noun : ' ' + noun + 's') + ' ' + since + ' ranked lower — the lowest was ' + mktMonLabel(low[0]) + ' at ' + mktFmt1(low[1]) + '.';
   var pct = Math.round(100 * (pts.length - below) / pts.length);
@@ -9964,7 +9976,12 @@ function mktYearAgo(pts) {
 
 /* Line chart: one or two series over a shared date axis. No
  * per-point labels (the Charts overlap lesson) — just min/max
- * axis labels and a few year ticks. */
+ * axis labels and a few year ticks. When opts.id is given, the
+ * chart's geometry + data are registered in mktCharts so the
+ * scrubber (drag across the chart — no zoom, per Justin) can map
+ * a finger position back to a date and value. */
+var mktCharts = {};
+var MKT_SCRUB_HTML = '<span class="mkt-scrub-line" hidden></span><span class="mkt-scrub-dot" hidden></span><span class="mkt-scrub-dot d2" hidden></span>';
 function mktLineSVG(series, opts) {
   opts = opts || {};
   var W = 640, H = 200, padT = 16, padB = 22, padX = 4;
@@ -10011,20 +10028,34 @@ function mktLineSVG(series, opts) {
   var lastLab = spanYrs > 6 ? String(new Date(d1).getUTCFullYear()) : MKT_MON[new Date(d1).getUTCMonth()] + " '" + String(new Date(d1).getUTCFullYear()).slice(2);
   out.push('<text class="mkt-ax" x="' + (W - padX) + '" y="' + (H - 8) + '" text-anchor="end">' + lastLab + '</text>');
   out.push('</svg>');
+  if (opts.id) {
+    var daily = false;
+    if (series[0] && series[0].pts.length > 1) {
+      daily = (Date.parse(series[0].pts[1][0]) - Date.parse(series[0].pts[0][0])) < 20 * 86400000;
+    }
+    mktCharts[opts.id] = {
+      series: series.map(function (s) { return { pts: s.pts, color: s.color, label: s.label || '', ts: s.pts.map(function (p) { return Date.parse(p[0]); }) }; }),
+      d0: d0, d1: d1, mn: mn, mx: mx, W: W, H: H, padT: padT, padB: padB, padX: padX,
+      fmt: opts.scrubFmt || null, daily: daily
+    };
+  }
   return out.join('');
 }
 
 var MKT_DEFS = [
   { id: 'cape', name: 'Shiller PE', ranges: [['10Y', 120], ['25Y', 300], ['All', 0]], def: 'All',
     big: function (s) { return mktFmt2(mktLast(s.points)); },
-    read: function (s) { return mktRankText(s.points, mktLast(s.points), 'month'); },
+    fmtVal: function (v) { return mktFmt2(v); },
+    read: function (s, b, view, win) { return mktRankText(view, mktLast(s.points), 'month', win); },
     note: 'Prices the whole S&P 500 against ten years of real, inflation-adjusted profits. Smoothing out booms and recessions shows whether stocks are priced high or low against what companies actually earn over a full cycle.' },
   { id: 'pe', name: 'S&P 500 P/E', ranges: [['10Y', 120], ['25Y', 300], ['All', 0]], def: '10Y',
     big: function (s) { return mktFmt2(mktLast(s.points)); },
-    read: function (s) { return mktRankText(s.points, mktLast(s.points), 'month'); },
+    fmtVal: function (v) { return mktFmt2(v); },
+    read: function (s, b, view, win) { return mktRankText(view, mktLast(s.points), 'month', win); },
     note: 'What investors pay for one dollar of the S&P 500\u2019s yearly profit. Higher means the market is pricing in strong future growth — or getting ahead of itself.' },
   { id: 'fg', name: 'Fear & Greed Index', kind: 'fg', ranges: [['3M', 3], ['6M', 6], ['1Y', 12]], def: '1Y',
     big: function (s) { return mktFmt1(s.extra.score); },
+    fmtVal: function (v) { return mktFmt1(v); },
     bigSub: function (s) { return s.extra.rating ? s.extra.rating.charAt(0).toUpperCase() + s.extra.rating.slice(1) : ''; },
     read: function (s) {
       var e = s.extra, bits = [];
@@ -10035,10 +10066,11 @@ var MKT_DEFS = [
     note: 'CNN\u2019s 0-to-100 gauge of investor mood, built from seven market signals. Low readings mean fear is running the market; high readings mean greed is. Extremes in either direction often show up near turning points.' },
   { id: 'vix', name: 'VIX', ranges: [['1Y', 12], ['5Y', 60], ['10Y', 120]], def: '5Y',
     big: function (s) { return mktFmt1(mktLast(s.points)); },
-    read: function (s) {
+    fmtVal: function (v) { return mktFmt1(v); },
+    read: function (s, b, view, win) {
       var v = mktLast(s.points);
       var word = v < 15 ? 'Calm — traders see little risk ahead.' : v < 20 ? 'Normal — a typical level of caution.' : v < 30 ? 'Nervous — traders are paying up for protection.' : 'Fear — the kind of spike that usually comes with a hard sell-off.';
-      return word + ' ' + mktRankText(s.points, v, 'month');
+      return word + ' ' + mktRankText(view, v, 'month', win);
     },
     note: 'The options market\u2019s fear gauge — how much traders pay to insure against a drop. Under 15 is calm, over 30 is panic. It spikes when stocks fall hard.' },
   { id: 'aaii', name: 'AAII Investor Sentiment', kind: 'aaii',
@@ -10053,7 +10085,8 @@ var MKT_DEFS = [
     note: 'A weekly survey of individual investors: bullish, bearish, or neutral on the next six months? The black tick on each bar is the long-run average. When one side gets this lopsided, the crowd has often been more emotional than right — but it can stay lopsided for weeks.' },
   { id: 'mich', name: 'Consumer Sentiment', ranges: [['10Y', 120], ['25Y', 300], ['All', 0]], def: '25Y',
     big: function (s) { return mktFmt1(mktLast(s.points)); },
-    read: function (s) { return mktLowText(s.points, mktLast(s.points), 'month'); },
+    fmtVal: function (v) { return mktFmt1(v); },
+    read: function (s, b, view, win) { return mktLowText(view, mktLast(s.points), 'month', win); },
     note: 'The University of Michigan\u2019s monthly survey of how consumers feel about their finances and the economy, running since 1952. It tracks whether households feel like spending — and household spending is most of the economy.' },
   { id: 'eyx', name: 'Earnings Yield vs 10-Year', kind: 'dual', ranges: [['2Y', 24], ['5Y', 60], ['10Y', 120]], def: '10Y',
     big: function (s, b) {
@@ -10068,6 +10101,7 @@ var MKT_DEFS = [
     note: 'Earnings yield is the flip side of the P/E: profit per dollar of price. Lined up against the 10-year Treasury, it shows what stocks pay you versus what a safe government bond pays you.' },
   { id: 'tnx', name: '10-Year Treasury', ranges: [['1Y', 12], ['5Y', 60], ['10Y', 120]], def: '10Y', pct: true,
     big: function (s) { return mktFmt2(mktLast(s.points)) + '%'; },
+    fmtVal: function (v) { return mktFmt2(v) + '%'; },
     read: function (s) {
       var v = mktLast(s.points), ya = mktYearAgo(s.points);
       if (!isNum(ya)) return '';
@@ -10076,6 +10110,7 @@ var MKT_DEFS = [
     note: 'The interest rate on the government\u2019s 10-year bond — the benchmark that mortgages, car loans, and company borrowing all price off. When it climbs, borrowing gets more expensive everywhere.' },
   { id: 'curve', name: 'Yield Curve (10Y \u2212 3M)', kind: 'curve', ranges: [['1Y', 12], ['5Y', 60], ['10Y', 120]], def: '5Y', zero: true,
     big: function (s, b) { var c = mktCurvePts(b); var v = mktLast(c); return (v > 0 ? '+' : '') + mktFmt2(v) + '%'; },
+    fmtVal: function (v) { return (v > 0 ? '+' : '') + mktFmt2(v) + '%'; },
     read: function (s, b) {
       var v = mktLast(mktCurvePts(b));
       return v < 0 ? 'Inverted — short-term rates sit above long-term rates. Every inversion since 1970 came before a recession.' : 'A normal upward slope — long-term rates sit above short-term rates, the healthy shape.';
@@ -10083,6 +10118,7 @@ var MKT_DEFS = [
     note: 'The gap between the 10-year rate and the 3-month rate. Normally long-term rates are higher, so the gap is positive. When it goes negative — inverted — it has preceded every recession since 1970.' },
   { id: 'cpi', name: 'Inflation (CPI)', ranges: [['5Y', 60], ['10Y', 120], ['25Y', 300]], def: '10Y', pct: true,
     big: function (s) { return mktFmt1(mktLast(s.points)) + '%'; },
+    fmtVal: function (v) { return mktFmt1(v) + '%'; },
     read: function (s) {
       var pts = s.points, v = mktLast(pts);
       if (pts.length < 4) return '';
@@ -10136,11 +10172,12 @@ function mktPanelHTML(def, b) {
   var rangeKey = mktRanges[def.id] || def.def;
   var months = 0;
   (def.ranges || []).forEach(function (r) { if (r[0] === rangeKey) months = r[1]; });
+  var view = mktSlice(s.points, months);
   var h = ['<div class="mkt-panel" data-mkt-panel="' + def.id + '">'];
   h.push('<div class="mkt-head"><span class="mkt-name">' + esc(def.name) + '</span><span class="mkt-asof">' + esc(mktAsOfLabel(s)) + '</span></div>');
   var big = def.big(s, b);
   h.push('<div class="mkt-big">' + esc(big) + (def.bigSub ? '<span class="mkt-big-sub">' + esc(def.bigSub(s, b)) + '</span>' : '') + '</div>');
-  var read = def.read ? def.read(s, b) : '';
+  var read = def.read ? def.read(s, b, view, rangeKey) : '';
   if (read) h.push('<div class="mkt-read">' + esc(read) + '</div>');
   if (def.kind === 'fg') {
     var sc = Math.max(0, Math.min(100, s.extra.score));
@@ -10154,12 +10191,12 @@ function mktPanelHTML(def, b) {
     });
   } else if (def.kind === 'dual') {
     var al = mktAlignDual(b, months);
-    h.push('<div class="mkt-chart">' + mktLineSVG([{ pts: al.ey, color: '#E7AC18' }, { pts: al.tn, color: '#4C8DFF' }], { fmtY: function (v) { return mktFmt1(v) + '%'; } }) + '</div>');
+    h.push('<div class="mkt-chart" data-mktchart="mktc-eyx">' + mktLineSVG([{ pts: al.ey, color: '#E7AC18', label: 'Earnings yield' }, { pts: al.tn, color: '#4C8DFF', label: '10-year' }], { id: 'mktc-eyx', scrubFmt: function (v) { return mktFmt2(v) + '%'; }, fmtY: function (v) { return mktFmt1(v) + '%'; } }) + MKT_SCRUB_HTML + '</div>');
     h.push('<div class="mkt-legend"><span><span class="sw" style="background:#E7AC18"></span>Earnings yield</span><span><span class="sw" style="background:#4C8DFF"></span>10-year Treasury</span></div>');
   } else if (def.kind === 'curve') {
-    h.push('<div class="mkt-chart">' + mktLineSVG([{ pts: mktSlice(s.points, months), color: '#E7AC18' }], { zero: true, fmtY: function (v) { return mktFmt1(v) + '%'; } }) + '</div>');
+    h.push('<div class="mkt-chart" data-mktchart="mktc-curve">' + mktLineSVG([{ pts: view, color: '#E7AC18' }], { id: 'mktc-curve', scrubFmt: def.fmtVal, zero: true, fmtY: function (v) { return mktFmt1(v) + '%'; } }) + MKT_SCRUB_HTML + '</div>');
   } else {
-    h.push('<div class="mkt-chart">' + mktLineSVG([{ pts: mktSlice(s.points, months), color: '#E7AC18' }], { fmtY: def.pct ? function (v) { return mktFmt1(v) + '%'; } : null }) + '</div>');
+    h.push('<div class="mkt-chart" data-mktchart="mktc-' + def.id + '">' + mktLineSVG([{ pts: view, color: '#E7AC18' }], { id: 'mktc-' + def.id, scrubFmt: def.fmtVal || null, fmtY: def.pct ? function (v) { return mktFmt1(v) + '%'; } : null }) + MKT_SCRUB_HTML + '</div>');
   }
   if (def.ranges) {
     h.push('<div class="mkt-chips">' + def.ranges.map(function (r) {
@@ -10217,6 +10254,82 @@ document.addEventListener('click', function (ev) {
   var panel = document.querySelector('[data-mkt-panel="' + parts[0] + '"]');
   if (def && panel) panel.outerHTML = mktPanelHTML(def, mktBundle);
 });
+
+/* Chart scrubber (Justin's ask, 2026-11-15): drag across a Market
+ * chart to read the value at that date — a line + dot on the chart
+ * and the panel's big number swaps to the scrubbed value with its
+ * date, reverting on release. Deliberately NO pinch zoom here
+ * (that's the scorecard price chart's trick, not this tab's). */
+var mktScrub = null;
+function mktScrubDateLabel(iso, daily) {
+  var p = String(iso || '').split('-');
+  if (p.length !== 3) return String(iso || '');
+  if (daily) return MKT_MON[parseInt(p[1], 10) - 1] + ' ' + parseInt(p[2], 10) + ', ' + p[0];
+  return mktMonLabel(iso);
+}
+function mktScrubAt(ev) {
+  var sc = mktScrub;
+  if (!sc) return;
+  var reg = sc.reg, rect = sc.wrap.getBoundingClientRect();
+  if (!rect.width) return;
+  var fx = (ev.clientX - rect.left) / rect.width;
+  fx = Math.max(0, Math.min(1, fx));
+  var x = fx * reg.W;
+  var ms = reg.d0 + (x - reg.padX) / (reg.W - reg.padX * 2) * (reg.d1 - reg.d0);
+  function nearest(s) {
+    var ts = s.ts, lo = 0, hi = ts.length - 1;
+    if (ms <= ts[0]) return s.pts[0];
+    if (ms >= ts[hi]) return s.pts[hi];
+    while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (ts[mid] <= ms) lo = mid; else hi = mid; }
+    return (ms - ts[lo] <= ts[hi] - ms) ? s.pts[lo] : s.pts[hi];
+  }
+  function X(iso) { return reg.padX + (Date.parse(iso) - reg.d0) / (reg.d1 - reg.d0) * (reg.W - reg.padX * 2); }
+  function Y(v) { return reg.padT + (reg.mx - v) / (reg.mx - reg.mn) * (reg.H - reg.padT - reg.padB); }
+  var p0 = nearest(reg.series[0]);
+  if (!p0) return;
+  var line = sc.wrap.querySelector('.mkt-scrub-line');
+  var dot = sc.wrap.querySelector('.mkt-scrub-dot:not(.d2)');
+  var dot2 = sc.wrap.querySelector('.mkt-scrub-dot.d2');
+  var xPct = X(p0[0]) / reg.W * 100;
+  if (line) { line.hidden = false; line.style.left = xPct + '%'; }
+  if (dot) { dot.hidden = false; dot.style.left = xPct + '%'; dot.style.top = (Y(p0[1]) / reg.H * 100) + '%'; dot.style.background = reg.series[0].color; }
+  var fmt = reg.fmt || function (v) { return mktFmt2(v); };
+  var big = sc.panel.querySelector('.mkt-big');
+  if (big) {
+    var sub = mktScrubDateLabel(p0[0], reg.daily);
+    if (reg.series.length > 1) {
+      var p1 = nearest(reg.series[1]);
+      if (dot2 && p1) { dot2.hidden = false; dot2.style.left = (X(p1[0]) / reg.W * 100) + '%'; dot2.style.top = (Y(p1[1]) / reg.H * 100) + '%'; dot2.style.background = reg.series[1].color; }
+      sub = (reg.series[0].label || '') + ' ' + fmt(p0[1]) + ' · ' + (reg.series[1].label || '') + ' ' + (p1 ? fmt(p1[1]) : '—') + ' · ' + sub;
+      big.innerHTML = esc(fmt(p0[1])) + '<span class="mkt-big-sub">' + esc(sub) + '</span>';
+    } else {
+      big.innerHTML = esc(fmt(p0[1])) + '<span class="mkt-big-sub">' + esc(sub) + '</span>';
+    }
+  }
+}
+function mktScrubEnd() {
+  var sc = mktScrub;
+  if (!sc) return;
+  mktScrub = null;
+  var big = sc.panel.querySelector('.mkt-big');
+  if (big && sc.bigHTML !== null) big.innerHTML = sc.bigHTML;
+  sc.wrap.querySelectorAll('.mkt-scrub-line, .mkt-scrub-dot').forEach(function (el) { el.hidden = true; });
+}
+document.addEventListener('pointerdown', function (ev) {
+  var wrap = ev.target && ev.target.closest ? ev.target.closest('[data-mktchart]') : null;
+  if (!wrap) return;
+  var reg = mktCharts[wrap.getAttribute('data-mktchart')];
+  var panel = wrap.closest('[data-mkt-panel]');
+  if (!reg || !panel) return;
+  var big = panel.querySelector('.mkt-big');
+  mktScrub = { wrap: wrap, reg: reg, panel: panel, bigHTML: big ? big.innerHTML : null };
+  if (wrap.setPointerCapture && ev.pointerId !== undefined) { try { wrap.setPointerCapture(ev.pointerId); } catch (e) {} }
+  mktScrubAt(ev);
+  ev.preventDefault();
+});
+document.addEventListener('pointermove', function (ev) { if (mktScrub) mktScrubAt(ev); });
+document.addEventListener('pointerup', mktScrubEnd);
+document.addEventListener('pointercancel', mktScrubEnd);
 
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(function (s) { s.classList.toggle('active', s.id === 'tab-' + name); });

@@ -942,3 +942,6 @@ table.factors .info-row .info-text.open { max-height: 900px; }
 .mkt-aaii-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
 .mkt-aaii-avg { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); opacity: .55; }
 .mkt-aaii-val { width: 76px; flex: none; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.mkt-chart { position: relative; touch-action: pan-y; cursor: crosshair; }
+.mkt-scrub-line { position: absolute; top: 0; bottom: 0; width: 1.5px; margin-left: -0.75px; background: var(--muted); opacity: .55; pointer-events: none; }
+.mkt-scrub-dot { position: absolute; width: 11px; height: 11px; border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 0 2.5px var(--card); pointer-events: none; }
