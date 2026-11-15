@@ -6708,6 +6708,7 @@ async function scanEnrichTop(fullByIx) {
               var cg = await fetchWlProjCagr(entry.t);
               if (isNum(cg)) {
                 entry.cagr = cg;
+                entry.rec.cagr = cg; // stamp the record too: the screener filters/sorts on it
                 var cpts = Math.max(0, Math.min(100, (cg + 20) / 60 * 100));
                 entry.score = Math.round(0.75 * combined + 0.25 * cpts);
               }
@@ -7783,7 +7784,7 @@ function renderScanCard() {
  * with the app's own value screen fields, scored by the same
  * 60% value + 40% safety blend as the daily Top 10. Runs entirely
  * on-device against stored data — no new fetching. */
-var SCR_FIELDS = ['fpe', 'peg', 'mcap', 'growth', 'below', 'de', 'beta', 'pm', 'cr', 'dy'];
+var SCR_FIELDS = ['fpe', 'peg', 'mcap', 'growth', 'cagr', 'below', 'de', 'beta', 'pm', 'cr', 'dy'];
 var SCR_SAVED_KEY = 'sr_screens_v1';
 function scanRecordScore(rec) {
   if (!(isNum(rec.forwardPE) && rec.forwardPE > 0)) return null;
@@ -7821,6 +7822,7 @@ function scrPasses(rec, f) {
   if (isNum(f.peg) && !(isNum(rec.peg) && rec.peg <= f.peg)) return false;
   if (isNum(f.mcap) && !(isNum(rec.marketCap) && rec.marketCap >= f.mcap * 1e9)) return false;
   if (isNum(f.growth) && !(isNum(rec.epsGrowthNextY) && rec.epsGrowthNextY >= f.growth)) return false;
+  if (isNum(f.cagr) && !(isNum(rec.cagr) && rec.cagr >= f.cagr)) return false;
   if (isNum(f.below) && !(isNum(rec.pctBelowHigh) && rec.pctBelowHigh >= f.below)) return false;
   if (isNum(f.de) && !(isNum(rec.debtEq) && rec.debtEq <= f.de)) return false;
   if (isNum(f.beta) && !(isNum(rec.beta) && rec.beta <= f.beta)) return false;
@@ -7852,20 +7854,22 @@ function runScreener() {
   }
   var f = scrReadControls();
   var out = [];
-  var anyYield = false, anyInd = false;
+  var anyYield = false, anyInd = false, anyCagr = false;
   Object.keys(ds.recs).forEach(function (t) {
     var rec = ds.recs[t];
     if (isNum(rec.divYield)) anyYield = true;
     if (rec.industry) anyInd = true;
+    if (isNum(rec.cagr)) anyCagr = true;
     if (!scrPasses(rec, f)) return;
     var sc = scanRecordScore(rec);
     if (!sc) return;
-    out.push({ t: t, name: rec.name, price: rec.price, forwardPE: rec.forwardPE, epsGrowthNextY: rec.epsGrowthNextY, pctBelowHigh: rec.pctBelowHigh, marketCap: rec.marketCap, score: sc.combined, sector: sectorOf(rec) });
+    out.push({ t: t, name: rec.name, price: rec.price, forwardPE: rec.forwardPE, epsGrowthNextY: rec.epsGrowthNextY, pctBelowHigh: rec.pctBelowHigh, marketCap: rec.marketCap, cagr: rec.cagr, score: sc.combined, sector: sectorOf(rec) });
   });
   var sorters = {
     combined: function (a, b) { return b.score - a.score; },
     fpe: function (a, b) { return a.forwardPE - b.forwardPE; },
     growth: function (a, b) { return (isNum(b.epsGrowthNextY) ? b.epsGrowthNextY : -1e9) - (isNum(a.epsGrowthNextY) ? a.epsGrowthNextY : -1e9); },
+    cagr: function (a, b) { return (isNum(b.cagr) ? b.cagr : -1e9) - (isNum(a.cagr) ? a.cagr : -1e9); },
     below: function (a, b) { return (isNum(b.pctBelowHigh) ? b.pctBelowHigh : -1) - (isNum(a.pctBelowHigh) ? a.pctBelowHigh : -1); },
     mcap: function (a, b) { return (isNum(b.marketCap) ? b.marketCap : 0) - (isNum(a.marketCap) ? a.marketCap : 0); },
     sector: function (a, b) { var sa = a.sector === 'Other' ? 'ZZZ' : a.sector, sb = b.sector === 'Other' ? 'ZZZ' : b.sector; return sa < sb ? -1 : sa > sb ? 1 : (b.score - a.score); }
@@ -7882,11 +7886,12 @@ function runScreener() {
     }
     html += '<button type="button" class="scan-row" data-scr-research="' + esc(row.t) + '">' +
       '<span class="scan-rank">' + (i + 1) + '</span>' +
-      logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name || row.t) + (row.sector !== 'Other' ? ' \u00b7 ' + esc(row.sector) : '') + '</span></span>' +
+      logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name || row.t) + (row.sector !== 'Other' ? ' \u00b7 ' + esc(row.sector) : '') + (isNum(row.cagr) ? ' \u00b7 CAGR ' + (row.cagr >= 0 ? '+' : '') + fmtNum(row.cagr, 0) + '%/yr' : '') + '</span></span>' +
       '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
       '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
   });
-  if (!out.length && isNum(f.dy) && !anyYield) html += '<div class="status">Dividend yield isn\'t in the stored data yet \u2014 it arrives with the next scan, or tap Rescan on the Watchlist scan card to get it now. <button type="button" class="link-btn" data-scr-gocard="1">Open the scan card</button></div>';
+  if (!out.length && isNum(f.cagr) && !anyCagr) html += '<div class="status">Projected CAGR isn\'t in the stored data yet \u2014 it lands on the deep-checked stocks with the next scan, or tap Rescan on the Watchlist scan card to get it now. <button type="button" class="link-btn" data-scr-gocard="1">Open the scan card</button></div>';
+  else if (!out.length && isNum(f.dy) && !anyYield) html += '<div class="status">Dividend yield isn\'t in the stored data yet \u2014 it arrives with the next scan, or tap Rescan on the Watchlist scan card to get it now. <button type="button" class="link-btn" data-scr-gocard="1">Open the scan card</button></div>';
   else if (!out.length && f.sector && f.sector !== 'all' && !anyInd) html += '<div class="status">Sector data isn\'t in the stored data yet \u2014 it arrives with the next scan, or tap Rescan on the Watchlist scan card to get it now. <button type="button" class="link-btn" data-scr-gocard="1">Open the scan card</button></div>';
   else if (!out.length) html += '<div class="status">No stored stocks match those filters. <button type="button" class="link-btn" data-scr-clear="1">Clear the filters</button></div>';
   box.innerHTML = html;
