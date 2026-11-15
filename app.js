@@ -4269,10 +4269,19 @@ function pjCaseEps(base, path, factor) {
        * Base on CoreWeave). Scale the year's DOLLAR step instead: the
        * recovery (or slide) shrinks in Bear, stretches in Bull, and the
        * cases stay ordered. Once EPS is positive, growth scaling (the
-       * documented rule) takes over. */
-      eps = eps + (path[i].eps - pPrev) * factor;
+       * documented rule) takes over. A DOWNWARD step flips the factor
+       * (2 - factor): shrinking a slide would make Bear the optimistic
+       * case, the same inversion in the other branch. */
+      var step = path[i].eps - pPrev;
+      eps = eps + step * (step < 0 ? (2 - factor) : factor);
     } else {
-      eps = eps + Math.abs(eps) * ((g * factor) / 100);
+      /* A negative growth rate flips the factor the same way
+       * (Justin's HNST screenshot, 2026-11-15): the base path fell
+       * -91% in year one, so Bear's x0.8 softened the drop (Bear EPS
+       * $0.52) and Bull's x1.2 deepened it (Bull $0.02) -- the cases
+       * came out backwards. Down years: Bear deepens the fall
+       * (x1.2), Bull softens it (x0.8). Up years are untouched. */
+      eps = eps + Math.abs(eps) * ((g * (g < 0 ? (2 - factor) : factor)) / 100);
     }
     if (isNum(path[i].eps)) pPrev = path[i].eps;
   }
