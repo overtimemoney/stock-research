@@ -326,7 +326,12 @@ table.factors td:first-child:has(.info-dot) { padding-right: 28px; }
 .scr-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 8px; }
 .scr-actions .btn-gold { flex: 1; }
 .src-line { font-size: 11.5px; color: var(--muted); margin-top: 12px; line-height: 1.5; }
-.sc-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.sc-actions { margin-top: 14px; background: var(--card); border: 1.5px solid var(--line); border-radius: var(--radius); padding: 2px 16px; }
+.sc-act { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 14px 0; background: none; border: none; border-bottom: 1px solid var(--row-line); font: inherit; font-size: 15.5px; font-weight: 600; color: var(--ink); text-align: left; cursor: pointer; text-decoration: none; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+.sc-act:last-child { border-bottom: none; }
+.sc-act:active { opacity: .5; }
+.sc-act-arrow { color: var(--accent-text); font-size: 21px; font-weight: 700; line-height: 1; flex: none; }
+.sc-ext .sc-act-arrow { font-size: 16px; }
 
 /* ---------- compare ---------- */
 table.cmp td.best { font-weight: 900; }

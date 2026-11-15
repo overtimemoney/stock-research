@@ -3826,13 +3826,16 @@ function renderScorecard(d) {
     swotBox('O', 'Opportunities', swot.O, 'sw-o') + swotBox('T', 'Threats', swot.T, 'sw-t') + '</div>';
   html += '<p class="fineprint">Auto-generated from the figures on this page — numbers only, no news.</p>';
 
+  /* Action list (Justin's ask, 2026-11-15): the pill buttons became
+   * a clean row list -- one action per line, arrow at the right,
+   * tap takes you there. Reads like a settings/brokerage list. */
   html += '<div class="sc-actions">' +
-    '<button class="btn-ghost" id="sc-watch" type="button">◎ Add to watchlist</button>' +
-    '<button class="btn-ghost" id="sc-journal" type="button">✎ Journal this stock</button>' +
-    '<button class="btn-ghost" id="sc-project" type="button">✦ Project it</button>' +
-    '<button class="btn-ghost" id="sc-charts" type="button">📊 Charts</button>' +
-    '<button class="btn-ghost" id="sc-refresh" type="button">↻ Refresh data</button>' +
-    '<a class="btn-ghost sc-ext" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=' + esc(d.ticker) + '&type=&dateb=&owner=include&count=10" target="_blank" rel="noopener">SEC filings ↗</a></div>';
+    '<button class="sc-act" id="sc-watch" type="button"><span>Add to watchlist</span><span class="sc-act-arrow">›</span></button>' +
+    '<button class="sc-act" id="sc-journal" type="button"><span>Journal this stock</span><span class="sc-act-arrow">›</span></button>' +
+    '<button class="sc-act" id="sc-project" type="button"><span>Project it</span><span class="sc-act-arrow">›</span></button>' +
+    '<button class="sc-act" id="sc-charts" type="button"><span>Charts</span><span class="sc-act-arrow">›</span></button>' +
+    '<button class="sc-act" id="sc-refresh" type="button"><span>Refresh data</span><span class="sc-act-arrow">›</span></button>' +
+    '<a class="sc-act sc-ext" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=' + esc(d.ticker) + '&type=&dateb=&owner=include&count=10" target="_blank" rel="noopener"><span>SEC filings</span><span class="sc-act-arrow">↗</span></a></div>';
 
   html += stockNewsSectionHtml('sc', d.ticker);
 
