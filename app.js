@@ -3900,7 +3900,13 @@ function renderScorecard(d) {
 async function runSearch(ticker, fresh) {
   var rawQ = String(ticker || '').trim();
   if (!rawQ) return;
+  var stEl = $('score-status');
+  if (stEl) { stEl.className = 'status'; stEl.innerHTML = '<span class="spinner"></span>Finding that stock…'; }
   var T = await resolveTickerInput(rawQ);
+  if (T === null) {
+    if (stEl) { stEl.className = 'status err'; stEl.textContent = noMatchMsg(rawQ); }
+    return;
+  }
   if (!T) return;
   if (T !== rawQ.toUpperCase()) { var siEl = $('search-input'); if (siEl) siEl.value = T; }
   scWin = null;
@@ -4415,6 +4421,7 @@ async function loadProjectionTicker() {
   var T = await resolveTickerInput(rawQ);
   if (T && T !== rawQ.toUpperCase()) $('pj-ticker').value = T;
   var status = $('pj-status');
+  if (T === null) { status.className = 'status err'; status.textContent = noMatchMsg(rawQ); return; }
   if (!T) { status.className = 'status err'; status.textContent = 'Type a ticker first.'; return; }
   status.className = 'status';
   status.innerHTML = '<span class="spinner"></span>Loading live data for ' + esc(T) + '…';
@@ -6102,6 +6109,7 @@ async function loadQm() {
   var rawQ = String(($('qm-ticker').value || '')).trim();
   if (!rawQ) return;
   var T = await resolveTickerInput(rawQ);
+  if (T === null) { $('qm-status').innerHTML = '<span class="status err">' + esc(noMatchMsg(rawQ)) + '</span>'; return; }
   if (!T) return;
   if (T !== rawQ.toUpperCase()) $('qm-ticker').value = T;
   if (qmStore.ticker !== T) { qmStore = { ticker: T, q: null, y: null }; qmMode = 'grid'; }
@@ -9719,7 +9727,24 @@ function applyTheme(t) {
  * "sofi tech") or a partial ticker and pick the right symbol. Sources:
  * Yahoo symbol search, falling back to Nasdaq's autocomplete — both ride
  * the same relay race as the rest of the app. */
+var sugCache = {};
 async function tickerSuggestions(q) {
+  var query = String(q || '').trim();
+  if (query.length < 2) return [];
+  /* 60-second cache, shared with the dropdown: when the user hits
+   * Research a moment after the dropdown loaded, the resolve step
+   * reuses those results instead of refetching into a relay wave
+   * and coming back empty (Justin's report, 2026-11-15: typed a
+   * name, hit Research without tapping the dropdown, got told
+   * there were no matching stocks). */
+  var ck = query.toLowerCase();
+  var hit = sugCache[ck];
+  if (hit && Date.now() - hit.ts < 60000) return hit.items;
+  var out = await tickerSuggestionsFetch(query);
+  if (out && out.length) sugCache[ck] = { ts: Date.now(), items: out };
+  return out;
+}
+async function tickerSuggestionsFetch(q) {
   var query = String(q || '').trim();
   if (query.length < 2) return [];
   try {
@@ -9759,6 +9784,31 @@ function looksKnownTicker(T) {
   return false;
 }
 
+var scanTickerSet = null;
+function scanKnowsTicker(T) {
+  try {
+    if (!scanTickerSet) {
+      scanTickerSet = {};
+      var data = lsGet('sr_scan_data_v1', null);
+      var idxs = data ? Object.keys(data) : [];
+      idxs.forEach(function (ix) {
+        var part = data[ix] || {};
+        (part.recs || []).forEach(function (r) { if (r && (r.t || r.ticker)) scanTickerSet[String(r.t || r.ticker).toUpperCase()] = 1; });
+        (part.top || []).forEach(function (r) { if (r && (r.t || r.ticker)) scanTickerSet[String(r.t || r.ticker).toUpperCase()] = 1; });
+      });
+    }
+    return !!scanTickerSet[T];
+  } catch (e) { return false; }
+}
+
+/* Returns '' for empty input, null when nothing matches, else the
+ * resolved ticker. The old version fell back to the raw text when
+ * the lookup came back empty, so a typed NAME (or a typo) was
+ * fetched as if it were a symbol and ground through three retries
+ * before failing — the user had to tap the dropdown first. Now:
+ * one retry (relays fail in waves), then a bare symbol is trusted
+ * only if the local scan universe knows it; anything else is an
+ * honest no-match and the caller says so right away. */
 async function resolveTickerInput(raw) {
   var q = String(raw || '').trim();
   if (!q) return '';
@@ -9766,13 +9816,21 @@ async function resolveTickerInput(raw) {
   if (looksKnownTicker(up)) return up;
   var items = [];
   try { items = await tickerSuggestions(q); } catch (e) {}
+  if (!items || !items.length) {
+    await new Promise(function (res) { setTimeout(res, 700); });
+    try { items = await tickerSuggestions(q); } catch (e) {}
+  }
   if (items && items.length) {
     for (var i = 0; i < items.length; i++) {
       if (items[i].symbol && items[i].symbol.toUpperCase() === up) return items[i].symbol.toUpperCase();
     }
     if (items[0].symbol) return items[0].symbol.toUpperCase();
   }
-  return up;
+  if (/^[A-Z]{1,5}([\.\-][A-Z])?$/.test(up) && scanKnowsTicker(up)) return up;
+  return null;
+}
+function noMatchMsg(raw) {
+  return 'No matching stocks for \u201c' + String(raw || '').trim() + '\u201d. Check the spelling, or type the company name and pick from the list.';
 }
 
 /* Bound a promise so no load can spin forever on a hung route. */
