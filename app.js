@@ -3937,7 +3937,7 @@ async function runSearch(ticker, fresh) {
         status.className = 'status err';
         status.textContent = showedStale
           ? 'Couldn\'t refresh ' + T + ' — the data routes are having a bad stretch. You\'re still seeing your last saved data above; try Refresh again in a minute.'
-          : (e.message || 'Something went wrong fetching that ticker.') + ' (Tried 3 times — the data routes are having a bad stretch. Give it a minute and tap Research again.)';
+          : friendlyErr(e, 'Something went wrong fetching that ticker.') + ' (Tried 3 times — the data routes are having a bad stretch. Give it a minute and tap Research again.)';
         return;
       }
       status.innerHTML = '<span class="spinner"></span>A data route hiccuped — retrying automatically (' + attempt + ' of 3)…';
@@ -4465,7 +4465,7 @@ async function loadProjectionTicker() {
     runProjection();
   } catch (e) {
     status.className = 'status err';
-    status.textContent = e.message || 'Could not load that ticker.';
+    status.textContent = friendlyErr(e, 'Could not load that ticker.');
   }
 }
 function pjScenClass(maxLen) {
@@ -4773,8 +4773,11 @@ async function fetchQMetrics(T, freq) {
     relayFetch(base + 'balance-sheet/' + suffix, { timeout: 25000, validate: ok }).catch(function () { return null; })
   ]);
   var data = parseSAQuarterly(pages[0] || pages[1], pages[2], yearly, pages[4]);
+  /* The null check must come FIRST: when every page fails, data is
+   * null and touching data.est threw the raw engine error Justin
+   * screenshotted on 2026-11-15 instead of this plain message. */
+  if (!data || !data.revenue) throw new Error('No ' + (yearly ? 'annual' : 'quarterly') + ' statements came back for \u201c' + T + '\u201d \u2014 the data source didn\u2019t answer, or it doesn\u2019t cover this stock. Try again in a moment.');
   data.est = yearly ? parseSAForecastMetrics(pages[3]) : null;
-  if (!data || !data.revenue) throw new Error('No ' + (yearly ? 'annual' : 'quarterly') + ' statements found for \u201c' + T + '\u201d.');
   data.estEps = [];
   try {
     var fc = await relayJSON('https://api.nasdaq.com/api/analyst/' + encodeURIComponent(T) + '/earnings-forecast?assetclass=stocks');
@@ -5318,6 +5321,14 @@ function qmBarsSVG(pts, fmt) {
     var est = widest(labs) * vfs * 0.64;
     if (est > bw * 0.98) vfs = Math.max(10.5, Math.floor(vfs * (bw * 0.98 / est) * 2) / 2);
   }
+  /* Last resort (Justin's screenshot, 2026-11-15: 20 quarterly bars
+   * at the 10Y window -- even the floored 10.5px font leaves "$51.7B"
+   * wider than its bar slot, so neighbours ran together). Thin the
+   * labels: show every Nth one, counting back from the last bar so
+   * the latest value is always labelled. */
+  var labStride = 1;
+  var estW = widest(labs) * vfs * 0.64;
+  if (estW > bw * 0.98) labStride = Math.max(2, Math.ceil(estW / (bw * 0.98)));
   // Negative bars carry their value label BELOW the bar; reserve enough
   // bottom room that it can never land on the axis labels (TSLA FCF
   // screenshot, 2026-10-31).
@@ -5345,8 +5356,10 @@ function qmBarsSVG(pts, fmt) {
       : 'fill:' + col + ';filter:drop-shadow(0 0 6px ' + col + ')';
     if (i === nowI) fill += ';stroke:var(--ink);stroke-width:2.5';
     out += '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bwid.toFixed(1) + '" height="' + Math.max(1.5, bot - top).toFixed(1) + '" rx="1.5" style="' + fill + '"/>';
-    var ly = p.value >= 0 ? top - 8 : bot + vfs + 3;
-    out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="middle" font-size="' + vfs + '" font-weight="800" style="fill:var(--chart-val)">' + esc(labs[i]) + '</text>';
+    if ((pts.length - 1 - i) % labStride === 0) {
+      var ly = p.value >= 0 ? top - 8 : bot + vfs + 3;
+      out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="middle" font-size="' + vfs + '" font-weight="800" style="fill:var(--chart-val)">' + esc(labs[i]) + '</text>';
+    }
     if (p.axis) {
       var nowAxis = i === nowI;
       out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="12" font-weight="' + (nowAxis ? '800' : '700') + '" fill="' + (nowAxis ? 'var(--ink)' : '#8a8271') + '">' + esc(p.axis) + '</text>';
@@ -6041,6 +6054,17 @@ function qmNextYLabels(lastLabel, n) {
   return out;
 }
 
+/* User-facing error text: our own authored messages pass through;
+ * raw engine/network text ("null is not an object...", "Failed to
+ * fetch") never reaches the screen -- the caller supplies a plain
+ * fallback instead. (Justin's rule: no debug strings in the UI.) */
+function friendlyErr(e, fallback) {
+  var m = (e && e.message) || '';
+  if (!m) return fallback;
+  if (/is not an object|is not a function|Cannot read propert|Cannot destructure|undefined is not|null is not|SyntaxError|TypeError|ReferenceError|RangeError|Unexpected token|Failed to fetch|NetworkError|Load failed/i.test(m)) return fallback;
+  return m;
+}
+
 async function loadQm() {
   var rawQ = String(($('qm-ticker').value || '')).trim();
   if (!rawQ) return;
@@ -6062,7 +6086,7 @@ async function loadQm() {
     renderQm();
   } catch (e) {
     $('qm-body').hidden = true;
-    st.innerHTML = '<span class="status err">' + esc(e.message || 'Could not load data.') + '</span>';
+    st.innerHTML = '<span class="status err">' + esc(friendlyErr(e, 'Couldn\u2019t load charts for ' + T + ' \u2014 the data source didn\u2019t answer. Check your connection and try again.')) + '</span>';
   }
 }
 
@@ -8371,7 +8395,7 @@ function openOverview(T) {
     wireOverviewActions(d);
   }).catch(function (e) {
     if (ovTicker !== T || (hit && hit.data)) return;
-    body.innerHTML = '<div class="card"><div class="alert warn">Could not load ' + esc(T) + ' \u2014 ' + esc((e && e.message) || 'fetch failed') + '</div><button type="button" class="btn-gold" id="ov-retry">Retry</button></div>';
+    body.innerHTML = '<div class="card"><div class="alert warn">Could not load ' + esc(T) + ' \u2014 ' + esc(friendlyErr(e, 'the data didn\u2019t come back')) + '</div><button type="button" class="btn-gold" id="ov-retry">Retry</button></div>';
     var rb = $('ov-retry');
     if (rb) rb.addEventListener('click', function () { openOverview(T); });
   });
