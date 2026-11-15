@@ -9982,6 +9982,7 @@ function mktYearAgo(pts) {
  * a finger position back to a date and value. */
 var mktCharts = {};
 var MKT_SCRUB_HTML = '<span class="mkt-scrub-line" hidden></span><span class="mkt-scrub-dot" hidden></span><span class="mkt-scrub-dot d2" hidden></span>';
+function mktScrubBar(uid) { return '<div class="mkt-scrubbar" data-mktscrub="' + uid + '"><div class="mkt-scrub-track"></div><div class="mkt-scrub-thumb"></div></div>'; }
 function mktLineSVG(series, opts) {
   opts = opts || {};
   var W = 640, H = 200, padT = 16, padB = 22, padX = 4;
@@ -10191,12 +10192,12 @@ function mktPanelHTML(def, b) {
     });
   } else if (def.kind === 'dual') {
     var al = mktAlignDual(b, months);
-    h.push('<div class="mkt-chart" data-mktchart="mktc-eyx">' + mktLineSVG([{ pts: al.ey, color: '#E7AC18', label: 'Earnings yield' }, { pts: al.tn, color: '#4C8DFF', label: '10-year' }], { id: 'mktc-eyx', scrubFmt: function (v) { return mktFmt2(v) + '%'; }, fmtY: function (v) { return mktFmt1(v) + '%'; } }) + MKT_SCRUB_HTML + '</div>');
+    h.push('<div class="mkt-chart" data-mktchart="mktc-eyx">' + mktLineSVG([{ pts: al.ey, color: '#E7AC18', label: 'Earnings yield' }, { pts: al.tn, color: '#4C8DFF', label: '10-year' }], { id: 'mktc-eyx', scrubFmt: function (v) { return mktFmt2(v) + '%'; }, fmtY: function (v) { return mktFmt1(v) + '%'; } }) + MKT_SCRUB_HTML + '</div>' + mktScrubBar('mktc-eyx'));
     h.push('<div class="mkt-legend"><span><span class="sw" style="background:#E7AC18"></span>Earnings yield</span><span><span class="sw" style="background:#4C8DFF"></span>10-year Treasury</span></div>');
   } else if (def.kind === 'curve') {
-    h.push('<div class="mkt-chart" data-mktchart="mktc-curve">' + mktLineSVG([{ pts: view, color: '#E7AC18' }], { id: 'mktc-curve', scrubFmt: def.fmtVal, zero: true, fmtY: function (v) { return mktFmt1(v) + '%'; } }) + MKT_SCRUB_HTML + '</div>');
+    h.push('<div class="mkt-chart" data-mktchart="mktc-curve">' + mktLineSVG([{ pts: view, color: '#E7AC18' }], { id: 'mktc-curve', scrubFmt: def.fmtVal, zero: true, fmtY: function (v) { return mktFmt1(v) + '%'; } }) + MKT_SCRUB_HTML + '</div>' + mktScrubBar('mktc-curve'));
   } else {
-    h.push('<div class="mkt-chart" data-mktchart="mktc-' + def.id + '">' + mktLineSVG([{ pts: view, color: '#E7AC18' }], { id: 'mktc-' + def.id, scrubFmt: def.fmtVal || null, fmtY: def.pct ? function (v) { return mktFmt1(v) + '%'; } : null }) + MKT_SCRUB_HTML + '</div>');
+    h.push('<div class="mkt-chart" data-mktchart="mktc-' + def.id + '">' + mktLineSVG([{ pts: view, color: '#E7AC18' }], { id: 'mktc-' + def.id, scrubFmt: def.fmtVal || null, fmtY: def.pct ? function (v) { return mktFmt1(v) + '%'; } : null }) + MKT_SCRUB_HTML + '</div>' + mktScrubBar('mktc-' + def.id));
   }
   if (def.ranges) {
     h.push('<div class="mkt-chips">' + def.ranges.map(function (r) {
@@ -10255,24 +10256,27 @@ document.addEventListener('click', function (ev) {
   if (def && panel) panel.outerHTML = mktPanelHTML(def, mktBundle);
 });
 
-/* Chart scrubber (Justin's ask, 2026-11-15): drag across a Market
- * chart to read the value at that date — a line + dot on the chart
- * and the panel's big number swaps to the scrubbed value with its
- * date, reverting on release. Deliberately NO pinch zoom here
- * (that's the scorecard price chart's trick, not this tab's). */
-var mktScrub = null;
+/* Chart scrubber (Justin's asks, 2026-11-15): like the scorecard
+ * price chart, but the finger must not cover the chart — so the
+ * drag happens on a strip BELOW the chart. Drag the strip to
+ * scrub (line + dot on the chart above, the panel's big number
+ * swaps to the value + date, release reverts). TAP the chart
+ * itself to pin the marker at that spot; tap again to clear.
+ * Deliberately NO pinch zoom here. */
+var mktScrub = null;   // active strip drag
+var mktPin = {};       // defId -> true while a tap-pinned reading shows
+var mktTap = null;     // pending chart tap {x, t, defId}
 function mktScrubDateLabel(iso, daily) {
   var p = String(iso || '').split('-');
   if (p.length !== 3) return String(iso || '');
   if (daily) return MKT_MON[parseInt(p[1], 10) - 1] + ' ' + parseInt(p[2], 10) + ', ' + p[0];
   return mktMonLabel(iso);
 }
-function mktScrubAt(ev) {
-  var sc = mktScrub;
-  if (!sc) return;
-  var reg = sc.reg, rect = sc.wrap.getBoundingClientRect();
+function mktScrubPanel(defId) { return document.querySelector('[data-mkt-panel="' + defId + '"]'); }
+function mktScrubShow(panel, reg, clientX, srcEl) {
+  var rect = srcEl.getBoundingClientRect();
   if (!rect.width) return;
-  var fx = (ev.clientX - rect.left) / rect.width;
+  var fx = (clientX - rect.left) / rect.width;
   fx = Math.max(0, Math.min(1, fx));
   var x = fx * reg.W;
   var ms = reg.d0 + (x - reg.padX) / (reg.W - reg.padX * 2) * (reg.d1 - reg.d0);
@@ -10287,49 +10291,76 @@ function mktScrubAt(ev) {
   function Y(v) { return reg.padT + (reg.mx - v) / (reg.mx - reg.mn) * (reg.H - reg.padT - reg.padB); }
   var p0 = nearest(reg.series[0]);
   if (!p0) return;
-  var line = sc.wrap.querySelector('.mkt-scrub-line');
-  var dot = sc.wrap.querySelector('.mkt-scrub-dot:not(.d2)');
-  var dot2 = sc.wrap.querySelector('.mkt-scrub-dot.d2');
+  var wrap = panel.querySelector('[data-mktchart]');
+  var line = wrap.querySelector('.mkt-scrub-line');
+  var dot = wrap.querySelector('.mkt-scrub-dot:not(.d2)');
+  var dot2 = wrap.querySelector('.mkt-scrub-dot.d2');
   var xPct = X(p0[0]) / reg.W * 100;
   if (line) { line.hidden = false; line.style.left = xPct + '%'; }
   if (dot) { dot.hidden = false; dot.style.left = xPct + '%'; dot.style.top = (Y(p0[1]) / reg.H * 100) + '%'; dot.style.background = reg.series[0].color; }
+  var thumb = panel.querySelector('.mkt-scrub-thumb');
+  if (thumb) thumb.style.left = xPct + '%';
   var fmt = reg.fmt || function (v) { return mktFmt2(v); };
-  var big = sc.panel.querySelector('.mkt-big');
+  var big = panel.querySelector('.mkt-big');
   if (big) {
+    if (big.getAttribute('data-mkt-orig') === null) big.setAttribute('data-mkt-orig', big.innerHTML);
     var sub = mktScrubDateLabel(p0[0], reg.daily);
     if (reg.series.length > 1) {
       var p1 = nearest(reg.series[1]);
       if (dot2 && p1) { dot2.hidden = false; dot2.style.left = (X(p1[0]) / reg.W * 100) + '%'; dot2.style.top = (Y(p1[1]) / reg.H * 100) + '%'; dot2.style.background = reg.series[1].color; }
       sub = (reg.series[0].label || '') + ' ' + fmt(p0[1]) + ' · ' + (reg.series[1].label || '') + ' ' + (p1 ? fmt(p1[1]) : '—') + ' · ' + sub;
-      big.innerHTML = esc(fmt(p0[1])) + '<span class="mkt-big-sub">' + esc(sub) + '</span>';
-    } else {
-      big.innerHTML = esc(fmt(p0[1])) + '<span class="mkt-big-sub">' + esc(sub) + '</span>';
     }
+    big.innerHTML = esc(fmt(p0[1])) + '<span class="mkt-big-sub">' + esc(sub) + '</span>';
   }
 }
-function mktScrubEnd() {
-  var sc = mktScrub;
-  if (!sc) return;
-  mktScrub = null;
-  var big = sc.panel.querySelector('.mkt-big');
-  if (big && sc.bigHTML !== null) big.innerHTML = sc.bigHTML;
-  sc.wrap.querySelectorAll('.mkt-scrub-line, .mkt-scrub-dot').forEach(function (el) { el.hidden = true; });
+function mktScrubClear(panel) {
+  if (!panel) return;
+  var big = panel.querySelector('.mkt-big');
+  if (big && big.getAttribute('data-mkt-orig') !== null) { big.innerHTML = big.getAttribute('data-mkt-orig'); big.removeAttribute('data-mkt-orig'); }
+  panel.querySelectorAll('.mkt-scrub-line, .mkt-scrub-dot').forEach(function (el) { el.hidden = true; });
+  var thumb = panel.querySelector('.mkt-scrub-thumb');
+  if (thumb) thumb.style.left = '100%';
+  delete mktPin[panel.getAttribute('data-mkt-panel')];
 }
 document.addEventListener('pointerdown', function (ev) {
+  var bar = ev.target && ev.target.closest ? ev.target.closest('[data-mktscrub]') : null;
+  if (bar) {
+    var panelB = bar.closest('[data-mkt-panel]');
+    var regB = mktCharts[bar.getAttribute('data-mktscrub')];
+    if (!panelB || !regB) return;
+    mktScrubClear(panelB);
+    mktScrub = { bar: bar, reg: regB, panel: panelB };
+    if (bar.setPointerCapture && ev.pointerId !== undefined) { try { bar.setPointerCapture(ev.pointerId); } catch (e) {} }
+    mktScrubShow(panelB, regB, ev.clientX, bar);
+    ev.preventDefault();
+    return;
+  }
   var wrap = ev.target && ev.target.closest ? ev.target.closest('[data-mktchart]') : null;
-  if (!wrap) return;
-  var reg = mktCharts[wrap.getAttribute('data-mktchart')];
-  var panel = wrap.closest('[data-mkt-panel]');
-  if (!reg || !panel) return;
-  var big = panel.querySelector('.mkt-big');
-  mktScrub = { wrap: wrap, reg: reg, panel: panel, bigHTML: big ? big.innerHTML : null };
-  if (wrap.setPointerCapture && ev.pointerId !== undefined) { try { wrap.setPointerCapture(ev.pointerId); } catch (e) {} }
-  mktScrubAt(ev);
-  ev.preventDefault();
+  if (wrap) {
+    var panelW = wrap.closest('[data-mkt-panel]');
+    if (panelW) mktTap = { x: ev.clientX, t: Date.now(), defId: panelW.getAttribute('data-mkt-panel'), uid: wrap.getAttribute('data-mktchart') };
+  }
 });
-document.addEventListener('pointermove', function (ev) { if (mktScrub) mktScrubAt(ev); });
-document.addEventListener('pointerup', mktScrubEnd);
-document.addEventListener('pointercancel', mktScrubEnd);
+document.addEventListener('pointermove', function (ev) {
+  if (mktScrub) mktScrubShow(mktScrub.panel, mktScrub.reg, ev.clientX, mktScrub.bar);
+  if (mktTap && Math.abs(ev.clientX - mktTap.x) > 8) mktTap = null;
+});
+function mktScrubRelease() {
+  if (mktScrub) { var p = mktScrub.panel; mktScrub = null; mktScrubClear(p); }
+  if (mktTap) {
+    var tap = mktTap; mktTap = null;
+    if (Date.now() - tap.t > 400) return;
+    var panel = mktScrubPanel(tap.defId);
+    var reg = mktCharts[tap.uid];
+    if (!panel || !reg) return;
+    if (mktPin[tap.defId]) { mktScrubClear(panel); return; }
+    var wrap = panel.querySelector('[data-mktchart]');
+    mktScrubShow(panel, reg, tap.x, wrap);
+    mktPin[tap.defId] = true;
+  }
+}
+document.addEventListener('pointerup', mktScrubRelease);
+document.addEventListener('pointercancel', function () { mktTap = null; if (mktScrub) { var p = mktScrub.panel; mktScrub = null; mktScrubClear(p); } });
 
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(function (s) { s.classList.toggle('active', s.id === 'tab-' + name); });
