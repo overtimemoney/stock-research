@@ -1608,7 +1608,7 @@ async function pjEnsurePe5y(d) {
  * growth decelerates hard by the final projected year versus the
  * path's peak pace, the finished multiple is trimmed -- no trim
  * while the final year still runs at half the peak pace or better,
- * down to x0.80 when it has faded to a tenth of it. Only applies
+ * down to x0.50 when it has faded to a tenth of it. Only applies
  * when the peak pace exceeded 20%/yr and at least two growth steps
  * exist on the path (TTM + consensus years, positive-to-positive). */
 var pjExitDetail = null;
@@ -1738,7 +1738,7 @@ function pjComputeExitPe(d) {
    * (TTM first, then each consensus year). Only bites when the peak
    * pace was real (>20%/yr) and at least two steps exist: no trim
    * while the final year still runs at half the peak pace or
-   * better, down to x0.80 when it has faded to a tenth of it. */
+   * better, down to x0.50 when it has faded to a tenth of it. */
   var exitSlow = 1;
   var pathEps = [];
   if (isNum(d.epsTTM)) pathEps.push(d.epsTTM);
@@ -1752,7 +1752,7 @@ function pjComputeExitPe(d) {
     var gLast = stepG[stepG.length - 1];
     if (gPeak > 20 && gLast < gPeak * 0.5) {
       var ratio = Math.max(0, gLast / gPeak);
-      exitSlow = ratio <= 0.1 ? 0.8 : 0.8 + (ratio - 0.1) * 0.5;
+      exitSlow = ratio <= 0.1 ? 0.5 : 0.5 + (ratio - 0.1) * 1.25;
     }
   }
   var mult = base * growth * margin * exitSlow;
@@ -6267,7 +6267,7 @@ async function wlFillPass(tickers) {
  * ticker per day (the sub-loads are day-cached at their own layers,
  * so this is mostly assembly after the first run). A stored null
  * means "no analyst path today" and is not retried until tomorrow. */
-var WLPROJ_KEY = 'sr_wlproj_v3';
+var WLPROJ_KEY = 'sr_wlproj_v4';
 function wlProjEntry(T) {
   var m = lsGet(WLPROJ_KEY, {});
   var e = m[T];
@@ -6335,7 +6335,7 @@ var SCAN_KEY = 'sr_scan_v4';
  * rules is recomputed from the stored dataset on the next open
  * instead of being re-shown all day. States saved before the stamp
  * existed read as undefined and mismatch once, by design. */
-var SCAN_RULES_V = 4;
+var SCAN_RULES_V = 5;
 var scanRunning = false, scanActive = 0, scanCoolUntil = 0, scanTimer = null;
 
 function scanTodayKey() { return pfKeyToISO(pfDkey(new Date())); }
