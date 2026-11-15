@@ -601,6 +601,9 @@ table.factors.scen.micro td, table.factors.scen.micro th { padding: 7px 3px; }
 .scan-ix-chev { color: var(--gold); display: inline-block; transition: transform .25s var(--ease-out); }
 .scan-ix-toggle.open .scan-ix-chev { transform: rotate(180deg); }
 .scan-count { color: var(--muted); letter-spacing: 0; text-transform: none; font-weight: 700; }
+.scan-ixname { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+#ix-pop { position: fixed; z-index: 120; display: none; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.38); padding: 10px 12px; font-size: 13px; font-weight: 600; line-height: 1.45; color: var(--ink); }
+#ix-pop .ix-pop-caret { position: absolute; top: -5.5px; width: 10px; height: 10px; background: var(--card); border-left: 1px solid var(--line); border-top: 1px solid var(--line); transform: rotate(45deg); }
 .scan-row { display: flex; align-items: center; gap: 9px; width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line); padding: 8px 2px; color: inherit; text-align: left; cursor: pointer; }
 .scan-row:last-of-type { border-bottom: 0; }
 .scan-rank { color: var(--muted); font-weight: 900; width: 16px; text-align: center; }

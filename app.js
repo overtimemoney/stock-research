@@ -7524,6 +7524,89 @@ function wireScanIxToggle(box) {
   if (t) t.addEventListener('click', function () { scanIxOpen = !scanIxOpen; renderScanCard(); });
 }
 
+/* Index-name popovers (Justin's ask, 2026-11-14): tapping an index
+ * name in a scan section header opens a small bubble explaining what
+ * the index is -- deliberately NOT an info-dot. Tapping anywhere else
+ * fades it away quickly. One shared bubble element, positioned from
+ * the tapped label's rect. */
+var IX_POP_TEXT = {
+  spx: 'The 500 biggest US companies. When people say \u201cthe market was up today,\u201d this is usually the list they mean.',
+  rut: '2,000 smaller US companies. They can grow faster than the giants, but their prices swing harder.',
+  tot: 'Every US stock the app can score \u2014 thousands of companies, big and small. The other two lists both live inside this one.'
+};
+function ixNameHtml(ix) {
+  return '<span class="scan-ixname" data-ixpop="' + ix.key + '">' + esc(ix.label) + '</span>';
+}
+var ixPopEl = null, ixPopKey = null, ixPopAnim = null, ixPopShownAt = 0;
+function ixPopEnsure() {
+  if (ixPopEl) return ixPopEl;
+  var el = document.createElement('div');
+  el.id = 'ix-pop';
+  el.innerHTML = '<span class="ix-pop-caret"></span><span class="ix-pop-txt"></span>';
+  document.body.appendChild(el);
+  ixPopEl = el;
+  return el;
+}
+function ixPopHide() {
+  if (!ixPopEl || !ixPopKey) return;
+  ixPopKey = null;
+  var el = ixPopEl;
+  if (ixPopAnim) { try { ixPopAnim.cancel(); } catch (e) {} ixPopAnim = null; }
+  ixPopAnim = el.animate([
+    { opacity: 1, transform: 'translateY(0) scale(1)' },
+    { opacity: 0, transform: 'translateY(2px) scale(.98)' }
+  ], { duration: 140, easing: 'ease-in', fill: 'forwards' });
+  ixPopAnim.onfinish = function () { el.style.display = 'none'; };
+}
+function ixPopShow(key, anchor) {
+  var txt = IX_POP_TEXT[key];
+  if (!txt) return;
+  var el = ixPopEnsure();
+  if (ixPopAnim) { try { ixPopAnim.cancel(); } catch (e) {} ixPopAnim = null; }
+  el.querySelector('.ix-pop-txt').textContent = txt;
+  var w = Math.min(272, window.innerWidth - 24);
+  el.style.width = w + 'px';
+  el.style.display = 'block';
+  var r = anchor.getBoundingClientRect();
+  var left = Math.max(12, Math.min(r.left, window.innerWidth - 12 - w));
+  el.style.left = left + 'px';
+  el.style.top = (r.bottom + 9) + 'px';
+  var cx = Math.max(18, Math.min(r.left + r.width / 2 - left, w - 18));
+  el.querySelector('.ix-pop-caret').style.left = (cx - 5) + 'px';
+  el.style.transformOrigin = cx + 'px 0';
+  ixPopKey = key;
+  ixPopShownAt = Date.now();
+  ixPopAnim = el.animate([
+    { opacity: 0, transform: 'translateY(3px) scale(.97)' },
+    { opacity: 1, transform: 'translateY(0) scale(1)' }
+  ], { duration: 170, easing: 'cubic-bezier(0.23, 1, 0.32, 1)', fill: 'forwards' });
+}
+document.addEventListener('click', function (e) {
+  var t = e.target && e.target.closest ? e.target.closest('[data-ixpop]') : null;
+  if (!t) return;
+  var key = t.getAttribute('data-ixpop');
+  if (ixPopKey === key) ixPopHide(); else ixPopShow(key, t);
+});
+document.addEventListener('pointerdown', function (e) {
+  if (!ixPopKey) return;
+  if (e.target && e.target.closest && (e.target.closest('[data-ixpop]') || e.target.closest('#ix-pop'))) return;
+  ixPopHide();
+}, true);
+/* Same dismissal on click, capture phase: pointerdown covers real
+ * taps, this guarantees cleanup for any click path that navigates
+ * (a row tap switches tabs; the bubble must not follow). */
+document.addEventListener('click', function (e) {
+  if (!ixPopKey) return;
+  if (e.target && e.target.closest && (e.target.closest('[data-ixpop]') || e.target.closest('#ix-pop'))) return;
+  ixPopHide();
+}, true);
+/* Scroll dismisses too (the bubble would detach from its label) --
+ * but ignore scrolls in the first moments after opening: a tap can
+ * queue a settle scroll that must not kill the bubble it just opened. */
+document.addEventListener('scroll', function () {
+  if (ixPopKey && Date.now() - ixPopShownAt > 350) ixPopHide();
+}, true);
+
 function renderScanCard() {
   var box = $('scan-card');
   if (!box) return;
@@ -7542,7 +7625,7 @@ function renderScanCard() {
       var n = snap.scored ? snap.scored[ix.key] : null;
       if (!rows.length && !isNum(n)) return;
       var out0 = out; out = '';
-      out += '<div class="scan-group">' + esc(ix.label) + (isNum(n) ? ' <span class="scan-count">' + n + ' stocks scored' + (scanNewList(ix.key).length ? ' \u00b7 ' + scanNewList(ix.key).length + ' new' : '') + '</span>' : '') + '</div>';
+      out += '<div class="scan-group">' + ixNameHtml(ix) + (isNum(n) ? ' <span class="scan-count">' + n + ' stocks scored' + (scanNewList(ix.key).length ? ' \u00b7 ' + scanNewList(ix.key).length + ' new' : '') + '</span>' : '') + '</div>';
       if (!rows.length) { out += '<div class="status">No scored stocks came back.</div>'; }
       rows.forEach(function (row, i) {
         out += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
@@ -7581,7 +7664,7 @@ function renderScanCard() {
       var z = s.idx[ix.key];
       var out0 = out; out = '';
       if (z.started === false) {
-        out += '<div class="scan-group">' + esc(ix.label) + '</div>';
+        out += '<div class="scan-group">' + ixNameHtml(ix) + '</div>';
         if (ix.key === 'rut') {
           out += '<div class="fineprint" style="margin:0 0 8px">Scanned on demand, so the daily scan stays fast.</div>' +
             '<button type="button" class="btn-ghost" id="scan-start-rut">Scan Russell 2000</button>';
@@ -7595,7 +7678,7 @@ function renderScanCard() {
       }
       var newCt = scanNewList(ix.key).length;
       var countTxt = isNum(z.scored) ? z.scored + ' stocks scored' + (newCt ? ' \u00b7 ' + newCt + ' new' : '') : '';
-      out += '<div class="scan-group">' + esc(ix.label) + (countTxt ? ' <span class="scan-count">' + countTxt + '</span>' : '') + '</div>';
+      out += '<div class="scan-group">' + ixNameHtml(ix) + (countTxt ? ' <span class="scan-count">' + countTxt + '</span>' : '') + '</div>';
       if (!rows.length) { out += '<div class="status">No scored stocks came back.</div>'; }
       rows.forEach(function (row, i) {
         out += '<button type="button" class="scan-row" data-scan-research="' + esc(row.t) + '">' +
