@@ -5340,12 +5340,16 @@ function qmShortQ(label) {
   return String(label || '').replace(/(\d{4})/, function (y) { return '\u2019' + y.slice(2); });
 }
 
-function qmBarsSVG(pts, fmt) {
-  var w = 640, h = 224, padT = 32, padX = 6;
+function qmBarsSVG(pts, fmt, big) {
+  /* Detail view renders BIG (Justin's ask, 2026-11-15): nearly
+   * double the height and larger labels, since the popup is the
+   * place you actually read values. */
+  var w = 640, h = big ? 400 : 224, padT = big ? 46 : 32, padX = 6;
   var max = Math.max.apply(null, pts.map(function (p) { return p.value; }).concat([0]));
   var min = Math.min.apply(null, pts.map(function (p) { return p.value; }).concat([0]));
   var span = (max - min) || 1;
   var vfsEarly = pts.length <= 8 ? 16.5 : pts.length <= 13 ? 14.5 : 12.5;
+  if (big) vfsEarly = Math.round(vfsEarly * 1.35 * 2) / 2;
   var bw = (w - padX * 2) / pts.length;
   /* Legibility fitting (Justin's screenshots, 2026-11-01: 12 bars of
    * "$794.1M" / "108.0M" ran together into one unreadable string).
@@ -5363,7 +5367,7 @@ function qmBarsSVG(pts, fmt) {
   if (widest(labs) * vfs * 0.64 > bw * 0.98) {
     labs = labs.map(qmCompact);
     var est = widest(labs) * vfs * 0.64;
-    if (est > bw * 0.98) vfs = Math.max(10.5, Math.floor(vfs * (bw * 0.98 / est) * 2) / 2);
+    if (est > bw * 0.98) vfs = Math.max(big ? 14 : 10.5, Math.floor(vfs * (bw * 0.98 / est) * 2) / 2);
   }
   /* Last resort (Justin's screenshot, 2026-11-15: 20 quarterly bars
    * at the 10Y window -- even the floored 10.5px font leaves "$51.7B"
@@ -5376,7 +5380,7 @@ function qmBarsSVG(pts, fmt) {
   // Negative bars carry their value label BELOW the bar; reserve enough
   // bottom room that it can never land on the axis labels (TSLA FCF
   // screenshot, 2026-10-31).
-  var padB = min < 0 ? Math.ceil(vfs * 1.25) + 24 : 34;
+  var padB = min < 0 ? Math.ceil(vfs * 1.25) + (big ? 34 : 24) : (big ? 46 : 34);
   var zeroY = padT + (max / span) * (h - padT - padB);
   /* "You are here" (Justin's ask, 2026-11-07): the current period
    * gets an outline in the theme ink (white on dark, black on
@@ -5406,7 +5410,7 @@ function qmBarsSVG(pts, fmt) {
     }
     if (p.axis) {
       var nowAxis = i === nowI;
-      out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="12" font-weight="' + (nowAxis ? '800' : '700') + '" fill="' + (nowAxis ? 'var(--ink)' : '#8a8271') + '">' + esc(p.axis) + '</text>';
+      out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="' + (big ? 15 : 12) + '" font-weight="' + (nowAxis ? '800' : '700') + '" fill="' + (nowAxis ? 'var(--ink)' : '#8a8271') + '">' + esc(p.axis) + '</text>';
     }
   });
   return out + '</svg>';
@@ -5638,7 +5642,7 @@ function segColor(s, si) { return (s.balance || s.corporate) ? '#6b6656' : SEG_C
 function qmStackedSVG(data, key, mini) {
   var years = data.years;
   var segs = data.segments.filter(function (sg) { return sg[key]; });
-  var w = 640, h = mini ? 150 : 224, padT = mini ? 10 : 34, padB = 34, padX = 6;
+  var w = 640, h = mini ? 190 : 400, padT = mini ? 10 : 46, padB = mini ? 34 : 46, padX = 6;
   var tops = years.map(function (y, yi) {
     var pos = 0, neg = 0;
     segs.forEach(function (sg) { var v = sg[key][yi]; if (isNum(v)) { if (v >= 0) pos += v; else neg += v; } });
@@ -5677,10 +5681,10 @@ function qmStackedSVG(data, key, mini) {
     }
     var tot = data.total && data.total[key] ? data.total[key][yi] : null;
     if (isNum(tot) && !mini) {
-      out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (zeroY - (tops[yi].pos / span) * (h - padT - padB) - 8).toFixed(1) + '" text-anchor="middle" font-size="15" font-weight="800" style="fill:var(--chart-val)">' + esc(fmtMoneyShort(tot)) + '</text>';
+      out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (zeroY - (tops[yi].pos / span) * (h - padT - padB) - 8).toFixed(1) + '" text-anchor="middle" font-size="19" font-weight="800" style="fill:var(--chart-val)">' + esc(fmtMoneyShort(tot)) + '</text>';
     }
     if (!mini || yi === 0 || yi === years.length - 1) {
-      out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#8a8271">' + y + '</text>';
+      out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="' + (mini ? 12 : 15) + '" font-weight="700" fill="#8a8271">' + y + '</text>';
     }
   });
   return out + '</svg>';
@@ -5731,7 +5735,7 @@ function renderQmSegments(key) {
 }
 
 function qmPairsSVG(pairs, mini) {
-  var w = 640, h = mini ? 150 : 224, padT = mini ? 10 : 36, padB = 34, padX = 6;
+  var w = 640, h = mini ? 190 : 400, padT = mini ? 10 : 48, padB = mini ? 34 : 46, padX = 6;
   var vals = [];
   pairs.forEach(function (p) { vals.push(p.est, p.act); });
   var max = Math.max.apply(null, vals.concat([0]));
@@ -5739,7 +5743,7 @@ function qmPairsSVG(pairs, mini) {
   var span = (max - min) || 1;
   var bw = (w - padX * 2) / pairs.length;
   var zeroY = padT + (max / span) * (h - padT - padB);
-  var lfs = pairs.length > 6 ? 10.5 : 11.5;
+  var lfs = mini ? (pairs.length > 6 ? 10.5 : 11.5) : (pairs.length > 6 ? 14 : 15.5);
   var out = '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Reported versus estimated EPS">';
   out += '<line x1="' + padX + '" y1="' + zeroY + '" x2="' + (w - padX) + '" y2="' + zeroY + '" stroke="#3a372d" stroke-width="1"/>';
   pairs.forEach(function (p, i) {
@@ -5756,7 +5760,7 @@ function qmPairsSVG(pairs, mini) {
     out += bar(ex, p.est, '#5a5546', false, false);
     out += bar(ax, p.act, p.act >= p.est ? 'var(--neon-up)' : 'var(--neon-dn)', true, i === pairs.length - 1);
     if (!mini || i === 0 || i === pairs.length - 1) {
-      out += '<text x="' + (slotX + bw / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="12" font-weight="700" fill="#8a8271">' + esc(qmShortQ(p.label)) + '</text>';
+      out += '<text x="' + (slotX + bw / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="' + (mini ? 12 : 15) + '" font-weight="700" fill="#8a8271">' + esc(qmShortQ(p.label)) + '</text>';
     }
   });
   return out + '</svg>';
@@ -5800,14 +5804,14 @@ function renderQmRatios(key) {
     return;
   }
   var pts = qmTail(series.map(function (p) { return { label: 'FY ' + p.fy, value: p.v, kind: 'actual', axis: String(p.fy) }; }), qmWin);
-  box.innerHTML = '<div class="chart-wrap">' + qmBarsSVG(pts, QM_METRICS[key === 'pe' ? 'peHist' : 'psHist'].fmt) + '</div>';
+  box.innerHTML = '<div class="chart-wrap">' + qmBarsSVG(pts, QM_METRICS[key === 'pe' ? 'peHist' : 'psHist'].fmt, true) + '</div>';
   note.textContent = (key === 'pe' ? 'Price / earnings' : 'Price / sales') + ' at each fiscal year end (StockAnalysis ratios; older years from SEC filings) \u00b7 the current multiple is on the scorecard. The outlined bar is the latest fiscal year.';
 }
 
 /* Mini bar chart for grid cards: shape only (the card header
  * carries the latest value), first + last period labels. */
 function qmMiniBarsSVG(pts) {
-  var w = 640, h = 150, padT = 10, padB = 22, padX = 4;
+  var w = 640, h = 190, padT = 12, padB = 24, padX = 4;
   var max = Math.max.apply(null, pts.map(function (p) { return p.value; }).concat([0]));
   var min = Math.min.apply(null, pts.map(function (p) { return p.value; }).concat([0]));
   var span = (max - min) || 1;
@@ -6075,7 +6079,7 @@ function renderQmDetail() {
   if (!pts.length) {
     box.innerHTML = '<div class="status err">No ' + esc(M.name) + ' data in the statements for ' + esc(d.ticker) + '.</div>';
   } else {
-    box.innerHTML = '<div class="chart-wrap">' + qmBarsSVG(pts, fmt) + '</div>';
+    box.innerHTML = '<div class="chart-wrap">' + qmBarsSVG(pts, fmt, true) + '</div>';
   }
   var per = qmFreq === 'y' ? 'years' : 'quarters';
   var note = $('qm-note');
@@ -9809,6 +9813,19 @@ function scanKnowsTicker(T) {
     return !!scanTickerSet[T];
   } catch (e) { return false; }
 }
+/* Any trace of the symbol in the app's own per-ticker caches means
+ * it loaded successfully before, so it is a real ticker even if the
+ * suggestion services are unreachable right now. */
+function localKnowsTicker(T) {
+  if (scanKnowsTicker(T)) return true;
+  try {
+    var qm = lsGet('sr_qmetrics_v1', null);
+    if (qm && qm[T]) return true;
+    var qc = lsGet('sr_qcache_v1', null);
+    if (qc && qc[T]) return true;
+  } catch (e) { }
+  return false;
+}
 
 /* Returns '' for empty input, null when nothing matches, else the
  * resolved ticker. The old version fell back to the raw text when
@@ -9835,7 +9852,7 @@ async function resolveTickerInput(raw) {
     }
     if (items[0].symbol) return items[0].symbol.toUpperCase();
   }
-  if (/^[A-Z]{1,5}([\.\-][A-Z])?$/.test(up) && scanKnowsTicker(up)) return up;
+  if (/^[A-Z]{1,5}([\.\-][A-Z])?$/.test(up) && localKnowsTicker(up)) return up;
   return null;
 }
 function noMatchMsg(raw) {
