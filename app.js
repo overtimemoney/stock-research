@@ -9848,6 +9848,343 @@ function attachAutocomplete(input, onPick) {
 }
 
 /* ============================== tabs & init ============================== */
+/* ===== Market tab (2026-11-15) =====
+ * One full-width panel per market gauge (Justin's layout call:
+ * NOT a grid like Charts — each gauge gets its own panel with its
+ * chart inline). Data comes from the Worker's GET /market bundle
+ * (each series parsed + cached server-side from its public
+ * source); the app day-caches the bundle and paints the cache
+ * first, refreshing in the background (same stale-while-revalidate
+ * pattern as the watchlist CAGRs). A series missing from the
+ * bundle simply doesn't get a panel. */
+var MKT_KEY = 'sr_market_v1';
+var MKT_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/market';
+var mktBundle = null, mktLoading = false;
+var mktRanges = {};
+var MKT_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function mktFmt2(v) { return isNum(v) ? (Math.round(v * 100) / 100).toFixed(2) : '—'; }
+function mktFmt1(v) { return isNum(v) ? (Math.round(v * 10) / 10).toFixed(1) : '—'; }
+function mktMonLabel(iso) {
+  var p = String(iso || '').split('-');
+  if (p.length < 2) return String(iso || '');
+  return MKT_MON[parseInt(p[1], 10) - 1] + ' ' + p[0];
+}
+function mktAsOfLabel(s) {
+  if (!s) return '';
+  if (s.extra && s.extra.week) return 'Week ending ' + s.extra.week.replace(/^(\w+) (\d+),/, '$1 $2,');
+  var a = s.asOf || (s.points.length ? s.points[s.points.length - 1][0] : '');
+  if (!a) return '';
+  var p = String(a).split('-');
+  if (p.length === 3 && p[2] !== '01') return mktMonLabel(a) + ' ' + parseInt(p[2], 10);
+  return mktMonLabel(a);
+}
+function mktLast(pts) { return pts && pts.length ? pts[pts.length - 1][1] : null; }
+function mktAddMonths(iso, n) {
+  var d = new Date(iso + 'T00:00:00Z');
+  d.setUTCMonth(d.getUTCMonth() + n);
+  return d.toISOString().slice(0, 10);
+}
+function mktSlice(pts, months) {
+  if (!pts || !pts.length || !months) return pts || [];
+  var cut = mktAddMonths(pts[pts.length - 1][0], -months);
+  var out = pts.filter(function (p) { return p[0] >= cut; });
+  return out.length >= 2 ? out : pts.slice(-2);
+}
+function mktRank(pts, v) {
+  var above = 0, peak = null;
+  (pts || []).forEach(function (p) {
+    if (p[1] > v) above++;
+    if (!peak || p[1] > peak[1]) peak = p;
+  });
+  return { above: above, n: (pts || []).length, peak: peak };
+}
+function mktRankText(pts, v, noun) {
+  var r = mktRank(pts, v);
+  if (!r.n || !r.peak) return '';
+  var since = 'since ' + String(pts[0][0]).slice(0, 4);
+  if (r.above === 0) return 'The highest reading ' + since + ' — above every single ' + noun + ' in the data.';
+  if (r.above <= 3) return 'Only ' + r.above + (r.above === 1 ? ' ' + noun : ' ' + noun + 's') + ' ' + since + ' ranked higher — the highest was ' + mktMonLabel(r.peak[0]) + ' at ' + mktFmt2(r.peak[1]) + '.';
+  var pct = Math.round(100 * (r.n - r.above) / r.n);
+  return 'Higher than ' + pct + '% of ' + noun + 's ' + since + '.';
+}
+function mktLowText(pts, v, noun) {
+  var below = 0, low = null;
+  (pts || []).forEach(function (p) {
+    if (p[1] < v) below++;
+    if (!low || p[1] < low[1]) low = p;
+  });
+  if (!pts.length || !low) return '';
+  var since = 'since ' + String(pts[0][0]).slice(0, 4);
+  if (below === 0) return 'The lowest reading ' + since + '.';
+  if (below <= 3) return 'Only ' + below + (below === 1 ? ' ' + noun : ' ' + noun + 's') + ' ' + since + ' ranked lower — the lowest was ' + mktMonLabel(low[0]) + ' at ' + mktFmt1(low[1]) + '.';
+  var pct = Math.round(100 * (pts.length - below) / pts.length);
+  return 'Lower than ' + pct + '% of ' + noun + 's ' + since + '.';
+}
+function mktYearAgo(pts) {
+  if (!pts || pts.length < 2) return null;
+  var target = mktAddMonths(pts[pts.length - 1][0], -12);
+  var best = null;
+  pts.forEach(function (p) { if (p[0] <= target) best = p; });
+  return best ? best[1] : null;
+}
+
+/* Line chart: one or two series over a shared date axis. No
+ * per-point labels (the Charts overlap lesson) — just min/max
+ * axis labels and a few year ticks. */
+function mktLineSVG(series, opts) {
+  opts = opts || {};
+  var W = 640, H = 200, padT = 16, padB = 22, padX = 4;
+  var all = [];
+  series.forEach(function (s) { s.pts.forEach(function (p) { all.push(p[1]); }); });
+  if (opts.zero) all.push(0);
+  if (!all.length) return '';
+  var mn = Math.min.apply(null, all), mx = Math.max.apply(null, all);
+  if (mx - mn < 1e-9) { mx += 1; mn -= 1; }
+  var pad = (mx - mn) * 0.08; mx += pad; mn -= pad;
+  var t0 = null, t1 = null;
+  series.forEach(function (s) {
+    if (!s.pts.length) return;
+    var a = s.pts[0][0], b = s.pts[s.pts.length - 1][0];
+    if (t0 === null || a < t0) t0 = a;
+    if (t1 === null || b > t1) t1 = b;
+  });
+  var d0 = new Date(t0 + 'T00:00:00Z').getTime(), d1 = new Date(t1 + 'T00:00:00Z').getTime();
+  if (d1 - d0 < 86400000) d1 = d0 + 86400000;
+  function X(iso) { return padX + (new Date(iso + 'T00:00:00Z').getTime() - d0) / (d1 - d0) * (W - padX * 2); }
+  function Y(v) { return padT + (mx - v) / (mx - mn) * (H - padT - padB); }
+  var out = ['<svg viewBox="0 0 ' + W + ' ' + H + '" role="img">'];
+  if (opts.zero && mn < 0 && mx > 0) out.push('<line x1="' + padX + '" y1="' + Y(0).toFixed(1) + '" x2="' + (W - padX) + '" y2="' + Y(0).toFixed(1) + '" stroke="var(--muted)" stroke-width="1" stroke-dasharray="4 4" opacity="0.6"/>');
+  series.forEach(function (s, si) {
+    var pts = s.pts;
+    var step = Math.max(1, Math.floor(pts.length / 420));
+    var line = [];
+    for (var i = 0; i < pts.length; i += step) line.push(X(pts[i][0]).toFixed(1) + ',' + Y(pts[i][1]).toFixed(1));
+    if ((pts.length - 1) % step !== 0) line.push(X(pts[pts.length - 1][0]).toFixed(1) + ',' + Y(pts[pts.length - 1][1]).toFixed(1));
+    if (si === 0 && series.length === 1) {
+      out.push('<polygon points="' + padX + ',' + (H - padB) + ' ' + line.join(' ') + ' ' + (W - padX) + ',' + (H - padB) + '" fill="' + s.color + '" opacity="0.13"/>');
+    }
+    out.push('<polyline points="' + line.join(' ') + '" fill="none" stroke="' + s.color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>');
+  });
+  var fmtY = opts.fmtY || function (v) { return mktFmt1(v); };
+  out.push('<text class="mkt-ax" x="' + padX + '" y="11">' + esc(fmtY(mx - pad)) + '</text>');
+  out.push('<text class="mkt-ax" x="' + padX + '" y="' + (H - 8) + '">' + esc(fmtY(mn + pad)) + '</text>');
+  var spanYrs = (d1 - d0) / (365.25 * 86400000);
+  for (var k = 1; k <= 3; k++) {
+    var tt = new Date(d0 + (d1 - d0) * k / 4);
+    var lab = spanYrs > 6 ? String(tt.getUTCFullYear()) : MKT_MON[tt.getUTCMonth()] + " '" + String(tt.getUTCFullYear()).slice(2);
+    out.push('<text class="mkt-ax" x="' + (padX + (W - padX * 2) * k / 4).toFixed(0) + '" y="' + (H - 8) + '" text-anchor="middle">' + lab + '</text>');
+  }
+  var lastLab = spanYrs > 6 ? String(new Date(d1).getUTCFullYear()) : MKT_MON[new Date(d1).getUTCMonth()] + " '" + String(new Date(d1).getUTCFullYear()).slice(2);
+  out.push('<text class="mkt-ax" x="' + (W - padX) + '" y="' + (H - 8) + '" text-anchor="end">' + lastLab + '</text>');
+  out.push('</svg>');
+  return out.join('');
+}
+
+var MKT_DEFS = [
+  { id: 'cape', name: 'Shiller PE', ranges: [['10Y', 120], ['25Y', 300], ['All', 0]], def: 'All',
+    big: function (s) { return mktFmt2(mktLast(s.points)); },
+    read: function (s) { return mktRankText(s.points, mktLast(s.points), 'month'); },
+    note: 'Prices the whole S&P 500 against ten years of real, inflation-adjusted profits. Smoothing out booms and recessions shows whether stocks are priced high or low against what companies actually earn over a full cycle.' },
+  { id: 'pe', name: 'S&P 500 P/E', ranges: [['10Y', 120], ['25Y', 300], ['All', 0]], def: '10Y',
+    big: function (s) { return mktFmt2(mktLast(s.points)); },
+    read: function (s) { return mktRankText(s.points, mktLast(s.points), 'month'); },
+    note: 'What investors pay for one dollar of the S&P 500\u2019s yearly profit. Higher means the market is pricing in strong future growth — or getting ahead of itself.' },
+  { id: 'fg', name: 'Fear & Greed Index', kind: 'fg', ranges: [['3M', 3], ['6M', 6], ['1Y', 12]], def: '1Y',
+    big: function (s) { return mktFmt1(s.extra.score); },
+    bigSub: function (s) { return s.extra.rating ? s.extra.rating.charAt(0).toUpperCase() + s.extra.rating.slice(1) : ''; },
+    read: function (s) {
+      var e = s.extra, bits = [];
+      if (isNum(e.prevWeek)) bits.push((e.score >= e.prevWeek ? 'up' : 'down') + ' from ' + mktFmt1(e.prevWeek) + ' a week ago');
+      if (isNum(e.prevMonth)) bits.push((e.score >= e.prevMonth ? 'up' : 'down') + ' from ' + mktFmt1(e.prevMonth) + ' a month ago');
+      return bits.length ? 'Running ' + bits.join(', ') + '.' : '';
+    },
+    note: 'CNN\u2019s 0-to-100 gauge of investor mood, built from seven market signals. Low readings mean fear is running the market; high readings mean greed is. Extremes in either direction often show up near turning points.' },
+  { id: 'vix', name: 'VIX', ranges: [['1Y', 12], ['5Y', 60], ['10Y', 120]], def: '5Y',
+    big: function (s) { return mktFmt1(mktLast(s.points)); },
+    read: function (s) {
+      var v = mktLast(s.points);
+      var word = v < 15 ? 'Calm — traders see little risk ahead.' : v < 20 ? 'Normal — a typical level of caution.' : v < 30 ? 'Nervous — traders are paying up for protection.' : 'Fear — the kind of spike that usually comes with a hard sell-off.';
+      return word + ' ' + mktRankText(s.points, v, 'month');
+    },
+    note: 'The options market\u2019s fear gauge — how much traders pay to insure against a drop. Under 15 is calm, over 30 is panic. It spikes when stocks fall hard.' },
+  { id: 'aaii', name: 'AAII Investor Sentiment', kind: 'aaii',
+    big: function (s) { return (s.extra.bull - s.extra.bear > 0 ? '+' : '') + mktFmt1(s.extra.bull - s.extra.bear); },
+    bigSub: function () { return 'bulls minus bears'; },
+    read: function (s) {
+      var e = s.extra, spread = e.bull - e.bear, typ = (isNum(e.bullAvg) && isNum(e.bearAvg)) ? e.bullAvg - e.bearAvg : null;
+      var t = spread < 0 ? 'Bears lead bulls by ' + Math.abs(Math.round(spread)) + ' points.' : 'Bulls lead bears by ' + Math.round(spread) + ' points.';
+      if (isNum(typ)) t += ' In a typical week ' + (typ >= 0 ? 'bulls lead by ' + Math.round(typ) : 'bears lead by ' + Math.abs(Math.round(typ))) + '.';
+      return t;
+    },
+    note: 'A weekly survey of individual investors: bullish, bearish, or neutral on the next six months? The black tick on each bar is the long-run average. When one side gets this lopsided, the crowd has often been more emotional than right — but it can stay lopsided for weeks.' },
+  { id: 'mich', name: 'Consumer Sentiment', ranges: [['10Y', 120], ['25Y', 300], ['All', 0]], def: '25Y',
+    big: function (s) { return mktFmt1(mktLast(s.points)); },
+    read: function (s) { return mktLowText(s.points, mktLast(s.points), 'month'); },
+    note: 'The University of Michigan\u2019s monthly survey of how consumers feel about their finances and the economy, running since 1952. It tracks whether households feel like spending — and household spending is most of the economy.' },
+  { id: 'eyx', name: 'Earnings Yield vs 10-Year', kind: 'dual', ranges: [['2Y', 24], ['5Y', 60], ['10Y', 120]], def: '10Y',
+    big: function (s, b) {
+      var g = mktDualGap(b);
+      return (g > 0 ? '+' : '') + mktFmt2(g) + '%';
+    },
+    bigSub: function () { return 'stocks minus bonds'; },
+    read: function (s, b) {
+      var ey = mktLast(b.series.ey.points), tn = mktLast(b.series.tnx.points), g = ey - tn;
+      return 'Stocks yield ' + mktFmt2(ey) + '% in earnings; the 10-year Treasury pays ' + mktFmt2(tn) + '%. ' + (g >= 0 ? 'Stocks pay ' + mktFmt2(g) + ' points more — the extra you earn for taking stock-market risk.' : 'Bonds pay ' + mktFmt2(-g) + ' points more, with no stock-market risk — a tough offer for stocks to compete with.');
+    },
+    note: 'Earnings yield is the flip side of the P/E: profit per dollar of price. Lined up against the 10-year Treasury, it shows what stocks pay you versus what a safe government bond pays you.' },
+  { id: 'tnx', name: '10-Year Treasury', ranges: [['1Y', 12], ['5Y', 60], ['10Y', 120]], def: '10Y', pct: true,
+    big: function (s) { return mktFmt2(mktLast(s.points)) + '%'; },
+    read: function (s) {
+      var v = mktLast(s.points), ya = mktYearAgo(s.points);
+      if (!isNum(ya)) return '';
+      return 'That\u2019s ' + (v >= ya ? 'up' : 'down') + ' from ' + mktFmt2(ya) + '% a year ago.';
+    },
+    note: 'The interest rate on the government\u2019s 10-year bond — the benchmark that mortgages, car loans, and company borrowing all price off. When it climbs, borrowing gets more expensive everywhere.' },
+  { id: 'curve', name: 'Yield Curve (10Y \u2212 3M)', kind: 'curve', ranges: [['1Y', 12], ['5Y', 60], ['10Y', 120]], def: '5Y', zero: true,
+    big: function (s, b) { var c = mktCurvePts(b); var v = mktLast(c); return (v > 0 ? '+' : '') + mktFmt2(v) + '%'; },
+    read: function (s, b) {
+      var v = mktLast(mktCurvePts(b));
+      return v < 0 ? 'Inverted — short-term rates sit above long-term rates. Every inversion since 1970 came before a recession.' : 'A normal upward slope — long-term rates sit above short-term rates, the healthy shape.';
+    },
+    note: 'The gap between the 10-year rate and the 3-month rate. Normally long-term rates are higher, so the gap is positive. When it goes negative — inverted — it has preceded every recession since 1970.' },
+  { id: 'cpi', name: 'Inflation (CPI)', ranges: [['5Y', 60], ['10Y', 120], ['25Y', 300]], def: '10Y', pct: true,
+    big: function (s) { return mktFmt1(mktLast(s.points)) + '%'; },
+    read: function (s) {
+      var pts = s.points, v = mktLast(pts);
+      if (pts.length < 4) return '';
+      var ago = pts[pts.length - 4][1];
+      return 'Prices rose ' + mktFmt1(v) + '% over the past year — ' + (v >= ago ? 'up' : 'down') + ' from ' + mktFmt1(ago) + '% three months ago. The Fed\u2019s target is 2%.';
+    },
+    note: 'How much consumer prices rose over the past year. The Fed targets 2%; while inflation runs above that, pressure stays on interest rates to remain high.' }
+];
+
+function mktCurvePts(b) {
+  var tn = b.series.tnx, ir = b.series.irx;
+  if (!tn || !ir) return [];
+  var m = {};
+  ir.points.forEach(function (p) { m[p[0]] = p[1]; });
+  var out = [];
+  tn.points.forEach(function (p) { if (isNum(m[p[0]])) out.push([p[0], Math.round((p[1] - m[p[0]]) * 100) / 100]); });
+  return out;
+}
+function mktDualGap(b) {
+  var ey = b.series.ey, tn = b.series.tnx;
+  if (!ey || !tn) return null;
+  var m = {};
+  tn.points.forEach(function (p) { m[p[0].slice(0, 7)] = p[1]; });
+  for (var i = ey.points.length - 1; i >= 0; i--) {
+    var k = ey.points[i][0].slice(0, 7);
+    if (isNum(m[k])) return Math.round((ey.points[i][1] - m[k]) * 100) / 100;
+  }
+  return null;
+}
+function mktAlignDual(b, months) {
+  var ey = b.series.ey, tn = b.series.tnx;
+  var tm = {};
+  tn.points.forEach(function (p) { tm[p[0].slice(0, 7)] = p; });
+  var a = [], c = [];
+  ey.points.forEach(function (p) {
+    var t = tm[p[0].slice(0, 7)];
+    if (t) { a.push(p); c.push(t); }
+  });
+  return { ey: mktSlice(a, months), tn: mktSlice(c, months) };
+}
+function mktDefData(def, b) {
+  if (def.kind === 'curve') return { points: mktCurvePts(b), asOf: '' };
+  if (def.kind === 'dual') return (b.series.ey && b.series.tnx) ? { points: b.series.ey.points, asOf: b.series.ey.asOf } : null;
+  return b.series[def.id] || null;
+}
+
+function mktPanelHTML(def, b) {
+  var s = mktDefData(def, b);
+  if (!s || (!s.points || !s.points.length) && def.kind !== 'aaii') return '';
+  if (def.kind === 'aaii' && !(s.extra && isNum(s.extra.bull))) return '';
+  var rangeKey = mktRanges[def.id] || def.def;
+  var months = 0;
+  (def.ranges || []).forEach(function (r) { if (r[0] === rangeKey) months = r[1]; });
+  var h = ['<div class="mkt-panel" data-mkt-panel="' + def.id + '">'];
+  h.push('<div class="mkt-head"><span class="mkt-name">' + esc(def.name) + '</span><span class="mkt-asof">' + esc(mktAsOfLabel(s)) + '</span></div>');
+  var big = def.big(s, b);
+  h.push('<div class="mkt-big">' + esc(big) + (def.bigSub ? '<span class="mkt-big-sub">' + esc(def.bigSub(s, b)) + '</span>' : '') + '</div>');
+  var read = def.read ? def.read(s, b) : '';
+  if (read) h.push('<div class="mkt-read">' + esc(read) + '</div>');
+  if (def.kind === 'fg') {
+    var sc = Math.max(0, Math.min(100, s.extra.score));
+    h.push('<div class="mkt-gauge"><span class="mkt-pin" style="left:' + sc + '%"></span></div>');
+    h.push('<div class="mkt-gauge-labs"><span>Extreme fear</span><span>Neutral</span><span>Extreme greed</span></div>');
+  }
+  if (def.kind === 'aaii') {
+    var e = s.extra;
+    [['Bullish', e.bull, e.bullAvg, '#2e9e5b'], ['Neutral', e.neut, e.neutAvg, '#a89f8d'], ['Bearish', e.bear, e.bearAvg, '#d33f2e']].forEach(function (r) {
+      h.push('<div class="mkt-aaii-row"><span class="mkt-aaii-lab">' + r[0] + '</span><span class="mkt-aaii-track"><span class="mkt-aaii-fill" style="width:' + r[1] + '%;background:' + r[3] + '"></span>' + (isNum(r[2]) ? '<span class="mkt-aaii-avg" style="left:' + r[2] + '%"></span>' : '') + '</span><span class="mkt-aaii-val">' + mktFmt1(r[1]) + '%' + (isNum(r[2]) ? ' · avg ' + mktFmt1(r[2]) + '%' : '') + '</span></div>');
+    });
+  } else if (def.kind === 'dual') {
+    var al = mktAlignDual(b, months);
+    h.push('<div class="mkt-chart">' + mktLineSVG([{ pts: al.ey, color: '#E7AC18' }, { pts: al.tn, color: '#4C8DFF' }], { fmtY: function (v) { return mktFmt1(v) + '%'; } }) + '</div>');
+    h.push('<div class="mkt-legend"><span><span class="sw" style="background:#E7AC18"></span>Earnings yield</span><span><span class="sw" style="background:#4C8DFF"></span>10-year Treasury</span></div>');
+  } else if (def.kind === 'curve') {
+    h.push('<div class="mkt-chart">' + mktLineSVG([{ pts: mktSlice(s.points, months), color: '#E7AC18' }], { zero: true, fmtY: function (v) { return mktFmt1(v) + '%'; } }) + '</div>');
+  } else {
+    h.push('<div class="mkt-chart">' + mktLineSVG([{ pts: mktSlice(s.points, months), color: '#E7AC18' }], { fmtY: def.pct ? function (v) { return mktFmt1(v) + '%'; } : null }) + '</div>');
+  }
+  if (def.ranges) {
+    h.push('<div class="mkt-chips">' + def.ranges.map(function (r) {
+      return '<button type="button" data-mktrange="' + def.id + ':' + r[0] + '"' + (r[0] === rangeKey ? ' class="active"' : '') + '>' + r[0] + '</button>';
+    }).join('') + '</div>');
+  }
+  h.push('<p class="mkt-note">' + esc(def.note) + '</p>');
+  h.push('</div>');
+  return h.join('');
+}
+
+function renderMarket() {
+  var el = $('mkt-list');
+  if (!el || !mktBundle || !mktBundle.series) return;
+  var html = MKT_DEFS.map(function (def) { return mktPanelHTML(def, mktBundle); }).join('');
+  el.innerHTML = html || '<p class="status">The gauges didn\u2019t come back this time. Pull the tab again in a moment.</p>';
+}
+
+async function loadMarket() {
+  var el = $('mkt-list');
+  if (!el || mktLoading) return;
+  var cached = null;
+  try { cached = JSON.parse(localStorage.getItem(MKT_KEY) || 'null'); } catch (e) {}
+  if (cached && cached.bundle) { mktBundle = cached.bundle; renderMarket(); }
+  if (cached && Date.now() - cached.ts < 3 * 3600 * 1000) return;
+  mktLoading = true;
+  try {
+    var ctl = new AbortController();
+    var to = setTimeout(function () { ctl.abort(); }, 30000);
+    var r = await fetch(MKT_URL, { signal: ctl.signal });
+    clearTimeout(to);
+    if (!r.ok) throw new Error('market http ' + r.status);
+    var j = await r.json();
+    if (j && j.series && Object.keys(j.series).length) {
+      mktBundle = j;
+      try { localStorage.setItem(MKT_KEY, JSON.stringify({ ts: Date.now(), bundle: j })); } catch (e) {}
+      renderMarket();
+    } else if (!cached) {
+      el.innerHTML = '<p class="status">The gauges didn\u2019t come back this time. Try again in a moment.</p>';
+    }
+  } catch (e) {
+    if (!cached && el) el.innerHTML = '<p class="status">' + esc(friendlyErr(e, 'Couldn\u2019t load the market gauges. Check your connection and reopen this tab.')) + '</p>';
+  } finally { mktLoading = false; }
+}
+
+document.addEventListener('click', function (ev) {
+  var t = ev.target && ev.target.closest ? ev.target.closest('[data-mktrange]') : null;
+  if (!t) return;
+  var parts = String(t.getAttribute('data-mktrange')).split(':');
+  if (parts.length !== 2) return;
+  mktRanges[parts[0]] = parts[1];
+  if (!mktBundle) return;
+  var def = null;
+  MKT_DEFS.forEach(function (d) { if (d.id === parts[0]) def = d; });
+  var panel = document.querySelector('[data-mkt-panel="' + parts[0] + '"]');
+  if (def && panel) panel.outerHTML = mktPanelHTML(def, mktBundle);
+});
+
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(function (s) { s.classList.toggle('active', s.id === 'tab-' + name); });
   document.querySelectorAll('.tabbar button').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-tab') === name); });
@@ -9869,6 +10206,7 @@ function switchTab(name) {
   /* The glossary renders at init while its tab is hidden (getBBox is 0
    * there), so re-run the label fit once the tab is actually visible. */
   if (name === 'glossary' && typeof fitGlossText === 'function') fitGlossText();
+  if (name === 'market') loadMarket();
 }
 /* Tools tab sub-pages (Justin's ask, 2026-10-30): the three tools
  * live behind a sliding segmented bar, one tool per page. The last

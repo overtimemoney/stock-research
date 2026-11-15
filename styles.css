@@ -914,3 +914,31 @@ table.factors .info-row .info-text.open { max-height: 900px; }
 .w-btn:active { transform: scale(.94); }
 .w-val { min-width: 26px; text-align: center; font-weight: 800; font-size: 15px; }
 .w-val.off { color: var(--muted); }
+
+/* ===== Market tab (2026-11-15): one full-width panel per gauge ===== */
+.mkt-sub { color: var(--muted); font-size: 13.5px; line-height: 1.5; margin: 2px 0 14px; }
+.mkt-panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 16px 14px; margin: 0 0 14px; }
+.mkt-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.mkt-name { font-weight: 800; font-size: 15px; letter-spacing: .01em; }
+.mkt-asof { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.mkt-big { font-size: 34px; font-weight: 800; line-height: 1.1; margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
+.mkt-big .mkt-big-sub { font-size: 14px; font-weight: 700; color: var(--muted); margin-left: 6px; }
+.mkt-read { font-size: 13.5px; line-height: 1.5; margin: 2px 0 10px; }
+.mkt-chart { margin: 4px 0 2px; }
+.mkt-chart svg { display: block; width: 100%; height: auto; }
+.mkt-ax { font-size: 10px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.mkt-chips { display: flex; gap: 6px; margin: 8px 0 2px; }
+.mkt-chips button { border: 1px solid var(--line); background: var(--field); color: var(--muted); border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.mkt-chips button.active { background: var(--gold); border-color: var(--gold); color: #141414; }
+.mkt-note { color: var(--muted); font-size: 12.5px; line-height: 1.55; margin: 10px 0 0; }
+.mkt-legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin: 2px 0 0; }
+.mkt-legend .sw { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+.mkt-gauge { position: relative; height: 10px; border-radius: 5px; margin: 12px 0 4px; background: linear-gradient(90deg, #d33f2e 0%, #ef8f3c 25%, #e7c948 50%, #8bc34a 75%, #2e9e5b 100%); }
+.mkt-gauge .mkt-pin { position: absolute; top: -5px; width: 4px; height: 20px; border-radius: 2px; background: var(--ink); transform: translateX(-2px); }
+.mkt-gauge-labs { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted); margin-bottom: 6px; }
+.mkt-aaii-row { display: flex; align-items: center; gap: 8px; margin: 7px 0; font-size: 12.5px; }
+.mkt-aaii-lab { width: 52px; flex: none; font-weight: 700; }
+.mkt-aaii-track { position: relative; flex: 1; height: 16px; background: var(--field); border-radius: 4px; }
+.mkt-aaii-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+.mkt-aaii-avg { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); opacity: .55; }
+.mkt-aaii-val { width: 76px; flex: none; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
