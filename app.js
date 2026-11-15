@@ -6305,7 +6305,81 @@ async function fetchWlProjCagr(T) {
   var m = lsGet(WLPROJ_KEY, {});
   m[T] = { day: new Date().toDateString(), cagr: isNum(cagr) ? cagr : null };
   lsSet(WLPROJ_KEY, m);
+  if (isNum(cagr)) {
+    /* Accumulate into the scan dataset: the screener filters and
+     * sorts on rec.cagr, and every on-device computation widens
+     * its coverage beyond the deep-checked finalists. */
+    try {
+      var dsx = getScanData();
+      if (dsx && dsx.recs && dsx.recs[T]) { dsx.recs[T].cagr = Math.round(cagr * 10) / 10; setScanData(dsx); }
+    } catch (e) {}
+  }
   return m[T].cagr;
+}
+
+/* Morning precompute sync (2026-11-15): the watchlist + portfolio
+ * tickers are registered with the relay under an anonymous install
+ * id; the relay computes their CAGRs server-side each morning
+ * (from 6 AM ET, while the app is closed) and this seeds the
+ * day-cache from the finished numbers on open. A server day that
+ * matches today (ET) lands as today's entries; an older server day
+ * lands as yesterday's (dimmed) placeholders when nothing is
+ * stored yet. On-device computation still fills any gaps. */
+var WLREG_ID_KEY = 'sr_wlreg_id_v1';
+var WLREG_HASH_KEY = 'sr_wlreg_hash_v1';
+var WLCAGR_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/wl-cagr';
+var WLREG_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/wl-reg';
+function wlRegId() {
+  var id = lsGet(WLREG_ID_KEY, null);
+  if (!id) {
+    id = 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    lsSet(WLREG_ID_KEY, id);
+  }
+  return id;
+}
+async function wlCagrSync() {
+  try {
+    var id = wlRegId();
+    var set = {};
+    getWatchlist().forEach(function (w) { if (w && w.ticker) set[String(w.ticker).toUpperCase()] = 1; });
+    getPortfolio().forEach(function (p) { if (p && p.ticker) set[String(p.ticker).toUpperCase()] = 1; });
+    var tickers = Object.keys(set).sort();
+    var hash = tickers.join(',');
+    if (tickers.length && lsGet(WLREG_HASH_KEY, '') !== hash) {
+      try {
+        var rr = await fetch(WLREG_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id, tickers: tickers }) });
+        if (rr && rr.ok) lsSet(WLREG_HASH_KEY, hash);
+      } catch (e) {}
+    }
+    var resp = await fetch(WLCAGR_URL + '?id=' + encodeURIComponent(id));
+    if (!resp || !resp.ok) return;
+    var j = await resp.json();
+    if (!j || !j.map) return;
+    var etToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+    var fresh = j.day === etToday;
+    var todayStr = new Date().toDateString();
+    var ydayStr = new Date(Date.now() - 86400000).toDateString();
+    var m = lsGet(WLPROJ_KEY, {});
+    var changed = false;
+    Object.keys(j.map).forEach(function (T) {
+      var cg = j.map[T];
+      var cur = m[T];
+      if (fresh) {
+        /* A numeric value already computed on-device today is
+         * fresher than this morning's server number -- keep it.
+         * A null from today (a boot-time fill that found no path
+         * or failed) never blocks the server's real number. */
+        if (cur && cur.day === todayStr && (isNum(cur.cagr) || !isNum(cg))) return;
+        m[T] = { day: todayStr, cagr: isNum(cg) ? cg : null };
+        changed = true;
+      } else {
+        if (cur && (cur.day === todayStr || Date.parse(cur.day) >= Date.parse(ydayStr))) return;
+        m[T] = { day: ydayStr, cagr: isNum(cg) ? cg : null };
+        changed = true;
+      }
+    });
+    if (changed) lsSet(WLPROJ_KEY, m);
+  } catch (e) {}
 }
 var wlProjRunning = false;
 async function wlProjPass(tickers) {
@@ -7128,7 +7202,8 @@ function scanPersistIdx(ixKey, merged) {
     ds.recs[t] = { name: r.name, ix: ixKey, ixs: ixs, forwardPE: r.forwardPE, peg: r.peg, epsGrowthNextY: r.epsGrowthNextY,
       price: r.price, marketCap: r.marketCap, grossMargin: r.grossMargin, profitMargin: r.profitMargin,
       debtEq: r.debtEq, currentRatio: r.currentRatio, pctBelowHigh: r.pctBelowHigh, beta: r.beta,
-      divYield: r.divYield, industry: r.industry, epsGrowthTTM: r.epsGrowthTTM };
+      divYield: r.divYield, industry: r.industry, epsGrowthTTM: r.epsGrowthTTM,
+      cagr: isNum(r.cagr) ? r.cagr : (prev && isNum(prev.cagr) ? prev.cagr : null) };
   });
   if (ixKey === 'spx') ds.asOf = scanTodayKey();
   setScanData(ds);
@@ -7209,6 +7284,7 @@ function scanRecordFromQuote(html, prev) {
   });
   if (isNum(d.epsNextY) && isNum(d.epsThisY) && d.epsThisY > 0) rec.epsGrowthNextY = (d.epsNextY / d.epsThisY - 1) * 100;
   else rec.epsGrowthNextY = prev ? prev.epsGrowthNextY : null;
+  rec.cagr = prev && isNum(prev.cagr) ? prev.cagr : null;
   return rec;
 }
 
@@ -7910,15 +7986,30 @@ function runScreener() {
   var f = scrReadControls();
   var out = [];
   var anyYield = false, anyInd = false, anyCagr = false;
+  /* CAGR fallback: the deep-checked Top-10 entries carry CAGRs
+   * even when the stored records don't (records only gained the
+   * field with the 2026-11-15 scan), so a CAGR screen can already
+   * rank the checked names. Checked snapshot first, live scan
+   * state (fresher) second. */
+  var cgMap = {};
+  try {
+    var chkSnap = lsGet(SCAN_CHECKED_KEY, null);
+    if (chkSnap && chkSnap.results) Object.keys(chkSnap.results).forEach(function (k) { (chkSnap.results[k] || []).forEach(function (e) { if (e && e.t && isNum(e.cagr)) cgMap[e.t] = e.cagr; }); });
+    var scanSt = getScan();
+    if (scanSt && scanSt.results) Object.keys(scanSt.results).forEach(function (k) { (scanSt.results[k] || []).forEach(function (e) { if (e && e.t && isNum(e.cagr)) cgMap[e.t] = e.cagr; }); });
+  } catch (e) {}
+  var covN = 0;
   Object.keys(ds.recs).forEach(function (t) {
     var rec = ds.recs[t];
     if (isNum(rec.divYield)) anyYield = true;
     if (rec.industry) anyInd = true;
-    if (isNum(rec.cagr)) anyCagr = true;
-    if (!scrPasses(rec, f)) return;
+    var cg = isNum(rec.cagr) ? rec.cagr : cgMap[t];
+    if (isNum(cg)) { anyCagr = true; covN++; }
+    var eff = isNum(cg) && cg !== rec.cagr ? Object.assign({}, rec, { cagr: cg }) : rec;
+    if (!scrPasses(eff, f)) return;
     var sc = scanRecordScore(rec);
     if (!sc) return;
-    out.push({ t: t, name: rec.name, price: rec.price, forwardPE: rec.forwardPE, epsGrowthNextY: rec.epsGrowthNextY, pctBelowHigh: rec.pctBelowHigh, marketCap: rec.marketCap, cagr: rec.cagr, score: sc.combined, sector: sectorOf(rec) });
+    out.push({ t: t, name: rec.name, price: rec.price, forwardPE: rec.forwardPE, epsGrowthNextY: rec.epsGrowthNextY, pctBelowHigh: rec.pctBelowHigh, marketCap: rec.marketCap, cagr: cg, score: sc.combined, sector: sectorOf(rec) });
   });
   var sorters = {
     combined: function (a, b) { return b.score - a.score; },
@@ -7931,6 +8022,7 @@ function runScreener() {
   };
   out.sort(sorters[f.sort] || sorters.combined);
   var html = '<div class="fineprint" style="margin:10px 0 4px">' + out.length + ' matches \u00b7 stored data from ' + esc(ds.asOf || 'an earlier scan') + '</div>';
+  if ((isNum(f.cagr) || f.sort === 'cagr') && covN > 0 && covN < Object.keys(ds.recs).length) html += '<div class="fineprint" style="margin:0 0 4px">CAGR is stored for ' + covN + ' deep-checked stocks \u2014 only those can pass a CAGR filter or rank by it. Coverage grows with each daily scan.</div>';
   var sectorCounts = {};
   if (f.sort === 'sector') out.forEach(function (row) { sectorCounts[row.sector] = (sectorCounts[row.sector] || 0) + 1; });
   var lastSector = null;
@@ -7946,6 +8038,7 @@ function runScreener() {
       '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
   });
   if (!out.length && isNum(f.cagr) && !anyCagr) html += '<div class="status">Projected CAGR isn\'t in the stored data yet \u2014 it lands on the deep-checked stocks with the next scan, or tap Rescan on the Watchlist scan card to get it now. <button type="button" class="link-btn" data-scr-gocard="1">Open the scan card</button></div>';
+  else if (!out.length && isNum(f.cagr) && anyCagr) html += '<div class="status">No matches \u2014 CAGR is stored for only ' + covN + ' deep-checked stocks so far, and none of them clears those filters. Coverage grows with each daily scan.</div>';
   else if (!out.length && isNum(f.dy) && !anyYield) html += '<div class="status">Dividend yield isn\'t in the stored data yet \u2014 it arrives with the next scan, or tap Rescan on the Watchlist scan card to get it now. <button type="button" class="link-btn" data-scr-gocard="1">Open the scan card</button></div>';
   else if (!out.length && f.sector && f.sector !== 'all' && !anyInd) html += '<div class="status">Sector data isn\'t in the stored data yet \u2014 it arrives with the next scan, or tap Rescan on the Watchlist scan card to get it now. <button type="button" class="link-btn" data-scr-gocard="1">Open the scan card</button></div>';
   else if (!out.length) html += '<div class="status">No stored stocks match those filters. <button type="button" class="link-btn" data-scr-clear="1">Clear the filters</button></div>';
@@ -10250,6 +10343,7 @@ function initApp() {
   });
   dyBackfill();
   sectorBackfill();
+  wlCagrSync();
   renderGlossary('');
   renderJournal();
   renderPjSaved();
