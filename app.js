@@ -4739,6 +4739,17 @@ function parseSAQuarterly(htmlIs, htmlCf, yearly, htmlBs) {
     grossProfit: series('Gross Profit', M),
     operIncome: series('Operating Income', M),
     netIncome: series('Net Income', M),
+    /* The itemized lines the Income flow diagram cascades through
+     * (same fetched statement -- no extra request). Keys are always
+     * present (null when the filer doesn't report the line) so the
+     * Charts cache check can tell a pre-flow cached dataset from a
+     * current one. */
+    costRev: series('Cost of Revenue', M) || series('Cost of Goods Sold', M) || series('Cost of Sales', M),
+    rdExp: series('Research & Development', M),
+    sgaExp: series('Selling, General & Admin', M) || series('Selling, General & Administrative', M),
+    operExp: series('Operating Expenses', M),
+    pretaxInc: series('Pretax Income', M),
+    taxExp: series('Income Tax Expense', M),
     eps: series('EPS (Diluted)', 1) || series('Earnings Per Share', 1),
     shares: series('Shares Outstanding (Diluted)', M) || series('Shares Outstanding (Basic)', M),
     fcf: series('Free Cash Flow', M),
@@ -4776,7 +4787,7 @@ async function fetchQMetrics(T, freq) {
   var yearly = freq === 'y';
   var cache = lsGet(QM_KEY, {});
   var day = new Date().toDateString();
-  if (cache[T] && cache[T].day === day && cache[T][freq] && 'shares' in cache[T][freq] && 'bsDebt' in cache[T][freq]) return cache[T][freq];
+  if (cache[T] && cache[T].day === day && cache[T][freq] && 'shares' in cache[T][freq] && 'bsDebt' in cache[T][freq] && 'costRev' in cache[T][freq]) return cache[T][freq];
   var base = 'https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/financials/';
   var suffix = yearly ? '' : '?p=quarterly';
   var needle = yearly ? 'Fiscal Year' : 'Fiscal Quarter';
@@ -5135,6 +5146,8 @@ function edgarAssemble(maps, cap, fyWin) {
     periods: ends.map(function (e, i) { return labelFor(e, i); }), ends: ends,
     revenue: col('revenue'), grossProfit: col('grossProfit'), operIncome: col('operIncome'),
     netIncome: col('netIncome'), eps: col('eps'), shares: col('shares'),
+    costRev: col('costRev'), rdExp: col('rdExp'), sgaExp: col('sgaExp'),
+    pretaxInc: col('pretaxInc'), taxExp: col('taxExp'),
     fcf: diffCol('ocf', 'capex'), bsCash: bsCash, bsDebt: bsDebt,
     bsNet: ends.map(function (e, i) { return (isNum(bsCash[i]) && isNum(bsDebt[i])) ? bsCash[i] - bsDebt[i] : null; })
   };
@@ -5146,6 +5159,11 @@ var EDGAR_CONCEPTS = {
   grossProfit: ['GrossProfit'],
   operIncome: ['OperatingIncomeLoss'],
   netIncome: ['NetIncomeLoss', 'ProfitLoss'],
+  costRev: ['CostOfGoodsAndServicesSold', 'CostOfGoodsSold', 'CostOfRevenue'],
+  rdExp: ['ResearchAndDevelopmentExpense'],
+  sgaExp: ['SellingGeneralAndAdministrativeExpense'],
+  pretaxInc: ['IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest', 'IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments'],
+  taxExp: ['IncomeTaxExpenseBenefit'],
   eps: ['EarningsPerShareDiluted'],
   shares: ['WeightedAverageNumberOfDilutedSharesOutstanding', 'WeightedAverageNumberOfSharesOutstandingBasic'],
   ocf: ['NetCashProvidedByUsedInOperatingActivities', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations'],
@@ -5201,6 +5219,11 @@ async function fetchEdgarHistory(T) {
       grossProfit: edgarMap(facts, EDGAR_CONCEPTS.grossProfit, MONEY, modeDur),
       operIncome: edgarMap(facts, EDGAR_CONCEPTS.operIncome, MONEY, modeDur),
       netIncome: edgarMap(facts, EDGAR_CONCEPTS.netIncome, MONEY, modeDur),
+      costRev: edgarMap(facts, EDGAR_CONCEPTS.costRev, MONEY, modeDur),
+      rdExp: edgarMap(facts, EDGAR_CONCEPTS.rdExp, MONEY, modeDur),
+      sgaExp: edgarMap(facts, EDGAR_CONCEPTS.sgaExp, MONEY, modeDur),
+      pretaxInc: edgarMap(facts, EDGAR_CONCEPTS.pretaxInc, MONEY, modeDur),
+      taxExp: edgarMap(facts, EDGAR_CONCEPTS.taxExp, MONEY, modeDur),
       eps: edgarPerShareMap(facts, EDGAR_CONCEPTS.eps, PER, 'aDur', splitEvents, false),
       shares: edgarPerShareMap(facts, EDGAR_CONCEPTS.shares, SHARES, 'aDur', splitEvents, true),
       ocf: edgarMap(facts, EDGAR_CONCEPTS.ocf, MONEY, modeDur),
@@ -5305,7 +5328,8 @@ function qmMergeEdgar() {
       return older.map(function (i) { return src ? src[i] : null; }).concat(arr || []);
     }
     d.periods = pre(d.periods, cfg[1].periods);
-    ['revenue', 'grossProfit', 'operIncome', 'netIncome', 'eps', 'shares', 'fcf', 'bsCash', 'bsDebt', 'bsNet'].forEach(function (k) {
+    ['revenue', 'grossProfit', 'operIncome', 'netIncome', 'eps', 'shares', 'fcf', 'bsCash', 'bsDebt', 'bsNet',
+     'costRev', 'rdExp', 'sgaExp', 'operExp', 'pretaxInc', 'taxExp'].forEach(function (k) {
       d[k] = pre(d[k], cfg[1][k]);
     });
     if (qmFreq === cfg[0]) {
@@ -5432,7 +5456,8 @@ var QM_METRICS = {
   psHist: { name: 'P/S by year', special: true, fmt: function (v) { return fmtNum(v, 1) + '\u00d7'; }, get: function () { return null; } },
   segRev: { name: 'Segment revenue', special: true, fmt: fmtMoneyShort, get: function () { return null; } },
   segOp: { name: 'Segment operating profit', special: true, fmt: fmtMoneyShort, get: function () { return null; } },
-  avEps: { name: 'EPS vs estimates', special: true, fmt: function (v) { return '$' + fmtNum(v, 2); }, get: function () { return null; } }
+  avEps: { name: 'EPS vs estimates', special: true, fmt: function (v) { return '$' + fmtNum(v, 2); }, get: function () { return null; } },
+  flow: { name: 'Income flow', special: true, fmt: fmtMoneyShort, get: function () { return null; } }
 };
 
 /* ============ Charts pack (2026-11-03, from the Fiscal.ai list) ====
@@ -5808,6 +5833,219 @@ function renderQmRatios(key) {
   note.textContent = (key === 'pe' ? 'Price / earnings' : 'Price / sales') + ' at each fiscal year end (StockAnalysis ratios; older years from SEC filings) \u00b7 the current multiple is on the scorecard. The outlined bar is the latest fiscal year.';
 }
 
+/* ============ Income flow (Sankey) ============
+ * One diagram of the latest fiscal year: revenue cascading to net
+ * income through the statement's own lines. Data is the annual
+ * Charts dataset (fetchQMetrics 'y', loaded lazily into its own
+ * slot so the diagram is annual even in quarterly mode) -- no new
+ * data route. Every split is an identity on the reported figures
+ * (gross = revenue - cost, operating income = gross - operating
+ * expenses, net = operating income + interest & other (net) -
+ * taxes), so the bands reconcile exactly; whatever the statement
+ * doesn't itemize between the operating lines and the operating
+ * total lands in an explicit "Other operating" node, never folded
+ * silently into a main line. A negative child (an operating or net
+ * loss) is drawn as a red marker node with no band: it is the
+ * amount by which the split's outflows overran the line they flow
+ * from, which is exactly the overflow the neighbouring bands show.
+ * Companies whose statements lack the cascade's lines (banks and
+ * insurers report no gross profit or operating income) get the
+ * plain unavailable message instead of a half-diagram. */
+var FLOW_GOLD = '#F8C73D', FLOW_RED = '#FE0000';
+function fetchFlowAnnual(T) { return fetchQMetrics(T, 'y'); }
+
+function qmFlowModel(d) {
+  if (!d || !d.periods || !d.periods.length) return null;
+  function at(arr, i) { return (arr && i >= 0 && isNum(arr[i])) ? arr[i] : null; }
+  var i = d.periods.length - 1, p = i - 1;
+  var rev = at(d.revenue, i), gross = at(d.grossProfit, i), oper = at(d.operIncome, i), net = at(d.netIncome, i);
+  if (rev === null || gross === null || oper === null || net === null || rev <= 0 || gross <= 0) return null;
+  function yy(v, pv) { return (pv === null || pv === 0) ? null : (v - pv) / Math.abs(pv) * 100; }
+  var revP = at(d.revenue, p), grossP = at(d.grossProfit, p), operP = at(d.operIncome, p), netP = at(d.netIncome, p);
+
+  /* Split 1: revenue -> cost of revenue + gross profit. Cost is
+   * revenue - gross profit (the identity that defines both lines;
+   * it equals the reported cost line wherever SA prints one). */
+  var cost = rev - gross, costP = (revP !== null && grossP !== null) ? revP - grossP : null;
+
+  /* Split 2: gross profit -> operating lines + operating income. */
+  var totalOpex = gross - oper, totalOpexP = (grossP !== null && operP !== null) ? grossP - operP : null;
+  if (totalOpex < 0) return null;
+  var rd = at(d.rdExp, i), sga = at(d.sgaExp, i), rdP = at(d.rdExp, p), sgaP = at(d.sgaExp, p);
+  var opex = [];
+  if (rd !== null && sga !== null && rd >= 0 && sga >= 0 && totalOpex - rd - sga >= 0) {
+    opex.push({ name: 'R&D', v: rd, yoy: yy(rd, rdP), color: '#7d8fb3' });
+    opex.push({ name: 'SG&A', v: sga, yoy: yy(sga, sgaP), color: '#9c8a68' });
+    if (totalOpex - rd - sga > 0) opex.push({ name: 'Other operating', v: totalOpex - rd - sga, yoy: yy(totalOpex - rd - sga, (totalOpexP !== null && rdP !== null && sgaP !== null) ? totalOpexP - rdP - sgaP : null), color: '#6b6656' });
+  } else if (rd !== null && sga === null && rd >= 0 && totalOpex - rd >= 0) {
+    opex.push({ name: 'R&D', v: rd, yoy: yy(rd, rdP), color: '#7d8fb3' });
+    if (totalOpex - rd > 0) opex.push({ name: 'Other operating', v: totalOpex - rd, yoy: null, color: '#6b6656' });
+  } else if (sga !== null && rd === null && sga >= 0 && totalOpex - sga >= 0) {
+    opex.push({ name: 'SG&A', v: sga, yoy: yy(sga, sgaP), color: '#9c8a68' });
+    if (totalOpex - sga > 0) opex.push({ name: 'Other operating', v: totalOpex - sga, yoy: null, color: '#6b6656' });
+  }
+  if (!opex.length) opex.push({ name: 'Operating expenses', v: totalOpex, yoy: yy(totalOpex, totalOpexP), color: '#8a8271' });
+
+  /* Split 3: operating income -> interest & other (net), taxes,
+   * net income. Interest & other (net) is pretax minus operating
+   * income -- every non-operating line (interest, equity earnings,
+   * gains, FX) netted, exactly as reported. A tax benefit (negative
+   * tax) folds into it so the split stays an identity. */
+  var pretax = at(d.pretaxInc, i), taxR = at(d.taxExp, i);
+  var otherNet, tax;
+  if (pretax !== null) { otherNet = pretax - oper; tax = (taxR !== null) ? taxR : pretax - net; }
+  else if (taxR !== null) { tax = taxR; otherNet = net + tax - oper; }
+  else { otherNet = net - oper; tax = 0; }
+  if (tax < 0) { otherNet -= tax; tax = 0; }
+  var otherNetP = null, taxP = null;
+  var pretaxP = at(d.pretaxInc, p), taxRP = at(d.taxExp, p);
+  if (operP !== null && netP !== null) {
+    if (pretaxP !== null) { otherNetP = pretaxP - operP; taxP = (taxRP !== null) ? taxRP : pretaxP - netP; }
+    else if (taxRP !== null) { taxP = taxRP; otherNetP = netP + taxP - operP; }
+    else { otherNetP = netP - operP; taxP = 0; }
+    if (taxP !== null && taxP < 0) { otherNetP -= taxP; taxP = 0; }
+  }
+
+  function nd(name, v, yoy, color, role) { return { name: name, v: v, yoy: yoy, color: color, role: role || 'sink' }; }
+  var revN = nd('Revenue', rev, yy(rev, revP), '#a79b7d', 'src');
+  var costN = nd('Cost of revenue', cost, yy(cost, costP), '#6b6656');
+  var grossN = nd('Gross profit', gross, yy(gross, grossP), FLOW_GOLD);
+  var operN = nd('Operating income', oper, yy(oper, operP), oper < 0 ? FLOW_RED : FLOW_GOLD, oper < 0 ? 'marker' : 'sink');
+  var cols = [[revN], [costN, grossN], [], []];
+  var links = [];
+  /* Feed sinks from a stack of source nodes in order, tracking the
+   * dollar offset inside each source so bands leave side by side.
+   * When the sinks outrun the sources (an operating loss), the
+   * last source's offsets simply run past its bottom edge -- the
+   * overflow tail IS the loss, and the red marker node in the next
+   * column carries its exact value. */
+  function feed(sources, sinks) {
+    var si = 0, sOff = 0;
+    sinks.forEach(function (sk) {
+      var rem = sk.v, dOff = 0;
+      while (rem > 1e-6 && si < sources.length) {
+        var src = sources[si], avail = src.avail - sOff;
+        if (avail <= 1e-6) {
+          if (src.overflow) { avail = rem; }
+          else { si++; sOff = 0; continue; }
+        }
+        var take = Math.min(avail, rem);
+        links.push({ s: src.node, sOff: sOff, d: sk.node, dOff: dOff, v: take, color: sk.node.color });
+        sOff += take; dOff += take; rem -= take;
+        if (!src.overflow && sOff >= src.avail - 1e-6) { si++; sOff = 0; }
+      }
+    });
+  }
+  feed([{ node: revN, avail: rev }], [{ node: costN, v: cost }, { node: grossN, v: gross }]);
+  var sinks2 = opex.map(function (o) { var n = nd(o.name, o.v, o.yoy, o.color); cols[2].push(n); return { node: n, v: o.v }; });
+  cols[2].push(operN);
+  if (oper > 0) sinks2.push({ node: operN, v: oper });
+  feed([{ node: grossN, avail: gross, overflow: oper < 0 }], sinks2);
+  var stubN = null;
+  if (otherNet > 0) { stubN = nd('Interest & other', otherNet, yy(otherNet, otherNetP), '#8a8271', 'stub'); cols[2].push(stubN); }
+  var intN = null, taxN = null;
+  if (otherNet < 0) { intN = nd('Interest & other', otherNet, yy(otherNet, otherNetP), '#8a8271'); cols[3].push(intN); }
+  if (tax > 0) { taxN = nd('Taxes', tax, yy(tax, taxP), '#b08968'); cols[3].push(taxN); }
+  var netN = nd('Net income', net, yy(net, netP), net < 0 ? FLOW_RED : FLOW_GOLD, net < 0 ? 'marker' : 'sink');
+  cols[3].push(netN);
+  var sources3 = [];
+  if (oper > 0) sources3.push({ node: operN, avail: oper });
+  if (stubN) sources3.push({ node: stubN, avail: otherNet });
+  if (oper < 0) sources3.push({ node: operN, avail: Math.abs(oper), overflow: true });
+  var sinks3 = [];
+  if (intN) sinks3.push({ node: intN, v: Math.abs(otherNet) });
+  if (taxN) sinks3.push({ node: taxN, v: tax });
+  if (net > 0) sinks3.push({ node: netN, v: net });
+  feed(sources3, sinks3);
+
+  var takeaway = null;
+  if (oper >= 0 && net >= 0) {
+    takeaway = 'Out of every $1 of revenue: ' + Math.round(gross / rev * 100) + '\u00a2 gross profit, ' +
+      Math.round(oper / rev * 100) + '\u00a2 operating income, ' + Math.round(net / rev * 100) + '\u00a2 kept as net income.';
+  }
+  return { period: d.periods[i], rev: rev, net: net, cols: cols, links: links, takeaway: takeaway };
+}
+
+/* Hand-rolled Sankey: node bars in four columns, tapering cubic
+ * bands between them, widths proportional to dollars. Detail size
+ * carries name / value / year-over-year labels beside every node
+ * (phones have no hover); the grid mini is bands only. */
+function qmFlowSVG(model, mini) {
+  var W = 640, barW = mini ? 14 : 20, gap = mini ? 5 : 9, top = mini ? 4 : 12;
+  var colX = [4, 166, 328, 490];
+  var plotH = mini ? 148 : 440;
+  var sums = model.cols.map(function (col) { return col.reduce(function (a, n) { return a + Math.abs(n.v); }, 0); });
+  var scale = plotH / Math.max.apply(null, sums.concat([1]));
+  var maxH = 0;
+  model.cols.forEach(function (col, ci) {
+    var y = top;
+    col.forEach(function (n) {
+      n.x = colX[ci]; n.y = y;
+      n.h = Math.abs(n.v) * scale;
+      if (n.v !== 0 && n.h < 1.5) n.h = 1.5;
+      y += n.h + gap;
+    });
+    if (col.length && y - gap - top > maxH) maxH = y - gap - top;
+  });
+  var H = Math.ceil(top + maxH + (mini ? 6 : 16));
+  function f(n) { return Math.round(n * 10) / 10; }
+  function band(l) {
+    var x1 = l.s.x + barW, x2 = l.d.x;
+    var y1a = l.s.y + l.sOff * scale, y1b = y1a + l.v * scale;
+    var y2a = l.d.y + l.dOff * scale, y2b = y2a + l.v * scale;
+    var dx = (x2 - x1) * 0.45;
+    return '<path d="M' + f(x1) + ',' + f(y1a) + ' C' + f(x1 + dx) + ',' + f(y1a) + ' ' + f(x2 - dx) + ',' + f(y2a) + ' ' + f(x2) + ',' + f(y2a) +
+      ' L' + f(x2) + ',' + f(y2b) + ' C' + f(x2 - dx) + ',' + f(y2b) + ' ' + f(x1 + dx) + ',' + f(y1b) + ' ' + f(x1) + ',' + f(y1b) +
+      ' Z" fill="' + l.color + '" fill-opacity="0.42"/>';
+  }
+  var out = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Income flow diagram">';
+  model.links.forEach(function (l) { out += band(l); });
+  model.cols.forEach(function (col) {
+    col.forEach(function (n) {
+      out += '<rect x="' + n.x + '" y="' + f(n.y) + '" width="' + barW + '" height="' + f(n.h) + '" rx="2" fill="' + n.color + '"/>';
+    });
+  });
+  if (!mini) {
+    var halo = 'paint-order:stroke;stroke:var(--field);stroke-width:3.5px;stroke-linejoin:round';
+    model.cols.forEach(function (col) {
+      col.forEach(function (n) {
+        var lx = n.x + barW + 9;
+        var val = esc(fmtMoneyShort(n.v));
+        if (n.h >= 34) {
+          out += '<text x="' + lx + '" y="' + f(n.y + 15) + '" font-size="14.5" font-weight="700" style="fill:var(--ink);' + halo + '">' + esc(n.name) + '</text>';
+          out += '<text x="' + lx + '" y="' + f(n.y + 33) + '" font-size="15" font-weight="800" style="fill:var(--chart-val);' + halo + '">' + val + '</text>';
+          if (isNum(n.yoy)) out += '<text x="' + lx + '" y="' + f(n.y + 49) + '" font-size="12" font-weight="700" style="fill:' + (n.yoy >= 0 ? 'var(--neon-up)' : 'var(--neon-dn)') + ';' + halo + '">' + (n.yoy >= 0 ? '+' : '\u2212') + fmtNum(Math.abs(n.yoy), 1) + '%</text>';
+        } else if (n.h >= 15) {
+          out += '<text x="' + lx + '" y="' + f(n.y + 13) + '" font-size="13.5" font-weight="700" style="fill:var(--ink);' + halo + '">' + esc(n.name) + '</text>';
+          out += '<text x="' + lx + '" y="' + f(n.y + 29) + '" font-size="14" font-weight="800" style="fill:var(--chart-val);' + halo + '">' + val + '</text>';
+        } else {
+          out += '<text x="' + lx + '" y="' + f(n.y + 12) + '" font-size="13" font-weight="700" style="fill:var(--ink);' + halo + '">' + esc(n.name) + ' \u00b7 ' + val + '</text>';
+        }
+      });
+    });
+  }
+  return out + '</svg>';
+}
+
+function renderQmFlow() {
+  var box = $('qm-chart'), note = $('qm-note');
+  var data = qmEnsure('flow', fetchFlowAnnual);
+  if (data === 'loading') {
+    box.innerHTML = '<div class="status"><span class="spinner"></span>Loading income statement\u2026</div>';
+    note.textContent = '';
+    return;
+  }
+  var model = data ? qmFlowModel(data) : null;
+  if (!model) {
+    box.innerHTML = '<div class="status err">Income flow isn\u2019t available for this company \u2014 its financial statements don\u2019t break out the lines this diagram needs.</div>';
+    note.textContent = 'Banks, insurers and some other companies report different statement lines \u2014 no cost of revenue, gross profit or operating income \u2014 so there is no revenue-to-net-income cascade to draw. The other charts still work for them.';
+    return;
+  }
+  box.innerHTML = '<div class="chart-wrap">' + qmFlowSVG(model, false) + '</div>' +
+    (model.takeaway ? '<div class="qm-flow-take">' + esc(model.takeaway) + '</div>' : '');
+  note.textContent = 'Annual \u00b7 ' + model.period + ' as reported \u00b7 SEC filings via StockAnalysis. Each split adds up to the line it flows from; anything the statement doesn\u2019t itemize sits in \u201cOther.\u201d R&D = research & development; SG&A = selling, general & administrative.';
+}
+
 /* Mini bar chart for grid cards: shape only (the card header
  * carries the latest value), first + last period labels. */
 function qmMiniBarsSVG(pts) {
@@ -5899,6 +6137,14 @@ function renderQmGrid() {
     return out;
   }
   groups.push(['Money', stdCards(['revenue', 'netIncome', 'eps', 'fcf'])]);
+  var flowCards = [];
+  var flowD = qmEnsure('flow', fetchFlowAnnual);
+  if (flowD === 'loading') { flowCards.push(qmLoadCardHtml('Income flow')); }
+  else if (flowD) {
+    var fm = qmFlowModel(flowD);
+    if (fm) flowCards.push(qmCardHtml('flow', 'Income flow', fmtMoneyShort(fm.net), qmFlowSVG(fm, true), true));
+  }
+  groups.push(['Income statement', flowCards]);
   groups.push(['Margins', stdCards(['grossMargin', 'operMargin', 'netMargin'])]);
   groups.push(['Shares', stdCards(['shares'])]);
   groups.push(['Balance sheet', stdCards(['bsCash', 'bsDebt', 'bsNet'])]);
@@ -6009,6 +6255,7 @@ function renderQmDetail() {
     b.classList.toggle('active', v === view && !special);
     b.disabled = special || (v === 'csize' && !M.csize);
   });
+  if (qmMetric === 'flow') return renderQmFlow();
   if (qmMetric === 'segRev') return renderQmSegments('rev');
   if (qmMetric === 'segOp') return renderQmSegments('op');
   if (qmMetric === 'avEps') return renderQmAv();

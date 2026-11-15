@@ -685,6 +685,7 @@ main.scroll-lock { overflow-y: hidden; }
 .qm-grid-group { min-width: 0; }
 .qm-card-load { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; font-weight: 700; padding: 18px 2px; }
 .qm-legend { margin-top: 10px; display: flex; flex-direction: column; gap: 5px; }
+.qm-flow-take { margin-top: 12px; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--field); font-size: 14.5px; line-height: 1.5; font-weight: 600; color: var(--ink); }
 .qm-leg-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .qm-dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 .qm-leg-name { color: var(--ink); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
