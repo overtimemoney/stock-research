@@ -3567,9 +3567,11 @@ function cashDebtHtml(d) {
  * the user has already tapped away from never lands. */
 function projStripHtml(id, ticker) {
   var saved = pjSavedCagr(ticker);
-  var cached = isNum(saved) ? saved : (wlProjEntry(ticker) || {}).cagr;
+  var freshEnt = wlProjEntry(ticker);
+  var staleEnt = freshEnt ? null : wlProjStale(ticker);
+  var cached = isNum(saved) ? saved : (freshEnt ? freshEnt.cagr : (staleEnt ? staleEnt.cagr : null));
   var v = isNum(cached)
-    ? '<span class="sc-proj-v ' + (cached >= 0 ? 'up' : 'down') + '">' + (cached >= 0 ? '+' : '') + fmtNum(cached, 1) + '%/yr</span>'
+    ? '<span class="sc-proj-v ' + (cached >= 0 ? 'up' : 'down') + (staleEnt && !isNum(saved) ? ' sc-proj-stale' : '') + '">' + (cached >= 0 ? '+' : '') + fmtNum(cached, 1) + '%/yr</span>'
     : '<span class="sc-proj-v sc-proj-wait">Estimating\u2026</span>';
   return '<button type="button" class="sc-proj" id="' + id + '" data-proj-ticker="' + esc(ticker) + '" aria-label="Open the projection for ' + esc(ticker) + '"><span class="sc-proj-l"><b>Estimated return</b><span>Projected 4-yr CAGR \u00b7 base case</span></span><span class="sc-proj-r">' + v + '<span class="sc-proj-chev">\u203a</span></span></button>';
 }
@@ -6273,17 +6275,33 @@ function wlProjEntry(T) {
   var e = m[T];
   return (e && e.day === new Date().toDateString()) ? e : null;
 }
+/* Stale-while-revalidate (Justin's ask, 2026-11-15): the most
+ * recent earlier-day value, shown dimmed as a placeholder until
+ * today's computation lands, so the list never paints blank. */
+function wlProjStale(T) {
+  var m = lsGet(WLPROJ_KEY, {});
+  var e = m[T];
+  return (e && e.day !== new Date().toDateString() && isNum(e.cagr)) ? e : null;
+}
 async function fetchWlProjCagr(T) {
   var ent = wlProjEntry(T);
   if (ent) return ent.cagr;
-  var cagr = null;
+  var cagr = null, loaded = false;
   try {
     var d = await fetchStock(T);
     if (d) {
+      loaded = true;
       await pjEnsureExitData(d);
       cagr = wlProjectCagr(d);
     }
   } catch (e) { cagr = null; }
+  if (!loaded) {
+    /* The fetch itself failed (offline / relays down): keep the
+     * stale placeholder rather than burning it on a null that
+     * would read as "no analyst path" for the rest of the day. */
+    var stale = wlProjStale(T);
+    if (stale) return stale.cagr;
+  }
   var m = lsGet(WLPROJ_KEY, {});
   m[T] = { day: new Date().toDateString(), cagr: isNum(cagr) ? cagr : null };
   lsSet(WLPROJ_KEY, m);
@@ -6302,11 +6320,15 @@ async function wlProjPass(tickers) {
         var cagr = await fetchWlProjCagr(T);
         if (isNum(cagr)) {
           changed = true;
+          var fresh = !!wlProjEntry(T);
           var rowEls = document.querySelectorAll('#wl-list .wl-row');
           for (var i = 0; i < rowEls.length; i++) {
             if (rowEls[i].getAttribute('data-ticker') === T) {
               var pEl = rowEls[i].querySelector('.wl-proj');
-              if (pEl) pEl.innerHTML = wlProjInner(cagr, wlValuationDisplay(T));
+              if (pEl) {
+                pEl.innerHTML = wlProjInner(cagr, wlValuationDisplay(T));
+                if (fresh) pEl.classList.remove('stale');
+              }
               break;
             }
           }
@@ -8244,7 +8266,8 @@ async function renderWatchlist(refresh) {
     try { price = await fetchLightPrice(item.ticker); } catch (e) { err = e.message; }
     var projMap = getProjections();
     var projEnt = wlProjEntry(item.ticker);
-    rows.push({ item: item, price: price, err: err, val: wlValuationDisplay(item.ticker), proj: !!projMap[item.ticker], projCagr: projMap[item.ticker] ? pjSavedCagr(item.ticker) : null, autoCagr: projEnt ? projEnt.cagr : null });
+    var staleEnt = projEnt ? null : wlProjStale(item.ticker);
+    rows.push({ item: item, price: price, err: err, val: wlValuationDisplay(item.ticker), proj: !!projMap[item.ticker], projCagr: projMap[item.ticker] ? pjSavedCagr(item.ticker) : null, autoCagr: projEnt ? projEnt.cagr : (staleEnt ? staleEnt.cagr : null), projStale: !!staleEnt });
   }
   // Stale or missing scores are filled by the paced background pass
   // after the rows paint (see wlFillPass) -- never by blocking here.
@@ -8294,7 +8317,7 @@ async function renderWatchlist(refresh) {
     // overview a tap opens.
     html += '<div class="wl-row" data-ticker="' + esc(item.ticker) + '">' + logoTile(item.ticker) + '<div class="wl-left"><span class="wl-t">' + esc(item.ticker) + '</span>' +
       '<div class="wl-meta wl-val">' + (r.val ? wlValInner(r.val) : '') + '</div>' +
-      '<div class="wl-meta wl-proj">' + wlProjInner(wlDispCagr(r), r.val) + '</div>' +
+      '<div class="wl-meta wl-proj' + (r.projStale && !isNum(r.projCagr) ? ' stale' : '') + '">' + wlProjInner(wlDispCagr(r), r.val) + '</div>' +
       '</div>' +
       '<div class="wl-right"><div class="wl-price">' + (isNum(price) ? fmtMoney(price) : '\u2014') + '</div>' +
       (r.err ? '<div style="text-align:right"><span class="factor-note">price unavailable</span></div>' : '') +

@@ -311,6 +311,8 @@ table.factors td:first-child:has(.info-dot) { padding-right: 28px; }
 .sc-proj-l span { font-size: 11px; font-weight: 600; color: var(--muted); white-space: nowrap; }
 .sc-proj-v { font-size: 20px; font-weight: 900; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .sc-proj-v.sc-proj-wait { font-size: 12.5px; font-weight: 700; color: var(--muted); }
+.wl-proj.stale { opacity: .5; }
+.sc-proj-v.sc-proj-stale { opacity: .55; }
 /* Custom screener panel (2026-10-30) */
 .scr-saved { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .scr-chip { display: inline-flex; align-items: center; border: 1px solid var(--line); background: var(--chip-bg); border-radius: 999px; overflow: hidden; }
