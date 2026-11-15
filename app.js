@@ -139,8 +139,8 @@ function relayFetch(url, opts) {
     });
   });
 }
-async function relayJSON(url) {
-  var text = await relayFetch(url, { validate: function (t) { return t.trim().charAt(0) === '{'; } });
+async function relayJSON(url, timeout) {
+  var text = await relayFetch(url, { timeout: timeout || 10000, validate: function (t) { return t.trim().charAt(0) === '{'; } });
   return JSON.parse(text);
 }
 
@@ -4577,6 +4577,7 @@ var qmFreq = 'q';
 var qmWin = 2;
 var QM_WIN_CHOICES = [2, 3, 5, 10];
 var qmStore = { ticker: null, q: null, y: null };
+var qmEdgarFailedAt = 0;
 function qmData() { return qmStore[qmFreq]; }
 /* History window (Justin's ask, 2026-11-09): every chart shows the
  * last qmWin years by default — 2 years of annual bars, 8 quarters
@@ -4809,16 +4810,28 @@ async function fetchQMetrics(T, freq) {
 var EDGAR_KEY = 'sr_edgar_v2';
 var edgarCikMap = null;
 
+var CIK_KEY = 'sr_cik_v1';
 async function edgarCik(T) {
   if (!edgarCikMap) {
-    var tj = await relayJSON('https://www.sec.gov/files/company_tickers.json');
-    edgarCikMap = {};
+    /* The ticker->CIK map is a ~1MB SEC file that changes almost
+     * never; keep a 30-day local copy so it stops being a fresh
+     * download standing in front of every backfill. */
+    var saved = lsGet(CIK_KEY, null);
+    if (saved && saved.map && Date.now() - (saved.ts || 0) < 30 * 86400000) edgarCikMap = saved.map;
+  }
+  if (!edgarCikMap) {
+    var tj = await relayJSON('https://www.sec.gov/files/company_tickers.json', 30000);
+    var map = {};
     Object.keys(tj || {}).forEach(function (k) {
       var r = tj[k];
-      if (r && r.ticker) edgarCikMap[String(r.ticker).toUpperCase()] = r.cik_str;
+      if (r && r.ticker) map[String(r.ticker).toUpperCase()] = r.cik_str;
     });
+    if (Object.keys(map).length) {
+      edgarCikMap = map;
+      lsSet(CIK_KEY, { ts: Date.now(), map: map });
+    }
   }
-  return edgarCikMap[T] || null;
+  return edgarCikMap ? (edgarCikMap[T] || null) : null;
 }
 
 /* The fiscal-year label for a filing entry. EDGAR's fy field names
@@ -5131,22 +5144,37 @@ var EDGAR_CONCEPTS = {
 async function fetchEdgarHistory(T) {
   var cache = lsGet(EDGAR_KEY, {});
   var day = new Date().toDateString();
-  if (cache[T] && cache[T].day === day) return cache[T].data;
+  var ent = cache[T];
+  /* A successful backfill stays good for a week: the assembled
+   * history is filed fact, and the merge only ever prepends it
+   * UNDER StockAnalysis data, so the recent periods the cache
+   * might lag on are always covered by SA. (Was: same-day only,
+   * which re-rolled the dice on a ~5MB SEC download every morning
+   * — and a lost roll silently meant SA-only chart depth.) */
+  if (ent && ent.data && ((ent.ts && Date.now() - ent.ts < 7 * 86400000) || (!ent.ts && ent.day === day))) return ent.data;
+  if (ent && !ent.data && ent.day === day) return null; /* definitive no-CIK answer, cached for the day */
   var cik = null;
   try { cik = await edgarCik(T); } catch (e) {}
   if (!edgarCikMap) return null; /* ticker map itself failed to load: retry next open */
   if (!cik) {
     /* No CIK = not an SEC filer: a definitive answer, safe to cache
      * for the day. */
-    cache[T] = { day: day, data: null };
+    cache[T] = { day: day, ts: Date.now(), data: null };
     lsSet(EDGAR_KEY, cache);
     return null;
   }
+  /* The facts file runs ~5MB and the SEC intermittently rate-limits
+   * the relays' shared egress, so this download gets a long race
+   * plus one retry — the generic 10s race lost too often, and every
+   * loss silently cost the charts their long history. */
   var facts = null;
-  try {
-    var raw = await relayJSON('https://data.sec.gov/api/xbrl/companyfacts/CIK' + String(cik).padStart(10, '0') + '.json');
-    facts = (raw && raw.facts) || null;
-  } catch (e) {}
+  for (var attempt = 0; attempt < 2 && !facts; attempt++) {
+    try {
+      var raw = await relayJSON('https://data.sec.gov/api/xbrl/companyfacts/CIK' + String(cik).padStart(10, '0') + '.json', 45000);
+      facts = (raw && raw.facts) || null;
+    } catch (e) {}
+    if (!facts && attempt === 0) await new Promise(function (r) { setTimeout(r, 3000); });
+  }
   if (!facts) return null; /* transient failure: not cached, next open retries */
   var MONEY = ['USD'], SHARES = ['shares'], PER = ['USD/shares'];
   var splitEvents = [];
@@ -5190,7 +5218,7 @@ async function fetchEdgarHistory(T) {
   var data = { annual: annualObj, quarterly: edgarAssemble(qMaps(), 44, fyWin) };
   if (!data.annual && !data.quarterly) data = null;
   if (data) edgarSplitGuard(data);
-  cache[T] = { day: day, data: data };
+  cache[T] = { day: day, ts: Date.now(), data: data };
   lsSet(EDGAR_KEY, cache);
   return data;
 }
@@ -5909,8 +5937,13 @@ function renderQm() {
    * and merges it under the SA data once it lands (qmEnsure calls
    * renderQm again when the load resolves). */
   if (qmStore.ticker) {
+    /* A failed backfill used to sit in the slot as null for the
+     * whole session, silently capping every chart at SA's depth.
+     * Let a later render retry it once a minute has passed. */
+    if (qmStore.edgar === null && qmEdgarFailedAt && Date.now() - qmEdgarFailedAt > 60000) qmStore.edgar = undefined;
     var edg = qmEnsure('edgar', fetchEdgarHistory);
-    if (edg && edg !== 'loading') qmMergeEdgar();
+    if (edg === null && !qmEdgarFailedAt) qmEdgarFailedAt = Date.now();
+    if (edg && edg !== 'loading') { qmEdgarFailedAt = 0; qmMergeEdgar(); }
   }
   var ov = $('qm-overlay'), det = $('qm-detail');
   document.querySelectorAll('[data-qmfreq]').forEach(function (b) {
