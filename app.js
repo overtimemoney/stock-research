@@ -2323,6 +2323,35 @@ function cyclicalSeverity(d) {
   return out;
 }
 
+/* Forward earnings cliff (Justin's ask, 2026-11-15): the risk the
+ * backward-looking checks miss -- earnings fall hard LATER in the
+ * forecast, not in the next year (the EPS-trend factor's step). The
+ * peak must be a forecast year; severity is the worst fall from
+ * that peak to any later forecast year: no fall up to 10% = 0,
+ * scaling to 1 at a 75% fall (a fall into losses always lands
+ * there). Falls back to a stored severity (scan records carry
+ * cliffSev) when the stock itself has no forecast path loaded. */
+function fwdCliff(d) {
+  var out = { severity: 0, known: false, stamped: false, peak: null, peakLabel: '', worst: null, worstLabel: '', drop: null };
+  var pts = epsPoints(d).filter(function (p) { return p.kind === 'est' && isNum(p.eps); });
+  if (pts.length < 2) {
+    if (isNum(d.cliffSev)) { out.severity = Math.max(0, Math.min(1, d.cliffSev)); out.known = true; out.stamped = true; }
+    return out;
+  }
+  out.known = true;
+  var pi = 0;
+  for (var i = 1; i < pts.length; i++) if (pts[i].eps > pts[pi].eps) pi = i;
+  out.peak = pts[pi].eps; out.peakLabel = pts[pi].label;
+  if (!(out.peak > 0) || pi >= pts.length - 1) return out;
+  var w = Infinity, wl = '';
+  for (var j = pi + 1; j < pts.length; j++) if (pts[j].eps < w) { w = pts[j].eps; wl = pts[j].label; }
+  out.worst = w; out.worstLabel = wl;
+  out.drop = (out.peak - w) / out.peak;
+  if (out.drop <= 0.10) return out;
+  out.severity = out.drop >= 0.75 ? 1 : (out.drop - 0.10) / 0.65;
+  return out;
+}
+
 function riskScore(d, w) {
   var factors = [];
   /* pick(): first matching band wins. 'le' tables ascend (v <= limit);
@@ -2402,11 +2431,17 @@ function riskScore(d, w) {
   // Cyclical overlay (2026-11-01): final = base + (100 - base) x
   // severity x 0.6. Severity 0 leaves the base untouched, exactly.
   var cyc = cyclicalSeverity(d);
-  var score = base;
-  if (base != null && cyc.severity > 0) score = Math.round(base + (100 - base) * cyc.severity * 0.6);
+  var afterCyc = base;
+  if (base != null && cyc.severity > 0) afterCyc = Math.round(base + (100 - base) * cyc.severity * 0.6);
+  // Forward-cliff overlay (2026-11-15): the same treatment for a
+  // cliff visible in the forecast instead of in history -- it
+  // stacks on whatever the cyclical overlay left.
+  var cliff = fwdCliff(d);
+  var score = afterCyc;
+  if (afterCyc != null && cliff.severity > 0) score = Math.round(afterCyc + (100 - afterCyc) * cliff.severity * 0.6);
   var verdict = null;
   if (score != null) verdict = score <= 25 ? 'Low risk' : score <= 45 ? 'Moderate risk' : score <= 65 ? 'Elevated risk' : 'High risk';
-  return { factors: factors, got: got, maxAvailable: maxAvailable, base: base, score: score, verdict: verdict, cyc: cyc, cycAdj: base != null ? score - base : null };
+  return { factors: factors, got: got, maxAvailable: maxAvailable, base: base, score: score, verdict: verdict, cyc: cyc, cycAdj: base != null ? afterCyc - base : null, cliff: cliff, cliffAdj: afterCyc != null ? score - afterCyc : null };
 }
 
 function valueScreen(d) {
@@ -2425,13 +2460,15 @@ function valueScreen(d) {
 function riskScreen(d) {
   var cyc = cyclicalSeverity(d);
   var cycTestable = !!(cyc && cyc.raw !== null && cyc.raw !== undefined);
+  var cliff = fwdCliff(d);
   return [
     { label: 'Debt / Equity at or under 1', test: isNum(d.debtEq) ? (d.debtEq <= 1) : null, value: isNum(d.debtEq) ? fmtNum(d.debtEq, 2) : '\u2014' },
     { label: 'Profitable (margin above 0)', test: isNum(d.profitMargin) ? (d.profitMargin > 0) : null, value: isNum(d.profitMargin) ? fmtNum(d.profitMargin, 1) + '%' : '\u2014' },
     { label: 'Current ratio at or above 1', test: isNum(d.currentRatio) ? (d.currentRatio >= 1) : null, value: isNum(d.currentRatio) ? fmtNum(d.currentRatio, 2) : '\u2014' },
     { label: 'Beta at or under 1.5', test: isNum(d.beta) ? (d.beta <= 1.5) : null, value: isNum(d.beta) ? fmtNum(d.beta, 2) : '\u2014' },
     { label: 'EPS growing next year', test: isNum(d.epsGrowthNextY) ? (d.epsGrowthNextY >= 0) : null, value: isNum(d.epsGrowthNextY) ? fmtPct(d.epsGrowthNextY) : '\u2014' },
-    { label: 'No cyclical earnings peak', test: cycTestable ? (cyc.severity < 0.5) : null, value: cycTestable ? 'Severity ' + fmtNum(cyc.severity, 2) + ' of 1' : '\u2014' }
+    { label: 'No cyclical earnings peak', test: cycTestable ? (cyc.severity < 0.5) : null, value: cycTestable ? 'Severity ' + fmtNum(cyc.severity, 2) + ' of 1' : '\u2014' },
+    { label: 'No earnings cliff in the forecast', test: cliff.known ? (cliff.severity < 0.5) : null, value: cliff.known ? 'Severity ' + fmtNum(cliff.severity, 2) + ' of 1' : '\u2014' }
   ];
 }
 
@@ -2949,6 +2986,7 @@ var lastStock = null;
  * under it. One delegated listener handles every dot. */
 var INFO_TEXT = {
   cycsev: 'Severity runs 0 to 1: how peak-cycle today\'s numbers look vs the company\'s own history \u2014 margin vs its long-run average, worst EPS drawdown, trailing EPS growth, revenue surge. 0 = nothing unusual; 1 = textbook cycle peak. Needs 2 strong signals to count; then it lifts the risk score toward 100. With fewer than 3 signals carrying data, severity caps at 0.8.',
+  cliffsev: 'Severity runs 0 to 1: how hard earnings fall later in the analyst forecast, after their peak year. A fall of 10% or less counts as nothing; the scale tops out at a 75% fall, and falling into losses always counts as a full 1. It lifts the risk score toward 100 the same way the cyclical check does \u2014 the danger is the same, it just shows up in the forecast instead of in history. A fall into next year is scored separately, by the EPS trend factor.',
   fwpe: 'Forward P/E = today\'s price divided by next year\'s expected earnings per share. It prices the stock against where earnings are heading, not where they have been. Rough guide: under 15 is cheap for most stocks, over 30 is expensive.',
   pe: 'P/E (trailing) = today\'s price divided by the last twelve months\' actual earnings per share. Higher means investors pay more for each $1 of profit the company already makes.',
   peg: 'PEG = the forward P/E divided by the expected earnings growth rate. It checks whether the price is fair for the growth you are getting. Under 1 is the classic \u201cgrowth at a reasonable price\u201d zone; under 0.75 is rare.',
@@ -3652,7 +3690,8 @@ function renderScorecard(d) {
       if (rkStd.score != null && rkStd.score !== rk.score) html += '<p class="fineprint">Your scoring weights \u00b7 with the standard weights the risk score is ' + rkStd.score + '.</p>';
     }
     var rkMath = 'Base = ' + rk.got + ' pts \u00f7 ' + rk.maxAvailable + ' pts available \u00d7 100 = ' + rk.base + '.';
-    if (rk.cyc && rk.cyc.severity > 0) rkMath += ' Cyclical overlay: ' + rk.base + ' + (100 \u2212 ' + rk.base + ') \u00d7 ' + fmtNum(rk.cyc.severity, 2) + ' \u00d7 0.6 = ' + rk.score + '.';
+    if (rk.cyc && rk.cyc.severity > 0) rkMath += ' Cyclical overlay: ' + rk.base + ' + (100 \u2212 ' + rk.base + ') \u00d7 ' + fmtNum(rk.cyc.severity, 2) + ' \u00d7 0.6 = ' + (rk.base + rk.cycAdj) + '.';
+    if (rk.cliff && rk.cliff.severity > 0) rkMath += ' Cliff overlay: ' + (rk.base + rk.cycAdj) + ' + (100 \u2212 ' + (rk.base + rk.cycAdj) + ') \u00d7 ' + fmtNum(rk.cliff.severity, 2) + ' \u00d7 0.6 = ' + rk.score + '.';
     html += '<div class="math-box banner-math" id="math-rscore" hidden>' + esc(rkMath) + '</div>';
     html += '<table class="factors"><tr><th>Risk factor</th><th>Value</th><th class="num">Risk pts</th></tr>';
     rk.factors.forEach(function (f, fi) {
@@ -3684,9 +3723,19 @@ function renderScorecard(d) {
       if (cParts.length) cycMath = 'Severity ' + fmtNum(rk.cyc.severity, 2) + ': ' + cParts.join(' \u00b7 ') + '.<br>' + cycMath;
       html += '<tr class="math-row" id="math-cyc" hidden><td colspan="3"><div class="math-box">' + cycMath + '</div></td></tr>';
     }
+    if (rk.cliff && rk.cliff.known) {
+      var fNote = rk.cliff.severity > 0 ? 'Earnings peak inside the forecast, then fall' : 'No fall after the forecast peak';
+      if (rk.cliff.stamped) fNote = 'From the stored scan check';
+      var fDetail = INFO_TEXT.cliffsev;
+      if (rk.cliff.severity > 0 && isNum(rk.cliff.peak) && isNum(rk.cliff.worst)) fDetail += '<br><br>This stock: EPS peaks at ' + fmtNum(rk.cliff.peak) + ' (' + esc(rk.cliff.peakLabel) + '), then falls to ' + fmtNum(rk.cliff.worst) + ' by ' + esc(rk.cliff.worstLabel) + ' \u2014 a ' + fmtNum(Math.abs(rk.cliff.drop) * 100, 0) + '% fall.';
+      html += '<tr><td><strong>Earnings cliff ahead</strong>' + infoDot('cliffsev') + '<div class="factor-note">' + esc(fNote) + '</div></td><td>Severity ' + fmtNum(rk.cliff.severity, 2) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-cliff" aria-expanded="false"><strong>+' + rk.cliffAdj + '</strong></button></td></tr>';
+      html += '<tr class="info-row"><td colspan="3"><span class="info-text" data-info-text="cliffsev">' + fDetail + '</span></td></tr>';
+      var cliffMath = 'Risk added = (100 \u2212 ' + (rk.base + rk.cycAdj) + ') \u00d7 severity ' + fmtNum(rk.cliff.severity, 2) + ' \u00d7 0.6 = +' + rk.cliffAdj + ' \u2192 final ' + rk.score + '.';
+      html += '<tr class="math-row" id="math-cliff" hidden><td colspan="3"><div class="math-box">' + cliffMath + '</div></td></tr>';
+    }
     html += '</table>';
-    if (rk.cyc && cycSig.length) {
-      html += '<p class="fineprint">Base risk ' + rk.base + ' \u00b7 cyclical adjustment +' + rk.cycAdj + ' \u00b7 final ' + rk.score + '. Higher = riskier \u00b7 base scaled to 100 over factors with data (' + rk.maxAvailable + ' pts).</p>';
+    if ((rk.cyc && cycSig.length) || (rk.cliff && rk.cliff.known)) {
+      html += '<p class="fineprint">Base risk ' + rk.base + ' \u00b7 cyclical adjustment +' + rk.cycAdj + ' \u00b7 cliff adjustment +' + rk.cliffAdj + ' \u00b7 final ' + rk.score + '. Higher = riskier \u00b7 base scaled to 100 over factors with data (' + rk.maxAvailable + ' pts).</p>';
     } else {
       html += '<p class="fineprint">Higher = riskier \u00b7 scaled to 100 over factors with data (' + rk.maxAvailable + ' pts).</p>';
     }
@@ -6431,7 +6480,7 @@ var SCAN_KEY = 'sr_scan_v4';
  * rules is recomputed from the stored dataset on the next open
  * instead of being re-shown all day. States saved before the stamp
  * existed read as undefined and mismatch once, by design. */
-var SCAN_RULES_V = 5;
+var SCAN_RULES_V = 6;
 var scanRunning = false, scanActive = 0, scanCoolUntil = 0, scanTimer = null;
 
 function scanTodayKey() { return pfKeyToISO(pfDkey(new Date())); }
@@ -7203,7 +7252,8 @@ function scanPersistIdx(ixKey, merged) {
       price: r.price, marketCap: r.marketCap, grossMargin: r.grossMargin, profitMargin: r.profitMargin,
       debtEq: r.debtEq, currentRatio: r.currentRatio, pctBelowHigh: r.pctBelowHigh, beta: r.beta,
       divYield: r.divYield, industry: r.industry, epsGrowthTTM: r.epsGrowthTTM,
-      cagr: isNum(r.cagr) ? r.cagr : (prev && isNum(prev.cagr) ? prev.cagr : null) };
+      cagr: isNum(r.cagr) ? r.cagr : (prev && isNum(prev.cagr) ? prev.cagr : null),
+      cliffSev: isNum(r.cliffSev) ? r.cliffSev : (prev && isNum(prev.cliffSev) ? prev.cliffSev : null) };
   });
   if (ixKey === 'spx') ds.asOf = scanTodayKey();
   setScanData(ds);
