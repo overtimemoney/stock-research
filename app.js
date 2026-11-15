@@ -1603,7 +1603,14 @@ async function pjEnsurePe5y(d) {
  * capped at -0.10; a ratio penalty (0 at <=1.5x the average, up to
  * -0.20 at >=2.5x) takes the larger of the two, never stacked. Net
  * margin is excluded (tax / deal noise). Missing data leaves a
- * factor at 1 rather than guessing. */
+ * factor at 1 rather than guessing.
+ * EXIT SLOWDOWN trim (added 2026-11-14, Justin's call): when EPS
+ * growth decelerates hard by the final projected year versus the
+ * path's peak pace, the finished multiple is trimmed -- no trim
+ * while the final year still runs at half the peak pace or better,
+ * down to x0.80 when it has faded to a tenth of it. Only applies
+ * when the peak pace exceeded 20%/yr and at least two growth steps
+ * exist on the path (TTM + consensus years, positive-to-positive). */
 var pjExitDetail = null;
 function pjMedian(vals) {
   var s = vals.slice().sort(function (a, b) { return a - b; });
@@ -1722,9 +1729,35 @@ function pjComputeExitPe(d) {
     var dirApplied = (dir > 0 && inPeak) ? 0 : dir;
     margin = Math.max(0.85, Math.min(1.10, 1 + dirApplied - pen));
   }
-  var mult = base * growth * margin;
+  /* --- exit slowdown trim (Justin's call, 2026-11-14): if EPS
+   * growth decelerates hard by the FINAL projected year versus the
+   * path's peak pace, the exit multiple comes down -- a stock whose
+   * growth is fading at the exit should not be priced at the
+   * multiple its fastest years earned. Steps are measured
+   * positive-to-positive along the path the projection consumes
+   * (TTM first, then each consensus year). Only bites when the peak
+   * pace was real (>20%/yr) and at least two steps exist: no trim
+   * while the final year still runs at half the peak pace or
+   * better, down to x0.80 when it has faded to a tenth of it. */
+  var exitSlow = 1;
+  var pathEps = [];
+  if (isNum(d.epsTTM)) pathEps.push(d.epsTTM);
+  fcEps.forEach(function (e) { pathEps.push(e); });
+  var stepG = [];
+  for (var si = 1; si < pathEps.length; si++) {
+    if (pathEps[si - 1] > 0 && pathEps[si] > 0) stepG.push((pathEps[si] / pathEps[si - 1] - 1) * 100);
+  }
+  if (stepG.length >= 2) {
+    var gPeak = Math.max.apply(null, stepG);
+    var gLast = stepG[stepG.length - 1];
+    if (gPeak > 20 && gLast < gPeak * 0.5) {
+      var ratio = Math.max(0, gLast / gPeak);
+      exitSlow = ratio <= 0.1 ? 0.8 : 0.8 + (ratio - 0.1) * 0.5;
+    }
+  }
+  var mult = base * growth * margin * exitSlow;
   if (!isNum(mult) || mult <= 0) return null;
-  return { mult: mult, base: base, growth: growth, margin: margin, src: peSrc, peMed: peMed };
+  return { mult: mult, base: base, growth: growth, margin: margin, exitSlow: exitSlow, src: peSrc, peMed: peMed };
 }
 /* Industry-median P/E for the exit-P/E fallback: the Worker computes
  * the median trailing P/E of every StockAnalysis industry from the
@@ -1750,14 +1783,14 @@ async function pjEnsurePeMed(d) {
   }
   if (!c.map) {
     try {
-      var r = await fetch(RELAYS[0] + '/sector-pe');
+      var r = await fetch('https://stock-research-relay.supplessayings-6e6.workers.dev/sector-pe');
       if (r && r.ok) { var j = await r.json(); if (j && j.ind) { c.map = j.ind; save(); } }
     } catch (e) {}
     if (d.industry && c.map && isNum(c.map[d.industry])) { d.peMed = c.map[d.industry]; d.peMedInd = d.industry; return; }
   }
   if (T) {
     try {
-      var r2 = await fetch(RELAYS[0] + '/sector-pe?t=' + encodeURIComponent(T));
+      var r2 = await fetch('https://stock-research-relay.supplessayings-6e6.workers.dev/sector-pe?t=' + encodeURIComponent(T));
       if (r2 && r2.ok) {
         var j2 = await r2.json();
         var bt = j2 && j2.byTicker ? j2.byTicker[T] : null;
@@ -1779,7 +1812,7 @@ function pjExitNote(res) {
     : res.src === 'capped'
       ? 'industry median ' + fmtNum(res.base, 1) + '\u00d7 caps it (thin P/E history)'
       : 'recent-weighted avg ' + fmtNum(res.base, 1) + '\u00d7';
-  return 'exit P/E = ' + fmtNum(res.mult, 1) + '\u00d7 \u2014 ' + baseTxt + ' \u00d7 growth ' + fmtNum(res.growth, 2) + ' \u00d7 margins ' + fmtNum(res.margin, 2);
+  return 'exit P/E = ' + fmtNum(res.mult, 1) + '\u00d7 \u2014 ' + baseTxt + ' \u00d7 growth ' + fmtNum(res.growth, 2) + ' \u00d7 margins ' + fmtNum(res.margin, 2) + (res.exitSlow && res.exitSlow < 1 ? ' \u00d7 growth slowing ' + fmtNum(res.exitSlow, 2) : '');
 }
 /* Set the exit-P/E box from the v2 math, falling back to the plain
  * 5-yr average, then today's P/E, when history is too thin. Always
@@ -6234,7 +6267,7 @@ async function wlFillPass(tickers) {
  * ticker per day (the sub-loads are day-cached at their own layers,
  * so this is mostly assembly after the first run). A stored null
  * means "no analyst path today" and is not retried until tomorrow. */
-var WLPROJ_KEY = 'sr_wlproj_v2';
+var WLPROJ_KEY = 'sr_wlproj_v3';
 function wlProjEntry(T) {
   var m = lsGet(WLPROJ_KEY, {});
   var e = m[T];
@@ -6302,7 +6335,7 @@ var SCAN_KEY = 'sr_scan_v4';
  * rules is recomputed from the stored dataset on the next open
  * instead of being re-shown all day. States saved before the stamp
  * existed read as undefined and mismatch once, by design. */
-var SCAN_RULES_V = 3;
+var SCAN_RULES_V = 4;
 var scanRunning = false, scanActive = 0, scanCoolUntil = 0, scanTimer = null;
 
 function scanTodayKey() { return pfKeyToISO(pfDkey(new Date())); }
