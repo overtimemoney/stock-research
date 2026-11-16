@@ -6248,6 +6248,99 @@ function renderQm() {
   if (det && qmPrevMode !== 'detail') det.scrollTop = 0;
   qmPrevMode = 'detail';
   renderQmDetail();
+  qmEnableZoom();
+}
+
+/* Pinch to zoom on the full chart (Justin's ask, 2026-11-15, from
+ * the Income flow screenshot: the small labels crowded on the right
+ * are unreadable at fit-width). Same gestures as the scorecard
+ * price chart: pinch zooms (up to 4x), drag pans once zoomed,
+ * double-tap zooms in or resets. Applied centrally after every
+ * detail render, so bars, segments, EPS pairs and the income flow
+ * all get it; a re-render (new metric/window) resets the zoom. */
+function qmEnableZoom() {
+  var box = $('qm-chart');
+  if (!box) return;
+  var wrap = box.querySelector('.chart-wrap');
+  if (!wrap || wrap.dataset.zoomBound) return;
+  wrap.dataset.zoomBound = '1';
+  wrap.classList.add('qm-zoomer');
+  var inner = document.createElement('div');
+  inner.className = 'qm-zoomer-in';
+  while (wrap.firstChild) inner.appendChild(wrap.firstChild);
+  wrap.appendChild(inner);
+  var s = 1, tx = 0, ty = 0, pts = new Map(), pinch = null, pan = null;
+  var lastTap = 0, lastTapX = 0, lastTapY = 0;
+  function apply(anim) {
+    inner.classList.toggle('qm-zoom-anim', !!anim);
+    inner.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + s + ')';
+    wrap.dataset.scale = String(Math.round(s * 100) / 100);
+  }
+  function clampT() {
+    var w = wrap.clientWidth, h = wrap.clientHeight;
+    tx = Math.min(0, Math.max(w * (1 - s), tx));
+    ty = Math.min(0, Math.max(h * (1 - s), ty));
+  }
+  function reset(anim) { s = 1; tx = 0; ty = 0; apply(anim); }
+  wrap.addEventListener('pointerdown', function (e) {
+    try { wrap.setPointerCapture(e.pointerId); } catch (err) { }
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) {
+      var a = Array.from(pts.values());
+      var r0 = wrap.getBoundingClientRect();
+      var cx0 = (a[0].x + a[1].x) / 2 - r0.left, cy0 = (a[0].y + a[1].y) / 2 - r0.top;
+      pinch = { d: Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y), s: s, px: (cx0 - tx) / s, py: (cy0 - ty) / s };
+      pan = null;
+    } else if (pts.size === 1) {
+      pan = { x: e.clientX, y: e.clientY, tx: tx, ty: ty };
+      var now = Date.now();
+      if (now - lastTap < 320 && Math.hypot(e.clientX - lastTapX, e.clientY - lastTapY) < 40) {
+        if (s > 1.05) reset(true);
+        else {
+          var r = wrap.getBoundingClientRect();
+          var cx = e.clientX - r.left, cy = e.clientY - r.top;
+          var ns = 2.5;
+          tx = cx - (cx - tx) * (ns / s); ty = cy - (cy - ty) * (ns / s); s = ns;
+          clampT(); apply(true);
+        }
+        lastTap = 0;
+      } else { lastTap = now; lastTapX = e.clientX; lastTapY = e.clientY; }
+    }
+  });
+  wrap.addEventListener('pointermove', function (e) {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && pts.size === 2) {
+      var a = Array.from(pts.values());
+      var d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y);
+      if (!pinch.d) return;
+      var r = wrap.getBoundingClientRect();
+      var cx = (a[0].x + a[1].x) / 2 - r.left, cy = (a[0].y + a[1].y) / 2 - r.top;
+      s = Math.min(4, Math.max(1, pinch.s * d / pinch.d));
+      tx = cx - pinch.px * s; ty = cy - pinch.py * s;
+      clampT(); apply(false);
+    } else if (pan && s > 1) {
+      tx = pan.tx + (e.clientX - pan.x); ty = pan.ty + (e.clientY - pan.y);
+      clampT(); apply(false);
+    }
+  });
+  function endPt(e) {
+    pts.delete(e.pointerId);
+    if (pts.size < 2) pinch = null;
+    if (pts.size === 0) { pan = null; if (s < 1.02) reset(false); }
+    else if (pts.size === 1) { var a = Array.from(pts.values())[0]; pan = { x: a.x, y: a.y, tx: tx, ty: ty }; }
+  }
+  wrap.addEventListener('pointerup', endPt);
+  wrap.addEventListener('pointercancel', endPt);
+  wrap.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var r = wrap.getBoundingClientRect();
+    var cx = e.clientX - r.left, cy = e.clientY - r.top;
+    var px = (cx - tx) / s, py = (cy - ty) / s;
+    s = Math.min(4, Math.max(1, s * (e.deltaY < 0 ? 1.12 : 0.89)));
+    tx = cx - px * s; ty = cy - py * s;
+    clampT(); apply(false);
+  }, { passive: false });
 }
 
 function renderQmDetail() {

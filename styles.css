@@ -246,6 +246,9 @@ table.factors td:first-child:has(.info-dot) { padding-right: 28px; }
 .alert.ok { background: var(--alert-ok-bg); border: 1.5px solid var(--alert-ok-line); color: var(--alert-ok-ink); }
 .chart-wrap { width: 100%; }
 .chart-wrap svg { width: 100%; height: auto; display: block; }
+.qm-zoomer { overflow: hidden; touch-action: none; }
+.qm-zoomer-in { transform-origin: 0 0; will-change: transform; }
+.qm-zoomer-in.qm-zoom-anim { transition: transform .25s cubic-bezier(0.23, 1, 0.32, 1); }
 /* Analyst-target bar + at-a-glance snowflake + scan NEW pill (2026-10-30) */
 .fv-wrap { margin: 16px 0 2px; overflow-x: clip; }
 .fv-head { font-size: 13.5px; font-weight: 800; color: var(--ink); margin-bottom: 2px; }
