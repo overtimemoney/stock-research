@@ -3401,8 +3401,19 @@ async function runAiSwot(d, refresh) {
     /* Regenerate is a deliberate fresh take: it carries the refresh
      * flag so the Worker skips its shared-cache answer (and counts
      * against the generation throttle). Plain Generate sends no flag
-     * and gets the cached answer instantly when one is fresh. */
-    if (refresh === true) payload.refresh = true;
+     * and gets the cached answer instantly when one is fresh. A
+     * regenerate also carries the account id (or the device id when
+     * signed out): regenerations are budgeted per account per day,
+     * and the result is saved to that account (see below). */
+    if (refresh === true) {
+      payload.refresh = true;
+      var suid = (typeof window.srSyncUserId === 'function') ? window.srSyncUserId() : null;
+      if (suid) payload.uid = 'u:' + suid;
+      else {
+        var did = lsGet('sr_wlreg_id_v1', '');
+        if (did) payload.uid = 'd:' + did;
+      }
+    }
     var resp = await fetch(AI_SWOT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3411,10 +3422,12 @@ async function runAiSwot(d, refresh) {
     });
     if (timer) clearTimeout(timer);
     var data = await resp.json();
-    if (resp.status === 429 || (data && (data.error === 'rate_limited' || data.error === 'daily_cap'))) {
-      /* Throttled or the daily AI cap is hit: keep whatever SWOT was
-       * on screen and put the plain reason above it. */
-      var msg = (data && data.error === 'daily_cap')
+    if (resp.status === 429 || (data && (data.error === 'rate_limited' || data.error === 'daily_cap' || data.error === 'regen_limit'))) {
+      /* Throttled or a cap is hit: keep whatever SWOT was on screen
+       * and put the plain reason above it. */
+      var msg = (data && data.error === 'regen_limit')
+        ? 'You\'ve used today\'s regenerations (10 a day per account) — the SWOT above is yours and stays saved to your account. The budget resets tomorrow.'
+        : (data && data.error === 'daily_cap')
         ? 'Today\'s AI limit is reached — the shared analysis above is today\'s; try again tomorrow.'
         : 'Lots of people are generating right now — try again in a minute.';
       var z9 = $('ai-swot-zone');
@@ -3432,6 +3445,12 @@ async function runAiSwot(d, refresh) {
     if (!resp.ok || !data.swot) throw new Error((data && data.error) || ('HTTP ' + resp.status));
     var entry = { asOf: data.asOf || '', swot: data.swot, tenk: data.tenk || null };
     saveAiSwot(d.ticker, entry);
+    /* A generated SWOT belongs to this user's account: push it to
+     * the cloud copy NOW, in the same tap, instead of leaving it to
+     * the 2s debounce -- if the app is closed first, a debounced
+     * push can die with it and the regeneration never reaches the
+     * account. No-op when signed out (it still stays on-device). */
+    if (typeof window.srSyncFlushKey === 'function') window.srSyncFlushKey(AI_SWOT_KEY);
     var z2 = $('ai-swot-zone');
     if (z2) { z2.innerHTML = aiSwotGridHtml(entry); bindAiSwotBtn(d, true); }
   } catch (e) {
@@ -3926,10 +3945,12 @@ function renderScorecard(d) {
   });
   renderScChart(d);
   $('sc-watch').addEventListener('click', function () {
+    navPush();
     addToWatchlist(d.ticker, isNum(d.price) ? d.price : null);
     switchTab('watchlist');
   });
   $('sc-journal').addEventListener('click', function () {
+    navPush();
     jrReturnTab = 'scorecard';
     switchTab('journal');
     startJournalEdit(d.ticker);
@@ -3938,6 +3959,7 @@ function renderScorecard(d) {
    * Project it button (Justin's ask, 2026-11-13: tapping the return
    * brings you to the company's projection). */
   var scOpenProjection = function () {
+    navPush();
     switchTab('tools');
     setTool('pj');
     $('pj-ticker').value = d.ticker;
@@ -3953,6 +3975,7 @@ function renderScorecard(d) {
   $('sc-project').addEventListener('click', scOpenProjection);
   $('sc-proj').addEventListener('click', scOpenProjection);
   $('sc-charts').addEventListener('click', function () {
+    navPush();
     switchTab('tools');
     setTool('charts');
     $('qm-ticker').value = d.ticker;
@@ -7031,6 +7054,7 @@ function earnRender(box, cache, tickers) {
   box.querySelectorAll('[data-earn-research]').forEach(function (b) {
     b.addEventListener('click', function () {
       var T = b.getAttribute('data-earn-research');
+      navPush();
       switchTab('scorecard');
       $('search-input').value = T;
       runSearch(T);
@@ -8320,6 +8344,7 @@ function renderScanCard() {
     box.querySelectorAll('[data-scan-research]').forEach(function (b) {
       b.addEventListener('click', function () {
         var T = b.getAttribute('data-scan-research');
+        navPush();
         switchTab('scorecard');
         $('search-input').value = T;
         runSearch(T);
@@ -8445,6 +8470,7 @@ function renderScanCard() {
   box.querySelectorAll('[data-scan-research]').forEach(function (b) {
     b.addEventListener('click', function () {
       var T = b.getAttribute('data-scan-research');
+      navPush();
       switchTab('scorecard');
       $('search-input').value = T;
       runSearch(T);
@@ -8593,6 +8619,7 @@ function runScreener() {
   box.querySelectorAll('[data-scr-research]').forEach(function (b) {
     b.addEventListener('click', function () {
       var T = b.getAttribute('data-scr-research');
+      navPush();
       switchTab('scorecard');
       $('search-input').value = T;
       runSearch(T);
@@ -8642,18 +8669,7 @@ function scrActivate() {
  * (verdicts, both screens, key stats, EPS path) with one-tap jumps
  * to the full scorecard and the Projection Builder. */
 var ovTicker = null;
-var ovReturnTicker = null;
 var jrReturnTab = 'portfolio';
-function showBackChips() {
-  ['sc-back', 'tool-back'].forEach(function (id) {
-    var b = $(id);
-    if (b && ovReturnTicker) { b.textContent = '\u2190 Back to ' + ovReturnTicker + ' overview'; b.hidden = false; }
-  });
-}
-function clearBackChips() {
-  ovReturnTicker = null;
-  ['sc-back', 'tool-back'].forEach(function (id) { var b = $(id); if (b) b.hidden = true; });
-}
 var toastTimer = null;
 function showToast(msg) {
   var t = $('toast-bubble');
@@ -8667,12 +8683,6 @@ function showToast(msg) {
     t.classList.remove('show');
     setTimeout(function () { t.hidden = true; }, 280);
   }, 2600);
-}
-function goBackToOverview() {
-  var T = ovReturnTicker;
-  clearBackChips();
-  switchTab('watchlist');
-  if (T) openOverview(T);
 }
 function renderOverview(d, item) {
   var sc = scoreStock(d);
@@ -8791,11 +8801,11 @@ function wireOverviewActions(d) {
   projStripFill('ov-proj', d.ticker);
   loadStockNews('ov', d.ticker);
   var sc = $('ov-scorecard');
-  if (sc) sc.addEventListener('click', function () { ovReturnTicker = d.ticker; showBackChips(); closeOverview(); switchTab('scorecard'); $('search-input').value = d.ticker; runSearch(d.ticker); });
+  if (sc) sc.addEventListener('click', function () { navPush(); closeOverview(); switchTab('scorecard'); $('search-input').value = d.ticker; runSearch(d.ticker); });
   /* The Estimated return strip opens the same projection as the
    * Projection button. */
   var ovOpenProjection = function () {
-    ovReturnTicker = d.ticker; showBackChips();
+    navPush();
     closeOverview();
     switchTab('tools');
     setTool('pj');
@@ -8816,7 +8826,7 @@ function wireOverviewActions(d) {
   if (ovp) ovp.addEventListener('click', ovOpenProjection);
   var ch = $('ov-charts');
   if (ch) ch.addEventListener('click', function () {
-    ovReturnTicker = d.ticker; showBackChips();
+    navPush();
     closeOverview();
     switchTab('tools');
     setTool('charts');
@@ -9546,7 +9556,7 @@ async function renderPortfolio(doFetch) {
     });
   });
   document.querySelectorAll('[data-pf-research]').forEach(function (b) {
-    b.addEventListener('click', function () { switchTab('scorecard'); $('search-input').value = b.getAttribute('data-pf-research'); runSearch(b.getAttribute('data-pf-research')); });
+    b.addEventListener('click', function () { navPush(); switchTab('scorecard'); $('search-input').value = b.getAttribute('data-pf-research'); runSearch(b.getAttribute('data-pf-research')); });
   });
   document.querySelectorAll('[data-pf-del]').forEach(function (b) {
     b.addEventListener('click', function () {
@@ -9929,7 +9939,7 @@ function renderJournal() {
   });
   box.innerHTML = html;
   box.querySelectorAll('[data-research]').forEach(function (b) {
-    b.addEventListener('click', function () { switchTab('scorecard'); $('search-input').value = b.getAttribute('data-research'); runSearch(b.getAttribute('data-research')); });
+    b.addEventListener('click', function () { navPush(); switchTab('scorecard'); $('search-input').value = b.getAttribute('data-research'); runSearch(b.getAttribute('data-research')); });
   });
   box.querySelectorAll('[data-j-edit]').forEach(function (b) {
     b.addEventListener('click', function () { startJournalEdit(b.getAttribute('data-j-edit')); });
@@ -10861,7 +10871,75 @@ function mktScrubRelease() {
 document.addEventListener('pointerup', mktScrubRelease);
 document.addEventListener('pointercancel', function () { mktTap = null; if (mktScrub) { var p = mktScrub.panel; mktScrub = null; mktScrubClear(p); } });
 
+/* Cross-tab back button (Justin's ask, 2026-11-15): any in-context
+ * jump to another tab (Project it, Charts, Research rows, Journal
+ * this stock, the projection page's Research link...) pushes the
+ * exact place it left -- tab, tool, scroll position, open overview
+ * -- and the floating arrow (#nav-back) appears; tapping it returns
+ * to that exact place. Jump handlers call navPush() first, which
+ * arms their switchTab; any other switchTab (tab bar, menus, static
+ * back buttons) clears the stack, so the arrow only ever points
+ * back along a jump the user just made. Replaces the old
+ * overview-only text chips. */
+var navStack = [];
+var navArmed = false;
+var navInternal = false;
+var navRestoreSeq = 0;
+function navCapture() {
+  var active = document.querySelector('.tabbar button.active');
+  var mn = document.querySelector('main');
+  /* sr_tool_v1 is a RAW string (setTool writes it unquoted), so it
+   * must be read raw too -- lsGet would JSON.parse it, fail, and
+   * hand back the 'pj' default every time. */
+  var tool = 'pj';
+  try { tool = localStorage.getItem(TOOL_KEY) || 'pj'; } catch (e) { }
+  return {
+    tab: active ? active.getAttribute('data-tab') : 'scorecard',
+    tool: tool,
+    scroll: mn ? mn.scrollTop : 0,
+    ov: ovTicker || null
+  };
+}
+function navPush() {
+  navStack.push(navCapture());
+  if (navStack.length > 12) navStack.shift();
+  navArmed = true;
+  syncNavBack();
+}
+function navClear() { navStack = []; syncNavBack(); }
+function syncNavBack() {
+  var b = $('nav-back');
+  if (b) b.hidden = !navStack.length;
+}
+function navBack() {
+  var st = navStack.pop();
+  syncNavBack();
+  if (!st) return;
+  navInternal = true;
+  if (st.tab === 'tools' && st.tool) setTool(st.tool);
+  switchTab(st.tab);
+  navInternal = false;
+  if (st.ov) { openOverview(st.ov); return; }
+  var mn = document.querySelector('main');
+  if (mn && st.scroll) {
+    /* Apply on a short ladder (next frame, 180ms, 420ms): the tab's
+     * own layout settles asynchronously (collapsing intros, late
+     * renders), and any of those can shift or clobber the scroll
+     * under a single apply. Every apply is token-guarded -- a new
+     * navigation or the user's own scroll gesture cancels the
+     * ladder, so it never yanks them back after they've moved on. */
+    var y = st.scroll;
+    var seq = ++navRestoreSeq;
+    var applyY = function () { if (seq === navRestoreSeq) mn.scrollTop = y; };
+    requestAnimationFrame(applyY);
+    setTimeout(applyY, 180);
+    setTimeout(applyY, 420);
+  }
+}
 function switchTab(name) {
+  if (!navInternal && !navArmed) navStack = [];
+  navArmed = false;
+  navRestoreSeq++;
   document.querySelectorAll('.tab').forEach(function (s) { s.classList.toggle('active', s.id === 'tab-' + name); });
   document.querySelectorAll('.tabbar button').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-tab') === name); });
   document.querySelectorAll('.tabbar').forEach(function (n) { n.classList.remove('mini'); });
@@ -10883,6 +10961,7 @@ function switchTab(name) {
    * there), so re-run the label fit once the tab is actually visible. */
   if (name === 'glossary' && typeof fitGlossText === 'function') fitGlossText();
   if (name === 'market') loadMarket();
+  syncNavBack();
 }
 /* Tools tab sub-pages (Justin's ask, 2026-10-30): the three tools
  * live behind a sliding segmented bar, one tool per page. The last
@@ -10938,10 +11017,16 @@ setTimeout(fitShell, 2500);
 
 function initApp() {
   document.querySelectorAll('.tabbar button').forEach(function (b) {
-    b.addEventListener('click', function () { clearBackChips(); switchTab(b.getAttribute('data-tab')); });
+    b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); });
   });
-  $('sc-back').addEventListener('click', goBackToOverview);
-  $('jr-back').addEventListener('click', function () { switchTab(jrReturnTab); });
+  $('nav-back').addEventListener('click', navBack);
+  /* A scroll gesture of the user's own cancels any pending
+   * back-restore ladder (see navBack). */
+  var mnEl = document.querySelector('main');
+  if (mnEl) ['pointerdown', 'wheel', 'touchstart'].forEach(function (ev) {
+    mnEl.addEventListener(ev, function () { navRestoreSeq++; }, { passive: true });
+  });
+  $('jr-back').addEventListener('click', function () { if (navStack.length) navBack(); else switchTab(jrReturnTab); });
   $('gl-back').addEventListener('click', function () {
     if (glossStack.length) {
       var backTerm = glossStack.pop();
@@ -10962,10 +11047,9 @@ function initApp() {
   $('privacy-back').addEventListener('click', function () { switchTab('portfolio'); });
   $('terms-back').addEventListener('click', function () { switchTab('portfolio'); });
   $('disclaimer-back').addEventListener('click', function () { switchTab('portfolio'); });
-  $('tool-back').addEventListener('click', goBackToOverview);
   $('search-form').addEventListener('submit', function (e) {
     e.preventDefault();
-    clearBackChips();
+    navClear();
     runSearch($('search-input').value);
     $('search-input').blur();
   });
@@ -11033,6 +11117,7 @@ function initApp() {
     var typed = ($('pj-ticker').value || '').trim().toUpperCase();
     var T = /^[A-Z]{1,5}([\.\-][A-Z])?$/.test(typed) ? typed : (pjLoaded && pjLoaded.ticker) || '';
     if (!T) return;
+    navPush();
     switchTab('scorecard');
     $('search-input').value = T;
     runSearch(T);
@@ -11052,7 +11137,7 @@ function initApp() {
   renderPjPath();
   $('pj-load-form').addEventListener('submit', function (e) {
     e.preventDefault();
-    clearBackChips();
+    navClear();
     loadProjectionTicker();
     $('pj-ticker').blur();
   });
@@ -11710,6 +11795,20 @@ if (typeof document !== 'undefined' && document.getElementById) {
       pushKey(key);
     }, 2000);
   }
+
+  /* Hooks for the rest of the app (added 2026-11-15 for AI SWOT
+   * regenerations): the signed-in user's id, so a regeneration can
+   * be counted against their account; and an immediate flush, so a
+   * regenerated SWOT reaches the account in the same tap instead of
+   * waiting out the 2s debounce (or dying with the app if it is
+   * closed first). Both are safe no-ops when signed out or when the
+   * sync module is not configured. */
+  window.srSyncUserId = function () { return currentUser ? currentUser.id : null; };
+  window.srSyncFlushKey = function (key) {
+    if (!currentUser || !SR_SYNC_BY_KEY[key]) return;
+    if (pushTimers[key]) { clearTimeout(pushTimers[key]); delete pushTimers[key]; }
+    pushKey(key);
+  };
 
   function installWritePatch() {
     if (patchInstalled) return;
