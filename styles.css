@@ -271,6 +271,20 @@ table.factors td:first-child:has(.info-dot) { padding-right: 28px; }
 .ceo-body { margin-bottom: 2px; }
 .more-sec + .more-sec { border-top: 1px solid var(--row-line); margin-top: 8px; padding-top: 8px; }
 .biz-line { font-size: 14.5px; line-height: 1.45; color: var(--ink); margin: 2px 0 9px; }
+/* Moat / Competitors / TAM dropdown bodies (2026-11-15) */
+.moat-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
+.moat-chip { font-size: 12px; font-weight: 700; color: var(--accent-text); background: var(--field); border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; }
+.moat-verdict { font-size: 14px; margin: 8px 0 4px; }
+.moat-line { font-size: 13.5px; line-height: 1.45; color: var(--ink); margin: 2px 0; }
+.comp-row { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 2px; background: none; border: none; border-bottom: 1px solid var(--row-line); cursor: pointer; text-align: left; font: inherit; color: var(--ink); }
+.comp-row:last-of-type { border-bottom: none; }
+.comp-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.comp-tick { color: var(--accent-text); font-weight: 700; }
+.comp-nums { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.comp-chev { color: var(--accent-text); font-size: 18px; font-weight: 700; }
+.tam-big { font-size: 21px; font-weight: 800; margin: 2px 0 2px; }
+.tam-per { font-size: 13px; font-weight: 600; color: var(--muted); }
+.tam-market { font-size: 14px; color: var(--ink); margin: 0 0 8px; }
 .biz-row { margin: 7px 0; }
 .biz-row-top { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; margin-bottom: 3px; }
 .biz-mgn { color: var(--muted); font-weight: 600; font-size: 12.5px; }

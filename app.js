@@ -519,6 +519,52 @@ async function fetchStock(ticker, opts) {
     }
   } catch (e) { d.errors.push('Biz: ' + e.message); } };
 
+  /* --- Moat + TAM (2026-11-15): the Worker's grounded AI reads for
+   * the research tab's new dropdowns. Same shape as srcBiz -- 7-day
+   * local cache in front of a shared-KV Worker endpoint. The TAM
+   * request carries the company's REAL latest-year revenue (from the
+   * shared yearly cache) so the Worker can reject a market estimate
+   * smaller than the company's own sales. --- */
+  var srcMoatTam = async function () { try {
+    var seg = null;
+    try { var sg = await fetchSegmentsApp(T); if (sg) seg = segShares(sg); } catch (e) {}
+    var revD = null;
+    try {
+      var cy = await cycLoadYearly(T);
+      if (cy && cy.yearly && cy.yearly.length) {
+        if (!d.yearly) d.yearly = cy.yearly;
+        var lastRev = cy.yearly[cy.yearly.length - 1].rev;
+        if (isNum(lastRev)) revD = lastRev * 1e6;
+      }
+    } catch (e) {}
+    var base = { ticker: T, name: d.companyName || T, industry: d.industry || '', about: d.about || '', segments: (seg || []).map(function (s) { return { name: s.name, pct: s.pct }; }) };
+    var post = async function (url, payload) {
+      var ctrl = ('AbortController' in window) ? new AbortController() : null;
+      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 60000) : null;
+      try {
+        var resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: ctrl ? ctrl.signal : undefined });
+        if (timer) clearTimeout(timer);
+        if (!resp.ok) return null;
+        return await resp.json();
+      } catch (e) { if (timer) clearTimeout(timer); return null; }
+    };
+    var mCache = lsGet(MOAT_KEY, {});
+    var mHit = mCache[T];
+    if (mHit && (Date.now() - mHit.ts) < 7 * 864e5) d.moat = { types: mHit.types || [], text: mHit.text || '' };
+    else {
+      var md = await post(MOAT_URL, base);
+      if (md && (md.types || md.text)) { d.moat = { types: md.types || [], text: md.text || '' }; mCache[T] = { types: d.moat.types, text: d.moat.text, ts: Date.now() }; lsSet(MOAT_KEY, mCache); }
+    }
+    var tCache = lsGet(TAM_KEY, {});
+    var tHit = tCache[T];
+    if (tHit && (Date.now() - tHit.ts) < 7 * 864e5) d.tam = { lo: tHit.lo, hi: tHit.hi, market: tHit.market || '', basis: tHit.basis || '' };
+    else {
+      var tp = Object.assign({}, base, { revenue: revD });
+      var td = await post(TAM_URL, tp);
+      if (td && isNum(td.lo) && isNum(td.hi)) { d.tam = { lo: td.lo, hi: td.hi, market: td.market || '', basis: td.basis || '' }; tCache[T] = { lo: td.lo, hi: td.hi, market: d.tam.market, basis: d.tam.basis, ts: Date.now() }; lsSet(TAM_KEY, tCache); }
+    }
+  } catch (e) { d.errors.push('Moat/TAM: ' + e.message); } };
+
   var srcYearly = async function () { try {
     var cycData = await cycLoadYearly(T);
     if (cycData) {
@@ -722,7 +768,7 @@ async function fetchStock(ticker, opts) {
   }
   // Slow stage: Finviz fundamentals + MarketBeat EPS-surprise history in
   // parallel — both are big HTML pages through the relays.
-  await Promise.all([srcFinviz(), srcSurprise(), srcRevPath(), srcAbout(), srcCeo(), srcYearly(), srcBiz()]);
+  await Promise.all([srcFinviz(), srcSurprise(), srcRevPath(), srcAbout(), srcCeo(), srcYearly(), srcBiz(), srcMoatTam()]);
   deriveValues(d);
   d.partial = false;
 
@@ -1421,7 +1467,108 @@ function bizBlockHtml(d) {
   return '<button type="button" class="ceo-toggle" data-biztoggle aria-expanded="false"><span class="earn-line ceo-line">How it makes money</span><span class="ceo-chev">\u25be</span></button>' +
     '<div class="ceo-body biz-body" hidden>' + inner + '</div>';
 }
-function ceoHeadHtml(d) { return 'CEO \u00b7 <b>' + esc(d.ceo) + '</b>'; }
+/* Moat verdict from the app's own numbers (2026-11-15): durable,
+ * high gross margins plus strong returns on equity are what a moat
+ * looks like in the financials. The AI names the moat's source; this
+ * checks whether the numbers back one up. Needs 3+ years of gross
+ * margins, else no verdict (the section then shows the AI read
+ * alone, or nothing). */
+function moatVerdict(d) {
+  var yrs = (d.yearly || []).filter(function (y) { return isNum(y.gm); });
+  if (yrs.length < 3) return null;
+  var last = yrs.slice(-5);
+  var gmAvg = last.reduce(function (a, y) { return a + y.gm; }, 0) / last.length;
+  var gmMin = Math.min.apply(null, last.map(function (y) { return y.gm; }));
+  var durable = gmMin >= gmAvg - 10;
+  var roe = isNum(d.roe) ? d.roe : null;
+  var label;
+  if (gmAvg >= 45 && durable && (roe === null || roe >= 15)) label = 'Wide moat';
+  else if (gmAvg >= 30 && gmMin >= gmAvg - 12 && (roe === null || roe >= 10)) label = 'Narrow moat';
+  else label = 'No clear moat';
+  var lines = [];
+  lines.push('Gross margin averaged ' + fmtNum(gmAvg, 0) + '% over the last ' + last.length + ' years' +
+    (durable ? ', never dropping below ' + fmtNum(gmMin, 0) + '%' : ', but fell as low as ' + fmtNum(gmMin, 0) + '%'));
+  if (roe !== null) lines.push('Return on equity ' + fmtNum(roe, 0) + '% over the last 12 months');
+  var revs = (d.yearly || []).filter(function (y) { return isNum(y.rev); }).slice(-6);
+  if (revs.length >= 3) {
+    var up = 0;
+    for (var i = 1; i < revs.length; i++) if (revs[i].rev > revs[i - 1].rev) up++;
+    lines.push('Revenue grew in ' + up + ' of the last ' + (revs.length - 1) + ' years');
+  }
+  return { label: label, lines: lines };
+}
+function moatBlockHtml(d) {
+  var v = moatVerdict(d);
+  var ai = d.moat || null;
+  if (!v && !ai) return '';
+  var inner = '';
+  if (ai && ai.types && ai.types.length) {
+    inner += '<div class="moat-chips">' + ai.types.map(function (t) { return '<span class="moat-chip">' + esc(t) + '</span>'; }).join('') + '</div>';
+  }
+  if (ai && ai.text) inner += '<p class="biz-line">' + esc(ai.text) + '</p>';
+  if (v) {
+    inner += '<p class="moat-verdict">What the numbers say: <b>' + esc(v.label) + '</b></p>';
+    inner += v.lines.map(function (l) { return '<p class="moat-line">' + esc(l) + '</p>'; }).join('');
+  }
+  if (!inner) return '';
+  return '<button type="button" class="ceo-toggle" data-moattoggle aria-expanded="false"><span class="earn-line ceo-line">Moat</span><span class="ceo-chev">▾</span></button>' +
+    '<div class="ceo-body moat-body" hidden>' + inner + '</div>';
+}
+/* Competitors (2026-11-15): same-industry names from the app's own
+ * scan universe (the researched stock's scan record supplies the
+ * industry, so the classification always matches the list). Biggest
+ * first by market cap; sizes are as of the last scan. */
+function compPeers(d) {
+  var ds = null;
+  try { ds = getScanData(); } catch (e) {}
+  if (!ds || !ds.recs) return [];
+  var self = ds.recs[d.ticker];
+  if (!self || !self.industry) return [];
+  var out = [];
+  Object.keys(ds.recs).forEach(function (t) {
+    var r = ds.recs[t];
+    if (t !== d.ticker && r && r.industry === self.industry && isNum(r.marketCap)) {
+      out.push({ t: t, name: r.name || t, marketCap: r.marketCap, forwardPE: r.forwardPE });
+    }
+  });
+  out.sort(function (a, b) { return b.marketCap - a.marketCap; });
+  return out.slice(0, 8);
+}
+function compBlockHtml(d) {
+  var peers = compPeers(d);
+  if (peers.length < 2) return '';
+  var rows = peers.map(function (p) {
+    return '<button type="button" class="comp-row" data-comp="' + esc(p.t) + '">' + logoTile(p.t, 'sm') +
+      '<span class="comp-name">' + esc(p.name) + ' <span class="comp-tick">' + esc(p.t) + '</span></span>' +
+      '<span class="comp-nums">' + fmtCap(p.marketCap) + (isNum(p.forwardPE) && p.forwardPE > 0 ? ' · P/E ' + fmtNum(p.forwardPE, 1) : '') + '</span>' +
+      '<span class="comp-chev">›</span></button>';
+  }).join('');
+  return '<button type="button" class="ceo-toggle" data-comptoggle aria-expanded="false"><span class="earn-line ceo-line">Competitors</span><span class="ceo-chev">▾</span></button>' +
+    '<div class="ceo-body comp-body" hidden>' + rows +
+    '<p class="fineprint">Same industry (' + esc((getScanData().recs[d.ticker] || {}).industry || '') + '), biggest first. Sizes as of the last scan.</p></div>';
+}
+/* TAM (2026-11-15): the Worker's AI market-size estimate paired
+ * with the company's REAL revenue, so the headroom reads honestly.
+ * The estimate is labeled as one everywhere it shows. */
+function tamBlockHtml(d) {
+  if (!d.tam || !isNum(d.tam.lo) || !isNum(d.tam.hi)) return '';
+  var loD = d.tam.lo * 1e9, hiD = d.tam.hi * 1e9, mid = (loD + hiD) / 2;
+  var inner = '<p class="tam-big">~' + fmtCap(loD) + ' – ' + fmtCap(hiD) + ' <span class="tam-per">a year</span></p>';
+  if (d.tam.market) inner += '<p class="tam-market">' + esc(d.tam.market.charAt(0).toUpperCase() + d.tam.market.slice(1)) + '</p>';
+  var yrs = (d.yearly || []).filter(function (y) { return isNum(y.rev); });
+  if (yrs.length) {
+    var revD = yrs[yrs.length - 1].rev * 1e6;
+    var pct = revD / mid * 100;
+    inner += '<p class="moat-line">Company revenue (last full year): ' + fmtCap(revD) + '</p>';
+    if (pct >= 100) inner += '<p class="moat-line">That is already more than this market estimate covers — the estimate counts only part of what the company sells.</p>';
+    else inner += '<p class="moat-line">About ' + (pct < 1 ? '<1' : fmtNum(pct, pct < 10 ? 1 : 0)) + '% of the middle of that range — the rest is room to grow into, or for rivals to take.</p>';
+  }
+  if (d.tam.basis) inner += '<p class="fineprint">' + esc(d.tam.basis) + '</p>';
+  inner += '<p class="fineprint">Market size is an AI estimate, not a filed figure. Revenue is the company\'s actual reported sales.</p>';
+  return '<button type="button" class="ceo-toggle" data-tamtoggle aria-expanded="false"><span class="earn-line ceo-line">Market size (TAM)</span><span class="ceo-chev">▾</span></button>' +
+    '<div class="ceo-body tam-body" hidden>' + inner + '</div>';
+}
+function ceoHeadHtml(d) { return 'CEO · <b>' + esc(d.ceo) + '</b>'; }
 /* The CEO's LinkedIn link (Justin's ask, 2026-11-15): the exact
  * profile when Wikidata carries the ID, otherwise a LinkedIn
  * people search for the name + company, which lands on the same
@@ -3300,6 +3447,10 @@ function swotBox(letter, title, items, cls) {
  * the four lists. Saved on-device per ticker so it persists. */
 var AI_SWOT_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/swot';
 var BIZ_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/bizmodel';
+var MOAT_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/moat';
+var TAM_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/tam';
+var MOAT_KEY = 'sr_moat_v1';
+var TAM_KEY = 'sr_tam_v1';
 var CEOPREV_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/ceoprev';
 /* Previous-experience extraction lives in the Worker (grounded in
  * the Wikipedia article text the CEO hunt already fetched; shared
@@ -3723,6 +3874,9 @@ function renderScorecard(d) {
   html += projStripHtml('sc-proj', d.ticker);
   if (d.about) html += '<div class="sc-about">' + esc(d.about) + '</div>';
   html += moreBlockHtml(d);
+  html += moatBlockHtml(d);
+  html += compBlockHtml(d);
+  html += tamBlockHtml(d);
   if (!d.earnEst) html += earnLineHtml(d);
 
   if (d.history && d.history.length >= 2) {
@@ -11402,6 +11556,30 @@ function initApp() {
     if (!body || !body.classList.contains('biz-body')) return;
     body.hidden = !body.hidden;
     b.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
+  });
+  /* Moat / Competitors / TAM dropdowns (2026-11-15): same toggle
+   * mechanics as the CEO/More/Biz blocks. */
+  [['[data-moattoggle]', 'moat-body'], ['[data-comptoggle]', 'comp-body'], ['[data-tamtoggle]', 'tam-body']].forEach(function (pair) {
+    document.addEventListener('click', function (e) {
+      var b = e.target && e.target.closest ? e.target.closest(pair[0]) : null;
+      if (!b) return;
+      var body = b.nextElementSibling;
+      if (!body || !body.classList.contains(pair[1])) return;
+      body.hidden = !body.hidden;
+      b.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
+    });
+  });
+  /* Competitor rows jump to that stock's research page, with the
+   * back button armed so one tap returns here. */
+  document.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-comp]') : null;
+    if (!b) return;
+    var t = b.getAttribute('data-comp');
+    if (!t) return;
+    navPush();
+    switchTab('scorecard');
+    $('search-input').value = t;
+    runSearch(t);
   });
   document.addEventListener('click', function (e) {
     var t = e.target && e.target.closest ? e.target.closest('[data-pjmore]') : null;
