@@ -3534,9 +3534,21 @@ function bindAiSwotBtn(d, refresh) {
   var b = $('ai-swot-btn');
   if (b) b.addEventListener('click', function () { runAiSwot(d, refresh === true); });
 }
+/* Regenerations are signed-in only (Justin's call, 2026-11-15):
+ * the popup explains why -- a regeneration is saved to the user's
+ * account -- and offers the way in. First-time SWOTs still work
+ * signed out. */
+function showSigninSheet() {
+  var sh = $('signin-sheet');
+  if (sh) sh.hidden = false;
+}
 async function runAiSwot(d, refresh) {
   var zone = $('ai-swot-zone');
   if (!zone) return;
+  if (refresh === true) {
+    var suid0 = (typeof window.srSyncUserId === 'function') ? window.srSyncUserId() : null;
+    if (!suid0) { showSigninSheet(); return; }
+  }
   var prevHtml = zone.innerHTML;
   zone.innerHTML = '<p class="fineprint"><span class="spinner"></span>Writing the SWOT — reading the numbers, headlines, insider trades and 10-K risks…</p>';
   try {
@@ -3560,10 +3572,6 @@ async function runAiSwot(d, refresh) {
       payload.refresh = true;
       var suid = (typeof window.srSyncUserId === 'function') ? window.srSyncUserId() : null;
       if (suid) payload.uid = 'u:' + suid;
-      else {
-        var did = lsGet('sr_wlreg_id_v1', '');
-        if (did) payload.uid = 'd:' + did;
-      }
     }
     var resp = await fetch(AI_SWOT_URL, {
       method: 'POST',
@@ -3573,6 +3581,15 @@ async function runAiSwot(d, refresh) {
     });
     if (timer) clearTimeout(timer);
     var data = await resp.json();
+    if (data && data.error === 'signin_required') {
+      /* Defensive twin of the pre-flight gate above: if the Worker
+       * refuses an anonymous regeneration (app/Worker version skew),
+       * restore the SWOT that was showing and explain via the popup. */
+      var zs = $('ai-swot-zone');
+      if (zs) { zs.innerHTML = prevHtml; bindAiSwotBtn(d, refresh === true); }
+      showSigninSheet();
+      return;
+    }
     if (resp.status === 429 || (data && (data.error === 'rate_limited' || data.error === 'daily_cap' || data.error === 'regen_limit'))) {
       /* Throttled or a cap is hit: keep whatever SWOT was on screen
        * and put the plain reason above it. */
@@ -4444,27 +4461,37 @@ function pjFlatGrowth() {
 /* Extrapolated years fade from the last known growth toward the long-run
  * rate (the flat-growth box), closing half the remaining gap per year --
  * so a one-year spike like +84.6% cools off instead of repeating forever. */
-/* Extrapolated growth from the TREND of the EPS growth series
- * (Justin's ask, 2026-11-01 -- replaces fading the last growth rate
- * toward the flat fallback). Least-squares line over the LAST 5
- * years of growth rates only; extrapolated years continue along the
- * line, but the result is capped at that window's highest growth
- * and floored at its lowest -- the trend can never project a growth
- * rate outside the range of the past 5 years. One point: no trend
- * to fit, hold it flat. No points: null, and the caller uses the
- * flat fallback rate. stepsAhead is 0 for the first added year. */
 function pjTrendGrowthAt(series, stepsAhead) {
   if (!series || !series.length) return null;
-  /* Extrapolated years grow at the LAST real forecast year's rate,
-   * held flat. The old version fit a straight line through the
-   * growth rates and clamped it to the series' min/max -- on a
-   * V-shaped path (Axon: -32.7%, +118.6%, +58.2%) the line pointed
-   * up through the top, so the one rebound spike (+118.6%, a
-   * low-base bounce) became the permanent growth rate for every
-   * extrapolated year (Justin's screenshot, 2026-11-15). The latest
-   * analyst year is the freshest signal; a spike in the middle of
-   * the series is not a pace. */
-  return series[series.length - 1];
+  /* Extrapolated years start from the LAST real forecast year's
+   * growth rate, then fade it by the same growth-slowing trim the
+   * exit P/E uses (Justin's direction, 2026-11-15: match an
+   * equation similar to the exit P/E equation). The trim reads the
+   * analyst path's own deceleration -- peak pace vs final pace over
+   * the positive-to-positive steps (the series is built that way).
+   * When the final year still runs at half the peak pace or better,
+   * or the peak never topped 20%/yr, there is no fade and the rate
+   * holds flat. When the path decelerates hard, the fade slides
+   * toward the same 0.50 floor at the same 1.25 slope as the exit
+   * P/E's slowdown factor, and it compounds: each added year
+   * multiplies the rate by the fade again, so a fading grower keeps
+   * easing off instead of locking onto its last rate forever. */
+  var gLast = series[series.length - 1];
+  return gLast * Math.pow(pjExtrapFade(series), (stepsAhead || 0) + 1);
+}
+/* The exit P/E growth-slowing trim as a standalone factor:
+ * trigger and curve identical to pjExitSlow inside pjComputeExitPe
+ * (at least 2 steps, peak pace above 20%/yr, final pace under half
+ * the peak, 0.50 floor, 1.25 slope). If the floor or slope ever
+ * moves, move it in both places. */
+function pjExtrapFade(series) {
+  if (!series || series.length < 2) return 1;
+  var peak = Math.max.apply(null, series);
+  var gLast = series[series.length - 1];
+  if (!(peak > 20) || !(gLast < peak / 2)) return 1;
+  var ratio = Math.max(0, gLast / peak);
+  if (ratio <= 0.1) return 0.5;
+  return 0.5 + (ratio - 0.1) * 1.25;
 }
 /* Growth % of each path year vs the prior year's EPS (year 1 vs base). */
 function pjGrowths(base, path) {
@@ -6486,16 +6513,19 @@ function renderQm() {
   if (det && qmPrevMode !== 'detail') det.scrollTop = 0;
   qmPrevMode = 'detail';
   renderQmDetail();
-  qmEnableZoom();
+  /* Pinch zoom is Income-flow-only (Justin's correction, 2026-11-15:
+   * the flow's right-side labels are the ones that need it; the bar
+   * and line charts read fine at fit-width). */
+  if (qmMetric === 'flow') qmEnableZoom();
 }
 
-/* Pinch to zoom on the full chart (Justin's ask, 2026-11-15, from
- * the Income flow screenshot: the small labels crowded on the right
- * are unreadable at fit-width). Same gestures as the scorecard
- * price chart: pinch zooms (up to 4x), drag pans once zoomed,
- * double-tap zooms in or resets. Applied centrally after every
- * detail render, so bars, segments, EPS pairs and the income flow
- * all get it; a re-render (new metric/window) resets the zoom. */
+/* Pinch to zoom on the Income flow chart ONLY (Justin's ask,
+ * 2026-11-15, from his Income flow screenshot: the small labels
+ * crowded on the right are unreadable at fit-width -- and his
+ * same-night correction: no other chart gets it). Same gestures as
+ * the scorecard price chart: pinch zooms (up to 4x), drag pans once
+ * zoomed, double-tap zooms in or resets. A re-render (new
+ * metric/window) resets the zoom. */
 function qmEnableZoom() {
   var box = $('qm-chart');
   if (!box) return;
@@ -11174,6 +11204,20 @@ function initApp() {
     b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); });
   });
   $('nav-back').addEventListener('click', navBack);
+  /* Sign-in popup (SWOT regenerations): backdrop or "Not now"
+   * dismisses; "Sign in" lands on the Profile tab with the settings
+   * menu open, where the sign-in form lives. */
+  var signinSheet = $('signin-sheet');
+  if (signinSheet) {
+    signinSheet.addEventListener('click', function (e) { if (e.target === signinSheet) signinSheet.hidden = true; });
+    $('signin-sheet-close').addEventListener('click', function () { signinSheet.hidden = true; });
+    $('signin-sheet-go').addEventListener('click', function () {
+      signinSheet.hidden = true;
+      switchTab('portfolio');
+      var sm = $('settings-menu');
+      if (sm) sm.hidden = false;
+    });
+  }
   /* A scroll gesture of the user's own cancels any pending
    * back-restore ladder (see navBack). */
   var mnEl = document.querySelector('main');

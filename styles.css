@@ -285,6 +285,11 @@ table.factors td:first-child:has(.info-dot) { padding-right: 28px; }
 .tam-big { font-size: 21px; font-weight: 800; margin: 2px 0 2px; }
 .tam-per { font-size: 13px; font-weight: 600; color: var(--muted); }
 .tam-market { font-size: 14px; color: var(--ink); margin: 0 0 8px; }
+/* Sign-in popup sheet (2026-11-15) */
+.sheet-note { font-size: 14px; line-height: 1.5; color: var(--ink); margin: 0 0 14px; }
+.sheet-btns { display: flex; gap: 8px; }
+.sheet-btns .btn-gold { flex: 1; }
+.sheet-btns .btn-ghost { flex: 1; }
 .biz-row { margin: 7px 0; }
 .biz-row-top { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; margin-bottom: 3px; }
 .biz-mgn { color: var(--muted); font-weight: 600; font-size: 12.5px; }
