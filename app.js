@@ -7342,8 +7342,23 @@ function scanStartIndex(ixKey) {
   scanPump();
 }
 function getScan() {
-  try { var s = JSON.parse(localStorage.getItem(SCAN_KEY) || 'null'); return (s && s.idx) ? s : null; }
-  catch (e) { return null; }
+  try {
+    var s = JSON.parse(localStorage.getItem(SCAN_KEY) || 'null');
+    if (!s || !s.idx) return null;
+    /* Self-heal legacy state shapes (2026-11-16): a state saved
+     * before an index existed (Justin's carried no 'tot' entry)
+     * made renderScanCard throw before painting, so the daily card
+     * vanished while the rest of the app kept working. Fill any
+     * missing index entry / field from the fresh template; the next
+     * setScan persists the repair. */
+    SCAN_IDXS.forEach(function (ix) {
+      var tpl = scanFreshIdx(ix.key === 'spx');
+      var cur = s.idx[ix.key];
+      if (!cur) { s.idx[ix.key] = tpl; return; }
+      Object.keys(tpl).forEach(function (k) { if (cur[k] === undefined) cur[k] = tpl[k]; });
+    });
+    return s;
+  } catch (e) { return null; }
 }
 function setScan(s) { try { localStorage.setItem(SCAN_KEY, JSON.stringify(s)); } catch (e) {} }
 
@@ -8583,7 +8598,7 @@ function renderScanCard() {
     var secs = {};
     SCAN_IDXS.forEach(function (ix) {
       var rows = (s.results && s.results[ix.key]) || [];
-      var z = s.idx[ix.key];
+      var z = s.idx[ix.key] || scanFreshIdx(false);
       var out0 = out; out = '';
       if (z.started === false) {
         out += '<div class="scan-group">' + ixNameHtml(ix) + '</div>';
