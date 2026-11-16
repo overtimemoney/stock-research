@@ -4217,19 +4217,16 @@ function pjFlatGrowth() {
  * flat fallback rate. stepsAhead is 0 for the first added year. */
 function pjTrendGrowthAt(series, stepsAhead) {
   if (!series || !series.length) return null;
-  var win = series.slice(-5);
-  if (win.length === 1) return win[0];
-  var k = win.length, sx = 0, sy = 0, sxx = 0, sxy = 0, lo = Infinity, hi = -Infinity;
-  for (var i = 0; i < k; i++) {
-    sx += i; sy += win[i]; sxx += i * i; sxy += i * win[i];
-    if (win[i] < lo) lo = win[i];
-    if (win[i] > hi) hi = win[i];
-  }
-  var den = k * sxx - sx * sx;
-  var b = den ? (k * sxy - sx * sy) / den : 0;
-  var a = (sy - b * sx) / k;
-  var g = a + b * (k + stepsAhead);
-  return Math.min(hi, Math.max(lo, g));
+  /* Extrapolated years grow at the LAST real forecast year's rate,
+   * held flat. The old version fit a straight line through the
+   * growth rates and clamped it to the series' min/max -- on a
+   * V-shaped path (Axon: -32.7%, +118.6%, +58.2%) the line pointed
+   * up through the top, so the one rebound spike (+118.6%, a
+   * low-base bounce) became the permanent growth rate for every
+   * extrapolated year (Justin's screenshot, 2026-11-15). The latest
+   * analyst year is the freshest signal; a spike in the middle of
+   * the series is not a pace. */
+  return series[series.length - 1];
 }
 /* Growth % of each path year vs the prior year's EPS (year 1 vs base). */
 function pjGrowths(base, path) {
@@ -4409,6 +4406,19 @@ function fillProjection(d) {
   // average P/E, then today's P/E). Always editable.
   pjApplyAuto(d);
   renderPjPath();
+  pjSyncResearchRow();
+}
+/* Bottom-of-page link back to the stock's research (scorecard)
+ * tab (Justin's ask, 2026-11-15). Label follows the ticker in the
+ * box -- the same value Save uses -- falling back to the loaded
+ * stock; hidden until there is a ticker to point at. */
+function pjSyncResearchRow() {
+  var wrap = $('pj-research-wrap'), lab = $('pj-research-label');
+  if (!wrap || !lab) return;
+  var typed = ($('pj-ticker').value || '').trim().toUpperCase();
+  var T = /^[A-Z]{1,5}([\.\-][A-Z])?$/.test(typed) ? typed : (pjLoaded && pjLoaded.ticker) || '';
+  wrap.hidden = !T;
+  if (T) lab.textContent = 'Research ' + T;
 }
 /* The loaded blurb: one visible line, everything else (what was
  * loaded, where the exit P/E came from) behind a More info dropdown. */
@@ -4577,12 +4587,13 @@ function runProjection() {
   html += '<div class="pj-save-row"><button class="btn-gold" id="pj-save" type="button">' + (savedPj ? 'Update saved projection' : 'Save projection') + '</button>' +
     (savedPj
       ? '<span class="factor-note">Saved for ' + esc(curT) + ' on ' + esc(String(savedPj.savedAt || '').slice(0, 10)) + '</span><button class="link-btn danger" id="pj-del" type="button">Delete saved</button>'
-      : '<span class="factor-note">' + (curT ? 'Saves these exact assumptions on this device. Open it later from the Watchlist or the saved list below.' : 'Load a stock above first -- saving needs a ticker.') + '</span>') + '</div>';
+      : '') + '</div>';
   out.innerHTML = html;
   var svB = $('pj-save'); if (svB) svB.addEventListener('click', pjSaveCurrent);
   var mtB = out.querySelector('[data-pjmath]');
   if (mtB) mtB.addEventListener('click', function () { var b = mtB.nextElementSibling; if (!b) return; var open = b.classList.toggle('open'); mtB.setAttribute('aria-expanded', open ? 'true' : 'false'); });
   var dlB = $('pj-del'); if (dlB) dlB.addEventListener('click', function () { var all = getProjections(); delete all[curT]; setProjections(all); renderPjSaved(); runProjection(); });
+  pjSyncResearchRow();
 }
 /* ================= Quarterly metrics tool =================
  * 12 reported quarters of fundamentals (StockAnalysis statement
@@ -10864,6 +10875,14 @@ function initApp() {
   });
   setTool(localStorage.getItem(TOOL_KEY) || 'pj');
   $('pj-run').addEventListener('click', runProjection);
+  $('pj-research').addEventListener('click', function () {
+    var typed = ($('pj-ticker').value || '').trim().toUpperCase();
+    var T = /^[A-Z]{1,5}([\.\-][A-Z])?$/.test(typed) ? typed : (pjLoaded && pjLoaded.ticker) || '';
+    if (!T) return;
+    switchTab('scorecard');
+    $('search-input').value = T;
+    runSearch(T);
+  });
   $('pj-path').addEventListener('change', onPjPathEdit);
   /* Years edits sync the year-by-year rows only (Justin's refined
    * ask, 2026-10-29): committing the Years box (the keyboard check)
