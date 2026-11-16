@@ -563,6 +563,26 @@ async function fetchStock(ticker, opts) {
       var td = await post(TAM_URL, tp);
       if (td && isNum(td.lo) && isNum(td.hi)) { d.tam = { lo: td.lo, hi: td.hi, market: td.market || '', basis: td.basis || '' }; tCache[T] = { lo: td.lo, hi: td.hi, market: d.tam.market, basis: d.tam.basis, ts: Date.now() }; lsSet(TAM_KEY, tCache); }
     }
+    /* Competitors classification (2026-11-16): the same-industry
+     * candidate pool goes to the Worker's /comp filter, which keeps
+     * only true product rivals. d.compKeep stays unset when the
+     * filter can't run, and the section hides rather than guess. */
+    var cands = compCandidates(d);
+    if (cands.length >= 2) {
+      var cCache = lsGet(COMP_KEY, {});
+      var cHit = cCache[T];
+      if (cHit && Array.isArray(cHit.keep) && (Date.now() - cHit.ts) < 7 * 864e5) d.compKeep = cHit.keep;
+      else {
+        var cp = Object.assign({}, base, { candidates: cands.slice(0, 12).map(function (c) { return { t: c.t, name: c.name }; }) });
+        var cd = await post(COMP_URL, cp);
+        if (cd && Array.isArray(cd.keep)) {
+          var candSet = {};
+          cands.forEach(function (c) { candSet[c.t] = 1; });
+          d.compKeep = cd.keep.filter(function (t) { return candSet[t]; });
+          cCache[T] = { keep: d.compKeep, ts: Date.now() }; lsSet(COMP_KEY, cCache);
+        }
+      }
+    } else d.compKeep = [];
   } catch (e) { d.errors.push('Moat/TAM: ' + e.message); } };
 
   var srcYearly = async function () { try {
@@ -1467,27 +1487,32 @@ function bizBlockHtml(d) {
   return '<button type="button" class="ceo-toggle" data-biztoggle aria-expanded="false"><span class="earn-line ceo-line">How it makes money</span><span class="ceo-chev">\u25be</span></button>' +
     '<div class="ceo-body biz-body" hidden>' + inner + '</div>';
 }
-/* Moat verdict from the app's own numbers (2026-11-15): durable,
- * high gross margins plus strong returns on equity are what a moat
- * looks like in the financials. The AI names the moat's source; this
- * checks whether the numbers back one up. Needs 3+ years of gross
- * margins, else no verdict (the section then shows the AI read
- * alone, or nothing). */
+/* Moat verdict from the app's own numbers (2026-11-15; floors made
+ * ABSOLUTE 2026-11-16 at Justin's correction): the old rule measured
+ * the worst year against the average, so NVDA (68% average, 57%
+ * floor) read its floor as a crack and landed on Narrow. A floor is
+ * judged against a fixed bar instead: a company whose WEAKEST recent
+ * year still held a 40%+ gross margin has pricing power whatever its
+ * average does. The AI names the moat's source; this checks whether
+ * the numbers back one up. Needs 3+ years of gross margins, else no
+ * verdict (the section then shows the AI read alone, or nothing). */
 function moatVerdict(d) {
   var yrs = (d.yearly || []).filter(function (y) { return isNum(y.gm); });
   if (yrs.length < 3) return null;
   var last = yrs.slice(-5);
   var gmAvg = last.reduce(function (a, y) { return a + y.gm; }, 0) / last.length;
   var gmMin = Math.min.apply(null, last.map(function (y) { return y.gm; }));
-  var durable = gmMin >= gmAvg - 10;
   var roe = isNum(d.roe) ? d.roe : null;
   var label;
-  if (gmAvg >= 45 && durable && (roe === null || roe >= 15)) label = 'Wide moat';
-  else if (gmAvg >= 30 && gmMin >= gmAvg - 12 && (roe === null || roe >= 10)) label = 'Narrow moat';
+  if (gmAvg >= 45 && gmMin >= 40 && (roe === null || roe >= 15)) label = 'Wide moat';
+  else if (gmAvg >= 30 && gmMin >= 25 && (roe === null || roe >= 10)) label = 'Narrow moat';
   else label = 'No clear moat';
   var lines = [];
-  lines.push('Gross margin averaged ' + fmtNum(gmAvg, 0) + '% over the last ' + last.length + ' years' +
-    (durable ? ', never dropping below ' + fmtNum(gmMin, 0) + '%' : ', but fell as low as ' + fmtNum(gmMin, 0) + '%'));
+  var gmLine = 'Gross margin averaged ' + fmtNum(gmAvg, 0) + '% over the last ' + last.length + ' years';
+  if (gmMin >= 40) gmLine += ', and even the weakest year held ' + fmtNum(gmMin, 0) + '%';
+  else if (gmMin >= gmAvg - 10) gmLine += ', never dropping below ' + fmtNum(gmMin, 0) + '%';
+  else gmLine += ', but fell as low as ' + fmtNum(gmMin, 0) + '%';
+  lines.push(gmLine);
   if (roe !== null) lines.push('Return on equity ' + fmtNum(roe, 0) + '% over the last 12 months');
   var revs = (d.yearly || []).filter(function (y) { return isNum(y.rev); }).slice(-6);
   if (revs.length >= 3) {
@@ -1514,11 +1539,16 @@ function moatBlockHtml(d) {
   return '<button type="button" class="ceo-toggle" data-moattoggle aria-expanded="false"><span class="earn-line ceo-line">Moat</span><span class="ceo-chev">▾</span></button>' +
     '<div class="ceo-body moat-body" hidden>' + inner + '</div>';
 }
-/* Competitors (2026-11-15): same-industry names from the app's own
- * scan universe (the researched stock's scan record supplies the
- * industry, so the classification always matches the list). Biggest
- * first by market cap; sizes are as of the last scan. */
-function compPeers(d) {
+/* Competitors (2026-11-15; classification corrected 2026-11-16):
+ * the scan universe's same-industry names are only a CANDIDATE pool
+ * -- the bucket mixes in suppliers, licensors and adjacent product
+ * categories (NVDA's raw list carried its foundry, its memory
+ * suppliers and an IP licensor). The Worker's /comp filter keeps
+ * only companies that sell the same type of product; its verdict
+ * rides on d.compKeep, and without it the section stays hidden
+ * rather than show a wrong list. Biggest first by market cap; sizes
+ * are as of the last scan. */
+function compCandidates(d) {
   var ds = null;
   try { ds = getScanData(); } catch (e) {}
   if (!ds || !ds.recs) return [];
@@ -1532,7 +1562,13 @@ function compPeers(d) {
     }
   });
   out.sort(function (a, b) { return b.marketCap - a.marketCap; });
-  return out.slice(0, 8);
+  return out;
+}
+function compPeers(d) {
+  if (!Array.isArray(d.compKeep) || !d.compKeep.length) return [];
+  var keep = {};
+  d.compKeep.forEach(function (t) { keep[t] = 1; });
+  return compCandidates(d).filter(function (p) { return keep[p.t]; }).slice(0, 8);
 }
 function compBlockHtml(d) {
   var peers = compPeers(d);
@@ -1545,7 +1581,7 @@ function compBlockHtml(d) {
   }).join('');
   return '<button type="button" class="ceo-toggle" data-comptoggle aria-expanded="false"><span class="earn-line ceo-line">Competitors</span><span class="ceo-chev">▾</span></button>' +
     '<div class="ceo-body comp-body" hidden>' + rows +
-    '<p class="fineprint">Same industry (' + esc((getScanData().recs[d.ticker] || {}).industry || '') + '), biggest first. Sizes as of the last scan.</p></div>';
+    '<p class="fineprint">Companies that sell competing products — suppliers and partners are left out. Biggest first; sizes as of the last scan.</p></div>';
 }
 /* TAM (2026-11-15): the Worker's AI market-size estimate paired
  * with the company's REAL revenue, so the headroom reads honestly.
@@ -3449,7 +3485,9 @@ var AI_SWOT_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/s
 var BIZ_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/bizmodel';
 var MOAT_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/moat';
 var TAM_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/tam';
-var MOAT_KEY = 'sr_moat_v1';
+var COMP_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/comp';
+var MOAT_KEY = 'sr_moat_v2';
+var COMP_KEY = 'sr_comp_v1';
 var TAM_KEY = 'sr_tam_v1';
 var CEOPREV_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/ceoprev';
 /* Previous-experience extraction lives in the Worker (grounded in
