@@ -1,3 +1,4 @@
+var APP_BUILD = 'stock-research-20261117001255';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -9153,6 +9154,15 @@ function openOverview(T) {
 }
 
 async function renderWatchlist(refresh) {
+  /* The daily scan card paints from HERE as well as from the scan
+   * machinery (2026-11-16): the machinery only starts at the very
+   * end of initApp, so anything that interrupted startup on a
+   * given device silently took the card with it while the rest of
+   * this tab (rendered by this function) kept working. The card
+   * now repaints whenever the watchlist itself renders. */
+  try { renderScanCard(); } catch (e) {}
+  var bl = $('build-line');
+  if (bl && !bl.textContent) bl.textContent = 'Build ' + APP_BUILD;
   renderEarnCard();
   var wl = getWatchlist();
   var box = $('wl-list');
@@ -11477,7 +11487,8 @@ function initApp() {
     $('wl-ticker').value = ''; $('wl-target').value = '';
   });
   $('wl-refresh').addEventListener('click', function () { renderWatchlist(true); });
-  maybeStartScan();
+  try { setTimeout(function () { try { maybeStartScan(); } catch (e) {} }, 4000); } catch (e) {}
+  try { maybeStartScan(); } catch (e) { try { scanDiag('maybeStartScan threw: ' + (e && e.message)); } catch (e2) {} }
   var wlSortSel = $('wl-sort');
   if (wlSortSel) {
     wlSortSel.value = getWlSort();
