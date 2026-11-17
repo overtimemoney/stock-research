@@ -7543,6 +7543,16 @@ function scanMerge(idxs, view, rows) {
 function scanRankAll(idxs) {
   var out = [];
   Object.keys(idxs.merged).forEach(function (t) {
+    /* One malformed record must never kill the whole ranking
+     * (2026-11-16): score it inside a guard and skip it on any
+     * throw, with the skip noted in the scan diagnostics. */
+    try { scanRankOne(idxs, t, out); }
+    catch (e) { try { scanDiag('rank skip ' + t + ': ' + (e && e.message)); } catch (e2) {} }
+  });
+  out.sort(function (a, b) { return b.score - a.score; });
+  return out;
+}
+function scanRankOne(idxs, t, out) {
     var rec = idxs.merged[t];
     // Eligibility: a ranking score must rest on the anchor factor (a
     // real forward P/E) and at least 60 of the 100 factor points —
@@ -7568,9 +7578,6 @@ function scanRankAll(idxs) {
     // 60% how cheap it is + 40% how safe it is.
     var combined = Math.round(0.6 * s.score + 0.4 * (100 - rk.score));
     out.push({ t: t, name: rec.name, score: combined, price: isNum(rec.price) ? rec.price : null, rec: rec, sev: rk.cyc ? rk.cyc.severity : 0 });
-  });
-  out.sort(function (a, b) { return b.score - a.score; });
-  return out;
 }
 
 /* Display shape for a scan row: the plain entry the card has always
@@ -7931,8 +7938,22 @@ function scanResume() {
  * come and go) or whenever he taps Rescan. */
 var SCAN_DATA_KEY = 'sr_scan_data_v1';
 function getScanData() {
-  try { var s = JSON.parse(localStorage.getItem(SCAN_DATA_KEY) || 'null'); return (s && s.recs) ? s : null; }
-  catch (e) { return null; }
+  try {
+    var s = JSON.parse(localStorage.getItem(SCAN_DATA_KEY) || 'null');
+    if (!s || !s.recs) return null;
+    /* Self-heal accumulated dataset damage (2026-11-16): months of
+     * crawls, bootstraps and migrations can leave records that are
+     * null, strings, or carry a field in the wrong shape (an
+     * epsForecasts object instead of a list threw inside scoring
+     * and silently blanked the daily card on Justin's phone). Drop
+     * dead records and unusable forecast fields on read. */
+    Object.keys(s.recs).forEach(function (t) {
+      var r = s.recs[t];
+      if (!r || typeof r !== 'object' || Array.isArray(r)) { delete s.recs[t]; return; }
+      if (r.epsForecasts && !Array.isArray(r.epsForecasts)) delete r.epsForecasts;
+    });
+    return s;
+  } catch (e) { return null; }
 }
 function setScanData(s) { try { localStorage.setItem(SCAN_DATA_KEY, JSON.stringify(s)); } catch (e) {} }
 
@@ -8113,7 +8134,7 @@ function scanShowDataResults(ds, refreshed) {
   var s = getScan();
   if (!s || s.date !== today) s = scanFreshState();
   s.results = scanRankFromData(ds);
-  scanUpdateNewBadges(s.results, false);
+  try { scanUpdateNewBadges(s.results, false); } catch (e) { try { scanDiag('badges failed: ' + (e && e.message)); } catch (e2) {} }
   s.done = true;
   s.partial = false;
   s.fromData = true;
@@ -8543,7 +8564,21 @@ document.addEventListener('scroll', function () {
   if (ixPopKey && Date.now() - ixPopShownAt > 350) ixPopHide();
 }, true);
 
+/* The card must never vanish silently (2026-11-16): any throw
+ * while building it paints a plain fallback that names the error,
+ * so a failure is visible and reportable instead of an empty slot. */
 function renderScanCard() {
+  var box = $('scan-card');
+  if (!box) return;
+  try { renderScanCardInner(); }
+  catch (e) {
+    try { scanDiag('renderScanCard failed: ' + (e && e.message)); } catch (e2) {}
+    box.innerHTML = '<div class="card scan-card"><div class="scan-h">Top value + low risk today</div>' +
+      '<div class="status">Today\'s list hit a snag while building itself — the rest of the app is fine. If this stays here, send me a screenshot of this card.</div>' +
+      '<div class="fineprint">' + esc(String((e && e.message) || e || 'unknown error')) + '</div></div>';
+  }
+}
+function renderScanCardInner() {
   var box = $('scan-card');
   if (!box) return;
   var s = getScan();
