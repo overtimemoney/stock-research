@@ -359,6 +359,7 @@ table.factors td:first-child:has(.info-dot) { padding-right: 28px; }
 .sc-act:active { opacity: .5; }
 .sc-act-arrow { color: var(--accent-text); font-size: 21px; font-weight: 700; line-height: 1; flex: none; }
 .sc-ext .sc-act-arrow { font-size: 16px; }
+.sc-actions-flat { background: none; border: none; border-top: 1px solid var(--row-line); border-radius: 0; padding: 2px 0; margin-top: 10px; }
 
 /* ---------- compare ---------- */
 table.cmp td.best { font-weight: 900; }

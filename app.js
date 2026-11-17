@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261117001255';
+var APP_BUILD = 'stock-research-20261117182821';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -9050,14 +9050,18 @@ function renderOverview(d, item) {
   html += kvItem('Current ratio', isNum(d.currentRatio) ? fmtNum(d.currentRatio, 2) : '\u2014');
   html += kvItem('Below 52-wk high', isNum(d.pctBelowHigh) ? fmtNum(d.pctBelowHigh, 1) + '%' : '\u2014');
   html += '</div>';
-  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' +
-    '<button type="button" class="btn-ghost" id="ov-scorecard">Full scorecard</button>' +
-    '<button type="button" class="btn-ghost" id="ov-project">Projection</button>' +
-    '<button type="button" class="btn-ghost" id="ov-charts">Charts</button>' +
-    '<button type="button" class="btn-ghost" id="ov-edit-target">Edit target</button>' +
-    '<button type="button" class="btn-ghost" id="ov-remove">Remove</button>' +
-    '<a class="btn-ghost" style="text-decoration:none" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&ticker=' + encodeURIComponent(d.ticker) + '&type=10-Q&dateb=&owner=include&count=10" target="_blank" rel="noopener">Earnings report</a>' +
-    '<a class="btn-ghost" style="text-decoration:none" href="https://www.youtube.com/results?search_query=' + encodeURIComponent(d.ticker + ' earnings call') + '" target="_blank" rel="noopener">Earnings call</a></div>';
+  /* Same action-row style as the full scorecard (Justin's ask,
+   * 2026-11-17): full-width rows, label left, gold chevron right,
+   * hairline dividers -- the flat variant drops the nested card
+   * chrome because these rows already sit inside the overview card. */
+  html += '<div class="sc-actions sc-actions-flat">' +
+    '<button type="button" class="sc-act" id="ov-scorecard"><span>Full scorecard</span><span class="sc-act-arrow">›</span></button>' +
+    '<button type="button" class="sc-act" id="ov-project"><span>Projection</span><span class="sc-act-arrow">›</span></button>' +
+    '<button type="button" class="sc-act" id="ov-charts"><span>Charts</span><span class="sc-act-arrow">›</span></button>' +
+    '<button type="button" class="sc-act" id="ov-edit-target"><span>Edit target</span><span class="sc-act-arrow">›</span></button>' +
+    '<button type="button" class="sc-act" id="ov-remove"><span>Remove</span><span class="sc-act-arrow">›</span></button>' +
+    '<a class="sc-act sc-ext" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&ticker=' + encodeURIComponent(d.ticker) + '&type=10-Q&dateb=&owner=include&count=10" target="_blank" rel="noopener"><span>Earnings report</span><span class="sc-act-arrow">↗</span></a>' +
+    '<a class="sc-act sc-ext" href="https://www.youtube.com/results?search_query=' + encodeURIComponent(d.ticker + ' earnings call') + '" target="_blank" rel="noopener"><span>Earnings call</span><span class="sc-act-arrow">↗</span></a></div>';
   html += stockNewsSectionHtml('ov', d.ticker);
   html += '</div>';
   return html;
