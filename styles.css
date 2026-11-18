@@ -246,7 +246,7 @@ table.factors td:first-child:has(.info-dot) { padding-right: 28px; }
 .alert.ok { background: var(--alert-ok-bg); border: 1.5px solid var(--alert-ok-line); color: var(--alert-ok-ink); }
 .chart-wrap { width: 100%; }
 .chart-wrap svg { width: 100%; height: auto; display: block; }
-.nav-back { position: fixed; left: 14px; bottom: calc(94px + env(safe-area-inset-bottom)); z-index: 65; width: 40px; height: 40px; border-radius: 50%; background: var(--card); border: 1.5px solid var(--line); color: var(--accent-text); display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(0,0,0,.35); cursor: pointer; padding: 0; }
+.nav-back { position: fixed; left: 14px; top: calc(10px + env(safe-area-inset-top)); z-index: 65; width: 40px; height: 40px; border-radius: 50%; background: var(--card); border: 1.5px solid var(--line); color: var(--accent-text); display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(0,0,0,.35); cursor: pointer; padding: 0; }
 .nav-back svg { width: 20px; height: 20px; display: block; }
 .nav-back[hidden] { display: none; }
 .qm-zoomer { overflow: hidden; touch-action: none; }
