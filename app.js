@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261118003442';
+var APP_BUILD = 'stock-research-20261118004333';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -11866,6 +11866,14 @@ function initApp() {
   renderJournal();
   renderPjSaved();
   renderWatchlist(true);
+  /* Returning users land on the Watchlist (Justin's call,
+   * 2026-11-17). The first-ever launch keeps the default tab --
+   * the onboarding flag is only set once that first session's
+   * quiz is done, so the quiz still opens over the scorecard as
+   * designed, and every later open starts here. */
+  var onboarded = false;
+  try { onboarded = !!localStorage.getItem('sr_onboard_v1'); } catch (e) {}
+  if (onboarded) switchTab('watchlist');
 }
 if (typeof document !== 'undefined' && document.getElementById) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initApp);
