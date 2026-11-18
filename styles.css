@@ -331,6 +331,8 @@ table.factors td:first-child:has(.info-dot) { padding-right: 28px; }
    lives here, big and readable, instead of as a cramped tag on the
    daily scan rows. */
 .sc-proj { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; margin-top: 12px; padding: 10px 12px; background: var(--chip-bg); border: 1px solid var(--line); border-radius: 12px; font: inherit; color: inherit; text-align: left; cursor: pointer; -webkit-appearance: none; appearance: none; }
+.sc-overall { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; margin-top: 10px; padding: 10px 12px; background: var(--chip-bg); border: 1px solid var(--line); border-radius: 12px; }
+.sc-overall-v { font-size: 26px; font-weight: 800; line-height: 1; }
 .sc-proj-r { display: flex; align-items: center; gap: 3px; }
 .sc-proj-chev { color: var(--muted); font-size: 22px; font-weight: 700; line-height: 1; }
 .sc-proj-l { display: flex; flex-direction: column; gap: 1px; min-width: 0; }

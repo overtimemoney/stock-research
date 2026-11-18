@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261118030947';
+var APP_BUILD = 'stock-research-20261118031800';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -3925,6 +3925,55 @@ function projStripFill(id, ticker) {
   }).catch(function () {});
 }
 
+/* Overall score (2026-11-17, Justin's ask): a researched stock gets
+ * the same single score the daily Top 10 shows -- standard weights,
+ * 60% valuation + 40% safety, then the scan's own growth blend
+ * (75% that score + 25% growth points from the projected 4-yr CAGR)
+ * when a forecast path exists; no path, no blend, same as the scan. */
+function overallScore(d, cagr) {
+  var s = scoreStock(d, STD_W);
+  if (!s || !isNum(s.score)) return null;
+  var rk = riskScore(d, STD_W);
+  if (!rk || !isNum(rk.score)) return null;
+  var combined = Math.round(0.6 * s.score + 0.4 * (100 - rk.score));
+  if (isNum(cagr)) {
+    var cpts = Math.max(0, Math.min(100, (cagr + 20) / 60 * 100));
+    return Math.round(0.75 * combined + 0.25 * cpts);
+  }
+  return combined;
+}
+function overallCachedCagr(ticker) {
+  var saved = pjSavedCagr(ticker);
+  if (isNum(saved)) return { cagr: saved, stale: false };
+  var fresh = wlProjEntry(ticker);
+  if (fresh && isNum(fresh.cagr)) return { cagr: fresh.cagr, stale: false };
+  var stale = wlProjStale(ticker);
+  if (stale && isNum(stale.cagr)) return { cagr: stale.cagr, stale: true };
+  return { cagr: null, stale: false };
+}
+function overallHtml(id, d) {
+  var cc = overallCachedCagr(d.ticker);
+  var v = overallScore(d, cc.cagr);
+  if (v === null) return '';
+  return '<div class="sc-overall"><span class="sc-proj-l"><b>Overall score</b><span>Same math as the daily Top 10</span></span>' +
+    '<span class="sc-overall-v' + (cc.stale ? ' sc-proj-stale' : '') + '" id="' + id + '"' + scanScoreStyle(v) + '>' + v + '</span></div>';
+}
+function overallFill(id, d) {
+  var saved = pjSavedCagr(d.ticker);
+  function done(cg) {
+    var el = $(id);
+    if (!el) return;
+    var v = overallScore(d, isNum(cg) ? cg : (isNum(saved) ? saved : null));
+    if (v === null) return;
+    el.textContent = v;
+    var m = scanScoreStyle(v).match(/color:(rgb\([^)]*\))/);
+    if (m) el.style.color = m[1];
+    el.classList.remove('sc-proj-stale');
+  }
+  if (isNum(saved)) { done(saved); return; }
+  fetchWlProjCagr(d.ticker).then(done).catch(function () {});
+}
+
 function renderScorecard(d) {
   lastStock = d;
   var sc = scoreStock(d);
@@ -3940,6 +3989,7 @@ function renderScorecard(d) {
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
   html += projStripHtml('sc-proj', d.ticker);
+  html += overallHtml('sc-overall-v', d);
   if (d.about) html += '<div class="sc-about">' + esc(d.about) + '</div>';
   html += moreBlockHtml(d);
   html += moatBlockHtml(d);
@@ -4150,6 +4200,7 @@ function renderScorecard(d) {
   $('score-result').innerHTML = html;
   $('score-empty').style.display = 'none';
   projStripFill('sc-proj', d.ticker);
+  overallFill('sc-overall-v', d);
   loadStockNews('sc', d.ticker);
 
   /* The zone's button is "Regenerate" when a saved SWOT is showing
@@ -7977,12 +8028,30 @@ function setScanData(s) { try { localStorage.setItem(SCAN_DATA_KEY, JSON.stringi
  * are still running, so the unchecked preliminary ranking is never
  * what renders. */
 var SCAN_CHECKED_KEY = 'sr_scan_checked_v1';
+var SCAN_SCORES_KEY = 'sr_scan_scores_v1';
 function scanSaveChecked(date, results, scored) {
   try { lsSet(SCAN_CHECKED_KEY, { date: date, results: results, scored: scored || null }); } catch (e) {}
 }
 function scanGetChecked() {
   var c = lsGet(SCAN_CHECKED_KEY, null);
   return (c && c.results) ? c : null;
+}
+/* Checked scores from the daily scan (2026-11-17): the fully-checked
+ * final score per ticker, so any other surface that shows a score
+ * (the screener today) matches the daily list exactly -- Justin's
+ * call: one math everywhere. Freshest source wins: the live scan
+ * state's lists, then the checked snapshot's lists, then the
+ * Worker's per-finalist map stored at adoption. */
+function scanCheckedScoreMap() {
+  var map = {};
+  function put(t, score, cagr) { if (t && isNum(score)) map[t] = { score: score, cagr: isNum(cagr) ? cagr : null }; }
+  var stored = lsGet(SCAN_SCORES_KEY, null);
+  if (stored && stored.map) Object.keys(stored.map).forEach(function (t) { var e = stored.map[t]; if (e) put(t, e.score, e.cagr); });
+  var snap = scanGetChecked();
+  if (snap && snap.results) Object.keys(snap.results).forEach(function (k) { (snap.results[k] || []).forEach(function (e) { if (e) put(e.t, e.score, e.cagr); }); });
+  var st = getScan();
+  if (st && st.results) Object.keys(st.results).forEach(function (k) { (st.results[k] || []).forEach(function (e) { if (e) put(e.t, e.score, e.cagr); }); });
+  return map;
 }
 
 /* NEW badges (2026-10-30): when a completed Top-10 list replaces the
@@ -8348,6 +8417,9 @@ async function scanAdoptShared() {
     s.checked = true;
     setScan(s);
     scanSaveChecked(s.date, s.results, counts);
+    var scMap = {};
+    [spx, rut, tot].forEach(function (p) { if (p && p.checked) Object.keys(p.checked).forEach(function (t) { scMap[t] = p.checked[t]; }); });
+    if (Object.keys(scMap).length) { try { lsSet(SCAN_SCORES_KEY, { date: s.date, map: scMap }); } catch (e) {} }
     scanDiag('shared scan adopted: spx ' + spx.top.length + ' rows, asOf ' + spx.asOf);
     renderScanCard();
     return true;
@@ -8853,17 +8925,27 @@ function runScreener() {
     if (scanSt && scanSt.results) Object.keys(scanSt.results).forEach(function (k) { (scanSt.results[k] || []).forEach(function (e) { if (e && e.t && isNum(e.cagr)) cgMap[e.t] = e.cagr; }); });
   } catch (e) {}
   var covN = 0;
+  var checkedMap = scanCheckedScoreMap();
   Object.keys(ds.recs).forEach(function (t) {
     var rec = ds.recs[t];
     if (isNum(rec.divYield)) anyYield = true;
     if (rec.industry) anyInd = true;
     var cg = isNum(rec.cagr) ? rec.cagr : cgMap[t];
+    var chk = checkedMap[t];
+    if (!isNum(cg) && chk && isNum(chk.cagr)) cg = chk.cagr;
     if (isNum(cg)) { anyCagr = true; covN++; }
     var eff = isNum(cg) && cg !== rec.cagr ? Object.assign({}, rec, { cagr: cg }) : rec;
     if (!scrPasses(eff, f)) return;
+    /* Same math as the daily list (2026-11-17): a fully-checked
+     * stock shows its checked score verbatim; any other stock with
+     * a stored CAGR gets the scan's own 75/25 growth blend applied
+     * to its quick score, exactly as the deep check does. */
     var sc = scanRecordScore(rec);
-    if (!sc) return;
-    out.push({ t: t, name: rec.name, price: rec.price, forwardPE: rec.forwardPE, epsGrowthNextY: rec.epsGrowthNextY, pctBelowHigh: rec.pctBelowHigh, marketCap: rec.marketCap, cagr: cg, score: sc.combined, sector: sectorOf(rec) });
+    var score = null;
+    if (chk && isNum(chk.score)) score = chk.score;
+    else if (sc) score = isNum(cg) ? Math.round(0.75 * sc.combined + 0.25 * Math.max(0, Math.min(100, (cg + 20) / 60 * 100))) : sc.combined;
+    if (score === null) return;
+    out.push({ t: t, name: rec.name, price: rec.price, forwardPE: rec.forwardPE, epsGrowthNextY: rec.epsGrowthNextY, pctBelowHigh: rec.pctBelowHigh, marketCap: rec.marketCap, cagr: cg, score: score, sector: sectorOf(rec) });
   });
   var sorters = {
     combined: function (a, b) { return b.score - a.score; },
@@ -8979,6 +9061,7 @@ function renderOverview(d, item) {
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
   html += projStripHtml('ov-proj', d.ticker);
+  html += overallHtml('ov-overall-v', d);
   html += earnLineHtml(d);
   html += ceoBlockHtml(d);
   if (item && isNum(item.target) && item.target > 0 && isNum(d.price)) {
@@ -9088,6 +9171,7 @@ function closeOverview() {
 
 function wireOverviewActions(d) {
   projStripFill('ov-proj', d.ticker);
+  overallFill('ov-overall-v', d);
   loadStockNews('ov', d.ticker);
   var sc = $('ov-scorecard');
   if (sc) sc.addEventListener('click', function () { navPush(); closeOverview(); switchTab('scorecard'); $('search-input').value = d.ticker; runSearch(d.ticker); });
