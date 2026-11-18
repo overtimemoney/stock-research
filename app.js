@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261117182821';
+var APP_BUILD = 'stock-research-20261118003442';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -15,6 +15,18 @@ function esc(s) {
   });
 }
 function isNum(n) { return typeof n === 'number' && isFinite(n); }
+/* Inline icons (2026-11-17, Justin's call: no emojis anywhere in
+ * the UI -- every symbol is a drawn SVG in the app's icon style). */
+function ico(paths, cls) {
+  return '<svg class="ico' + (cls ? ' ' + cls : '') + '" viewBox="0 0 24 24" aria-hidden="true">' + paths + '</svg>';
+}
+var ICO_SPARK = '<path d="M12 3l2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4L12 3z"/>';
+var ICO_REGEN = '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>';
+var ICO_ALERT = '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/>';
+var ICO_OKCIRCLE = '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.2 2.4 2.4 4.6-5"/>';
+var ICO_CHECK = '<path d="M20 6 9 17l-5-5"/>';
+var ICO_X = '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>';
+var ICO_STAR = '<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>';
 /* Compact form for huge finite values (2026-11-07): toLocaleString
  * on something like 5.3e39 prints all 40 digits and blows out the
  * layout (Justin's compound-calculator screenshot: a 1,000,000%
@@ -3567,7 +3579,7 @@ function aiSwotGridHtml(entry) {
   return '<div class="swot-grid">' +
     swotBox('S', 'Strengths', entry.swot.S, 'sw-s') + swotBox('W', 'Weaknesses', entry.swot.W, 'sw-w') +
     swotBox('O', 'Opportunities', entry.swot.O, 'sw-o') + swotBox('T', 'Threats', entry.swot.T, 'sw-t') + '</div>' +
-    '<div style="margin-top:8px"><button class="btn-ghost" id="ai-swot-btn" type="button">↻ Regenerate</button></div>';
+    '<div style="margin-top:8px"><button class="btn-ghost" id="ai-swot-btn" type="button">' + ico(ICO_REGEN) + 'Regenerate</button></div>';
 }
 function bindAiSwotBtn(d, refresh) {
   var b = $('ai-swot-btn');
@@ -3676,7 +3688,7 @@ function aiSwotSharedHtml(swot, generatedAt) {
     '<div class="swot-grid">' +
     swotBox('S', 'Strengths', swot.S, 'sw-s') + swotBox('W', 'Weaknesses', swot.W, 'sw-w') +
     swotBox('O', 'Opportunities', swot.O, 'sw-o') + swotBox('T', 'Threats', swot.T, 'sw-t') + '</div>' +
-    '<div style="margin-top:8px"><button class="btn-ghost" id="ai-swot-btn" type="button">✦ Generate my own</button></div>';
+    '<div style="margin-top:8px"><button class="btn-ghost" id="ai-swot-btn" type="button">' + ico(ICO_SPARK) + 'Generate my own</button></div>';
 }
 
 /* Shared-cache display: the Worker keeps the first AI SWOT generated
@@ -3875,7 +3887,7 @@ function cashDebtHtml(d) {
   }
   html += '</div>';
   var v = cashDebtVerdict(d.bsCash, d.bsDebt);
-  if (v) html += '<div class="alert ' + v.cls + '">' + (v.cls === 'ok' ? '\u2713 ' : '\u26a0 ') + esc(v.text) + '</div>';
+  if (v) html += '<div class="alert ' + v.cls + '">' + (v.cls === 'ok' ? ico(ICO_OKCIRCLE, 'ico-sm') : ico(ICO_ALERT, 'ico-sm')) + esc(v.text) + '</div>';
   if (d.bsPeriod) html += '<p class="fineprint">Latest balance sheet \u00b7 ' + esc(d.bsPeriod) + ' \u00b7 StockAnalysis</p>';
   return html;
 }
@@ -4039,7 +4051,7 @@ function renderScorecard(d) {
   html += '<div class="screen-chips" data-sbody="vs" hidden>';
   screen.forEach(function (s) {
     var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
-    var mark = s.test === null ? '?' : s.test ? '✓ PASS' : '✗';
+    var mark = s.test === null ? '?' : s.test ? ico(ICO_CHECK, 'ico-sm') + '<span>PASS</span>' : ico(ICO_X, 'ico-sm');
     html += '<div class="chip ' + cls + '"><span>' + esc(s.label) + '<br><span class="factor-note">' + esc(s.value) + '</span></span><span class="mark">' + mark + '</span></div>';
   });
   html += '</div>';
@@ -4051,7 +4063,7 @@ function renderScorecard(d) {
   html += '<div class="screen-chips" data-sbody="rs" hidden>';
   rScreen.forEach(function (s) {
     var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
-    var mark = s.test === null ? '?' : s.test ? '\u2713 CLEAR' : '\u2717 FLAG';
+    var mark = s.test === null ? '?' : s.test ? ico(ICO_CHECK, 'ico-sm') + '<span>CLEAR</span>' : ico(ICO_X, 'ico-sm') + '<span>FLAG</span>';
     html += '<div class="chip ' + cls + '"><span>' + esc(s.label) + '<br><span class="factor-note">' + esc(s.value) + '</span></span><span class="mark">' + mark + '</span></div>';
   });
   html += '</div>';
@@ -4088,13 +4100,13 @@ function renderScorecard(d) {
   html += dividendHtml(d);
 
   var profitWarn = epsProfitWarning(d);
-  if (profitWarn) html += '<div class="alert warn">⚠ ' + esc(profitWarn) + '</div>';
+  if (profitWarn) html += '<div class="alert warn">' + ico(ICO_ALERT, 'ico-sm') + esc(profitWarn) + '</div>';
 
   html += '<div class="section-h">EPS trajectory — <span class="gold-text">cliff check</span></div>';
   if (traj.points.length >= 2) {
     html += '<div class="chart-wrap">' + barChartSVG(traj.points) + '</div>';
-    if (traj.warning) html += '<div class="alert warn">⚠ ' + esc(traj.warning) + '</div>';
-    else html += '<div class="alert ok">✓ No cliff in the consensus path — estimates don\'t fall off a peak inside the forecast window. That doesn\'t make it safe; it means the cheapness isn\'t obviously a peak-earnings illusion.</div>';
+    if (traj.warning) html += '<div class="alert warn">' + ico(ICO_ALERT, 'ico-sm') + esc(traj.warning) + '</div>';
+    else html += '<div class="alert ok">' + ico(ICO_OKCIRCLE, 'ico-sm') + 'No cliff in the consensus path — estimates don\'t fall off a peak inside the forecast window. That doesn\'t make it safe; it means the cheapness isn\'t obviously a peak-earnings illusion.</div>';
   } else {
     html += '<p class="fineprint">Not enough EPS data came back to run the cliff check for this ticker.</p>';
   }
@@ -4105,7 +4117,7 @@ function renderScorecard(d) {
     html += aiSwotGridHtml(aiSaved);
   } else {
     html += '<p class="fineprint">Written on demand by AI from the live numbers here, recent headlines and 10-K risks.</p>' +
-      '<button class="btn-ghost" id="ai-swot-btn" type="button">✦ Generate AI SWOT</button>';
+      '<button class="btn-ghost" id="ai-swot-btn" type="button">' + ico(ICO_SPARK) + 'Generate AI SWOT</button>';
   }
   html += '</div>';
 
@@ -4306,11 +4318,11 @@ async function runCompare() {
     html += '<tr><td class="rowh">' + esc(row.label) + '</td>';
     vals.forEach(function (v, i2) {
       var isBest = i2 === bestIdx;
-      html += '<td class="num' + (isBest ? ' best' : '') + '">' + (isBest ? '<span class="star">★</span> ' : '') + esc(row.fmt(v)) + '</td>';
+      html += '<td class="num' + (isBest ? ' best' : '') + '">' + (isBest ? '<span class="star">' + ico(ICO_STAR, 'ico-fill ico-xs') + '</span> ' : '') + esc(row.fmt(v)) + '</td>';
     });
     html += '</tr>';
   });
-  html += '</table><p class="fineprint">★ = strongest value on that row. Lower is better where marked ↓. Same scoring rubric as the Scorecard tab.</p></div>';
+  html += '</table><p class="fineprint">' + ico(ICO_STAR, 'ico-fill ico-xs') + ' = strongest value on that row. Lower is better where marked ↓. Same scoring rubric as the Scorecard tab.</p></div>';
   var failed = results.filter(function (r) { return r.error; }).map(function (r) { return r.ticker; });
   if (failed.length) html += '<div class="alert warn">Couldn\'t load ' + esc(failed.join(', ')) + ' — check the ticker, or try again in a moment.</div>';
   $('compare-result').innerHTML = html;
@@ -4470,7 +4482,7 @@ function renderPjSaved() {
   box.innerHTML = '<button type="button" class="pj-saved-head" id="pj-saved-toggle"><span>Saved projections \u00b7 ' + ts.length + '</span><span class="pj-saved-chev">' + (open ? '\u25b4' : '\u25be') + '</span></button>' +
     (open ? ts.map(function (T) {
       var base = pjSavedBase(T);
-      return '<div class="pf-buy-row"><button class="pf-buy-txt" data-pj-open="' + esc(T) + '"><span>' + esc(T) + '</span><span>saved ' + esc(String(all[T].savedAt || '').slice(0, 10)) + (isNum(base) ? ' \u00b7 Base ' + fmtMoney(base) : '') + '</span></button><button class="link-btn danger" data-pj-del="' + esc(T) + '">\u2715</button></div>';
+      return '<div class="pf-buy-row"><button class="pf-buy-txt" data-pj-open="' + esc(T) + '"><span>' + esc(T) + '</span><span>saved ' + esc(String(all[T].savedAt || '').slice(0, 10)) + (isNum(base) ? ' \u00b7 Base ' + fmtMoney(base) : '') + '</span></button><button class="link-btn danger" data-pj-del="' + esc(T) + '">' + ico(ICO_X, 'ico-xxs') + '</button></div>';
     }).join('') : '');
   var tg = $('pj-saved-toggle');
   if (tg) tg.addEventListener('click', function () { lsSet('sr_pjsaved_open', !open); renderPjSaved(); });
@@ -8908,7 +8920,7 @@ function renderSavedScreens() {
   var html = '';
   list.forEach(function (s, i) {
     html += '<span class="scr-chip"><button type="button" class="scr-chip-load" data-scr-load="' + i + '">' + esc(s.name) + '</button>' +
-      '<button type="button" class="scr-chip-x" data-scr-del="' + i + '" aria-label="Delete saved screen">\u2715</button></span>';
+      '<button type="button" class="scr-chip-x" data-scr-del="' + i + '" aria-label="Delete saved screen">' + ico(ICO_X, 'ico-xxs') + '</button></span>';
   });
   box.innerHTML = html;
   box.querySelectorAll('[data-scr-load]').forEach(function (b) {
@@ -9021,7 +9033,7 @@ function renderOverview(d, item) {
   html += '<div class="section-h">Your value screen \u2014 <span class="gold-text">' + passCount + ' of ' + knownCount + '</span></div><div class="screen-chips">';
   screen.forEach(function (s) {
     var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
-    var mark = s.test === null ? '?' : s.test ? '\u2713 PASS' : '\u2717';
+    var mark = s.test === null ? '?' : s.test ? ico(ICO_CHECK, 'ico-sm') + '<span>PASS</span>' : ico(ICO_X, 'ico-sm');
     html += '<div class="chip ' + cls + '"><span>' + esc(s.label) + '<br><span class="factor-note">' + esc(s.value) + '</span></span><span class="mark">' + mark + '</span></div>';
   });
   html += '</div>';
@@ -9031,7 +9043,7 @@ function renderOverview(d, item) {
   html += '<div class="section-h">Risk screen \u2014 <span class="gold-text">' + rPass + ' of ' + rKnown + ' clear</span></div><div class="screen-chips">';
   rScreen.forEach(function (s) {
     var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
-    var mark = s.test === null ? '?' : s.test ? '\u2713 CLEAR' : '\u2717 FLAG';
+    var mark = s.test === null ? '?' : s.test ? ico(ICO_CHECK, 'ico-sm') + '<span>CLEAR</span>' : ico(ICO_X, 'ico-sm') + '<span>FLAG</span>';
     html += '<div class="chip ' + cls + '"><span>' + esc(s.label) + '<br><span class="factor-note">' + esc(s.value) + '</span></span><span class="mark">' + mark + '</span></div>';
   });
   html += '</div>';
