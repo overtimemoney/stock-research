@@ -845,7 +845,17 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .ob-step-label { font-size: 12px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
 .ob-hint { font-size: 12.5px; font-weight: 700; color: var(--muted); text-align: center; margin: 8px 0 0; }
 .ob-hint[hidden] { display: none; }
-.ob-signpost { font-size: 14px; font-weight: 800; line-height: 1.4; color: var(--ink); text-align: center; margin: 0 0 8px; }
+/* Final screen (Q2 answered): the question text and the answered
+ * options leave the flow entirely — the verdict banner carries the
+ * result — and the closing copy tightens so chart + verdict +
+ * punchline + CTA share one screen. Elements are hidden, not
+ * removed: resetQuiz() drops .ob-final and replay shows them again. */
+.ob-overlay.ob-final #ob-panel-2 .ob-q,
+.ob-overlay.ob-final #ob-opts-2,
+.ob-overlay.ob-final #ob-hint-2 { display: none; }
+.ob-overlay.ob-final .ob-reveal { margin-top: 2px; }
+.ob-overlay.ob-final .ob-callout { margin-bottom: 6px; }
+.ob-overlay.ob-final .ob-punch { margin-bottom: 6px; }
 /* Reveal-1 compaction: once Q1 is answered, the orientation line has
  * done its job (the progress header carries the signage from here)
  * and the intro shrinks so the callout + Next button fit the same

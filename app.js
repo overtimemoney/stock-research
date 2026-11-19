@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261119232153';
+var APP_BUILD = 'stock-research-20261119232618';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -12607,6 +12607,7 @@ if (typeof document !== 'undefined' && document.getElementById) {
     function resetQuiz() {
       visible = ['10'];
       overlay.classList.remove('ob-q1-done');
+      overlay.classList.remove('ob-final');
       var intro = document.getElementById('ob-intro');
       var p1 = document.getElementById('ob-panel-1');
       var p2 = document.getElementById('ob-panel-2');
@@ -12702,6 +12703,11 @@ if (typeof document !== 'undefined' && document.getElementById) {
         reveal('ob-reveal-1');
       } else {
         visible = ['10', '15', '20'];
+        /* Final screen: Q2's question and its answered options have
+         * done their job — the .ob-final state hides them so the
+         * verdict, punchline and CTA get the screen (see styles.css).
+         * resetQuiz() removes the class, so replay shows them again. */
+        overlay.classList.add('ob-final');
         renderChart('20');
         setProgress(4); /* final screen */
         reveal('ob-reveal-2');
