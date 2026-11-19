@@ -1066,3 +1066,11 @@ table.factors .info-row .info-text.open { max-height: 900px; }
  * says so, and that sync resumes when the connection returns. */
 .offline-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(86px + env(safe-area-inset-bottom)); z-index: 66; max-width: calc(100vw - 32px); background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-size: 12.5px; font-weight: 600; text-align: center; box-shadow: 0 6px 24px var(--shadow); }
 .offline-bar[hidden] { display: none; }
+
+/* Flags (2026-11-19): the guardrail warnings that replaced the value
+ * and risk screens. Only fired flags render; rows are hairline-flat
+ * like the rest of the scorecard, icon in the bad-news color. */
+.flag-list { margin-bottom: 4px; }
+.flag-row { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--row-line); }
+.flag-row .ico { color: var(--bad); flex: none; margin-top: 2px; }
+.flag-row strong { font-size: 14.5px; }

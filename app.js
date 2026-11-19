@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261119233353';
+var APP_BUILD = 'stock-research-20261119234748';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -2745,6 +2745,39 @@ function riskScreen(d) {
   ];
 }
 
+/* Flags (2026-11-19, Justin's call): the value screen is cut and the
+ * risk screen's factor restatements went with it. What survives is
+ * the guardrails — three warnings that are NOT score factors, shown
+ * only when they fire. No flags = no section; the absence is the
+ * all-clear. (valueScreen/riskScreen above stay exported for the
+ * test harnesses but are no longer rendered anywhere.) */
+function flagsFor(d) {
+  var flags = [];
+  if (isNum(d.forwardPE) && isNum(d.epsGrowthTTM) && cheapPeTrap(d)) {
+    flags.push({ name: 'Cheap-P/E trap', why: 'Forward P/E ' + fmtNum(d.forwardPE, 1) + ' with EPS up ' + fmtNum(d.epsGrowthTTM, 0) + '% in a year — the cheap price is riding peak earnings.' });
+  }
+  var cyc = cyclicalSeverity(d);
+  if (cyc && cyc.raw !== null && cyc.raw !== undefined && cyc.severity >= 0.5) {
+    flags.push({ name: 'Cyclical earnings peak', why: 'Earnings look like a cycle high vs its own history (severity ' + fmtNum(cyc.severity, 2) + ' of 1) — margins and EPS usually fall back from here.' });
+  }
+  var cliff = fwdCliff(d);
+  if (cliff.known && cliff.severity >= 0.5) {
+    flags.push({ name: 'Earnings cliff ahead', why: (isNum(cliff.peak) && isNum(cliff.worst))
+      ? 'Forecast EPS peaks at ' + fmtNum(cliff.peak) + ' (' + cliff.peakLabel + '), then falls to ' + fmtNum(cliff.worst) + ' by ' + cliff.worstLabel + '.'
+      : 'Forecast EPS falls hard after its peak (severity ' + fmtNum(cliff.severity, 2) + ' of 1).' });
+  }
+  return flags;
+}
+function flagsHtml(d) {
+  var flags = flagsFor(d);
+  if (!flags.length) return '';
+  var html = '<div class="section-h">Flags</div><div class="flag-list">';
+  flags.forEach(function (f) {
+    html += '<div class="flag-row">' + ico(ICO_ALERT, 'ico-sm') + '<span><strong>' + esc(f.name) + '</strong><br><span class="factor-note">' + esc(f.why) + '</span></span></div>';
+  });
+  return html + '</div>';
+}
+
 /* EPS trajectory: TTM actual + consensus forecasts; cliff = a later year
  * falls 10%+ below the running peak, or next year drops vs TTM. */
 function epsTrajectory(d) {
@@ -4009,10 +4042,7 @@ function overallFill(id, d) {
 function renderScorecard(d) {
   lastStock = d;
   var sc = scoreStock(d);
-  var screen = valueScreen(d);
   var traj = epsTrajectory(d);
-  var passCount = screen.filter(function (s) { return s.test === true; }).length;
-  var knownCount = screen.filter(function (s) { return s.test !== null; }).length;
   var vClass = sc.verdict === 'Undervalued' ? 'undervalued' : (sc.verdict === 'Fairly valued' || sc.verdict === 'Value (cyclical peak risk)') ? 'fair' : 'overpriced';
   var chgCls = isNum(d.dayChangePct) ? (d.dayChangePct >= 0 ? 'up' : 'down') : '';
   var html = '<div class="card">';
@@ -4131,28 +4161,8 @@ function renderScorecard(d) {
 
   html += radarCardHtml(d);
 
-  /* Collapsed header shows ONLY the pass count (Justin's ask,
-   * 2026-11-07) — the per-check flags live in the expanded body. */
-  html += '<button type="button" class="section-h screen-toggle" data-stoggle="vs"><span class="screen-name">Value screen \u2014</span> <span class="gold-text screen-count">' + passCount + ' of ' + knownCount + '</span><span class="screen-chev">\u25be</span></button>';
-  html += '<div class="screen-chips" data-sbody="vs" hidden>';
-  screen.forEach(function (s) {
-    var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
-    var mark = s.test === null ? '?' : s.test ? ico(ICO_CHECK, 'ico-sm') + '<span>PASS</span>' : ico(ICO_X, 'ico-sm');
-    html += '<div class="chip ' + cls + '"><span>' + esc(s.label) + '<br><span class="factor-note">' + esc(s.value) + '</span></span><span class="mark">' + mark + '</span></div>';
-  });
-  html += '</div>';
-
-  var rScreen = riskScreen(d);
-  var rKnown = rScreen.filter(function (s) { return s.test !== null; }).length;
-  var rPass = rScreen.filter(function (s) { return s.test === true; }).length;
-  html += '<button type="button" class="section-h screen-toggle" data-stoggle="rs"><span class="screen-name">Risk screen \u2014</span> <span class="gold-text screen-count">' + rPass + ' of ' + rKnown + ' clear</span><span class="screen-chev">\u25be</span></button>';
-  html += '<div class="screen-chips" data-sbody="rs" hidden>';
-  rScreen.forEach(function (s) {
-    var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
-    var mark = s.test === null ? '?' : s.test ? ico(ICO_CHECK, 'ico-sm') + '<span>CLEAR</span>' : ico(ICO_X, 'ico-sm') + '<span>FLAG</span>';
-    html += '<div class="chip ' + cls + '"><span>' + esc(s.label) + '<br><span class="factor-note">' + esc(s.value) + '</span></span><span class="mark">' + mark + '</span></div>';
-  });
-  html += '</div>';
+  /* Flags replaced both screens here (2026-11-19). */
+  html += flagsHtml(d);
 
   html += '<div class="section-h">Key <span class="gold-text">stats</span></div><div class="kv-grid">';
   html += kvItem('Market cap', fmtCap(d.marketCap), 'mktcap');
@@ -4434,7 +4444,6 @@ async function runCompare() {
     { label: 'Current ratio', get: function (d) { return d.currentRatio; }, fmt: function (v) { return fmtNum(v, 2); }, best: 'max' },
     { label: 'Beta ↓', get: function (d) { return d.beta; }, fmt: function (v) { return fmtNum(v, 2); }, best: 'min' },
     { label: 'Dividend yield', get: function (d) { return d.divYield; }, fmt: function (v) { return isNum(v) ? fmtNum(v, 2) + '%' : '\u2014'; }, best: 'max' },
-    { label: 'Value screen', get: function (d) { return valueScreen(d).filter(function (s) { return s.test === true; }).length; }, fmt: function (v) { return v + ' / 5'; }, best: 'max' },
     { label: 'Score', get: function (d) { return scoreStock(d).score; }, fmt: function (v) { return isNum(v) ? v + ' / 100' : '—'; }, best: 'max' },
     { label: 'Risk score \u2193', get: function (d) { var rk = riskScore(d); return rk && isNum(rk.score) ? rk.score : null; }, fmt: function (v) { return isNum(v) ? v + ' / 100' : '—'; }, best: 'min' },
   ];
@@ -8815,7 +8824,10 @@ function renderScanCardInner() {
   }
   var snapC = scanGetChecked();
   var pendingGate = !!(s.done && s.results && s.checked === false);
-  var html = '<div class="card scan-card"><div class="scan-h">Top value + low risk today <span class="scan-date">' + esc(pendingGate && snapC ? snapC.date : s.date) + '</span>' + infoDot('scanscore') + '</div>' + infoText('scanscore');
+  /* No date in the header (Justin's call, 2026-11-19: it showed twice).
+   * Fresh list: the title's "today" is the date. Held list: the
+   * "Last checked list · <date>" line below says it once. */
+  var html = '<div class="card scan-card"><div class="scan-h">Top value + low risk today' + infoDot('scanscore') + '</div>' + infoText('scanscore');
   var listsHtml = function () {
     var out = '';
     var secs = {};
@@ -9213,26 +9225,8 @@ function renderOverview(d, item) {
     html += '<div class="section-h">EPS <span class="gold-text">path</span></div>' +
       '<p style="margin:0 0 4px">' + traj.points.map(function (p) { return esc(p.label) + ' ' + fmtNum(p.eps); }).join(' \u2192 ') + '</p>';
   }
-  var screen = valueScreen(d);
-  var passCount = screen.filter(function (s) { return s.test === true; }).length;
-  var knownCount = screen.filter(function (s) { return s.test !== null; }).length;
-  html += '<div class="section-h">Your value screen \u2014 <span class="gold-text">' + passCount + ' of ' + knownCount + '</span></div><div class="screen-chips">';
-  screen.forEach(function (s) {
-    var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
-    var mark = s.test === null ? '?' : s.test ? ico(ICO_CHECK, 'ico-sm') + '<span>PASS</span>' : ico(ICO_X, 'ico-sm');
-    html += '<div class="chip ' + cls + '"><span>' + esc(s.label) + '<br><span class="factor-note">' + esc(s.value) + '</span></span><span class="mark">' + mark + '</span></div>';
-  });
-  html += '</div>';
-  var rScreen = riskScreen(d);
-  var rPass = rScreen.filter(function (s) { return s.test === true; }).length;
-  var rKnown = rScreen.filter(function (s) { return s.test !== null; }).length;
-  html += '<div class="section-h">Risk screen \u2014 <span class="gold-text">' + rPass + ' of ' + rKnown + ' clear</span></div><div class="screen-chips">';
-  rScreen.forEach(function (s) {
-    var cls = s.test === null ? '' : s.test ? 'pass' : 'fail';
-    var mark = s.test === null ? '?' : s.test ? ico(ICO_CHECK, 'ico-sm') + '<span>CLEAR</span>' : ico(ICO_X, 'ico-sm') + '<span>FLAG</span>';
-    html += '<div class="chip ' + cls + '"><span>' + esc(s.label) + '<br><span class="factor-note">' + esc(s.value) + '</span></span><span class="mark">' + mark + '</span></div>';
-  });
-  html += '</div>';
+  /* Flags replaced both screens here too (2026-11-19). */
+  html += flagsHtml(d);
   html += '<div class="section-h">Key <span class="gold-text">stats</span></div><div class="kv-grid">';
   html += kvItem('Market cap', fmtCap(d.marketCap), 'mktcap');
   html += kvItem('Forward P/E', isNum(d.forwardPE) ? fmtNum(d.forwardPE, 2) : '\u2014');
@@ -10473,7 +10467,7 @@ var GLOSSARY = [
   ['Fiscal year', 'A company\'s own 12-month reporting calendar. It often matches the calendar year, but not always — Walmart\'s fiscal 2026 ends in January 2026, for example. The FY labels in the Projection Builder refer to it.'],
   ['Cyclical', 'A business whose earnings rise and fall with an economic cycle — memory chips, steel, airlines, hotels. Cyclicals look cheapest at peak earnings, which is exactly when they are most dangerous.'],
   ['Value trap', 'A stock that looks cheap (low P/E, big drop from its high) because the business or its earnings are about to get worse. The discount is the market being right, not wrong.'],
-  ['Margin of safety', 'The gap between what you pay and what you think a stock is worth. The wider it is, the more wrong you can afford to be. Your value screen hunts for it; it does not guarantee it.'],
+  ['Margin of safety', 'The gap between what you pay and what you think a stock is worth. The wider it is, the more wrong you can afford to be. The value score hunts for it; it does not guarantee it.'],
   ['SWOT analysis', 'A four-box check of a business. Strengths and Weaknesses are INTERNAL — what the company itself excels at or falls short on: a strong brand, a loyal customer base, a strong balance sheet, unique technology; or high debt, a weak supply chain, a lack of capital. Opportunities and Threats are EXTERNAL — outside factors that could help or harm: a country cutting tariffs opens a new market (opportunity); rising material costs, tougher competition or tight labor supply squeeze the business (threats).'],
   ['Exit P/E (exit multiple)', 'The P/E you assume the market will pay for a stock when you sell it in the future. The Projection Builder multiplies future EPS by this to get the implied price — small changes here swing the answer a lot.'],
   ['Bear / Base / Bull case', 'Three versions of the same forecast: pessimistic, most likely, optimistic. In the Projection Builder they are your EPS path with growth shifted down 5 points, as-is, and up 5 points, with the exit P/E shifted down 20%, as-is, and up 20%.'],
