@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261119040109';
+var APP_BUILD = 'stock-research-20261119232153';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -801,7 +801,23 @@ async function fetchStock(ticker, opts) {
   }
   // Slow stage: Finviz fundamentals + MarketBeat EPS-surprise history in
   // parallel — both are big HTML pages through the relays.
-  await Promise.all([srcFinviz(), srcSurprise(), srcRevPath(), srcAbout(), srcCeo(), srcYearly(), srcBiz(), srcMoatTam()]);
+  // Settle caps (2026-11-19): the stage used to wait for EVERY source,
+  // so one slow enrichment hunt (a thin-Wikipedia CEO, a cold AI
+  // dropdown) kept the "valuation details still coming" spinner up for
+  // minutes after the page itself was complete. Each source now has a
+  // budget and the stage itself caps at 60s. A cut-off source keeps
+  // running in the background and still fills its own cache, so the
+  // next visit shows its block instantly — the load just stops
+  // blocking on it.
+  var settleWithin = function (p, ms) {
+    return Promise.race([p, new Promise(function (resolve) { setTimeout(resolve, ms); })]);
+  };
+  await settleWithin(Promise.all([
+    settleWithin(srcFinviz(), 30000), settleWithin(srcSurprise(), 15000),
+    settleWithin(srcRevPath(), 30000), settleWithin(srcAbout(), 30000),
+    settleWithin(srcCeo(), 50000), settleWithin(srcYearly(), 35000),
+    settleWithin(srcBiz(), 70000), settleWithin(srcMoatTam(), 70000)
+  ]), 60000);
   deriveValues(d);
   d.partial = false;
 
@@ -5879,7 +5895,15 @@ async function fetchSegmentsApp(T) {
   if (hit && (Date.now() - hit.at) < (hit.data && hit.data.ok ? 7 * 864e5 : 864e5)) return hit.data;
   var data = null;
   try {
-    var r = await fetch(SEGMENTS_URL + '?ticker=' + encodeURIComponent(T));
+    /* Bounded (2026-11-19): this was the one unbounded fetch in the
+     * research load — a stalled segments call held the whole slow
+     * stage (and its spinner) hostage forever. 25s is generous: the
+     * endpoint answers in ~1s warm and the result is cached either
+     * way, so a cut-off costs nothing but the wait. */
+    var segCtrl = ('AbortController' in window) ? new AbortController() : null;
+    var segTimer = segCtrl ? setTimeout(function () { try { segCtrl.abort(); } catch (e) {} }, 25000) : null;
+    var r = await fetch(SEGMENTS_URL + '?ticker=' + encodeURIComponent(T), segCtrl ? { signal: segCtrl.signal } : undefined);
+    if (segTimer) clearTimeout(segTimer);
     data = await r.json();
   } catch (e) {}
   if (!data || typeof data !== 'object') data = { ok: false };
