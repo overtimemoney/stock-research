@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261119032416';
+var APP_BUILD = 'stock-research-20261119033318';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -2959,7 +2959,7 @@ function pxChartSVG(d, win, slice) {
   if (isNum(d.high52) && spanDays <= 400) {
     var hy = Y(Math.min(d.high52, max));
     out += '<g class="px-hi52"><line class="px-hi-line" x1="' + padX + '" y1="' + hy + '" x2="' + (W - padX) + '" y2="' + hy + '" stroke="#B46A11" stroke-width="1.4" stroke-dasharray="5 4"/>' +
-      '<text class="px-hi-lab" x="' + (W - padX) + '" y="' + (hy - 4) + '" text-anchor="end" font-size="11" font-weight="800" fill="#B46A11">52-wk high ' + fmtNum(d.high52, 0) + '</text></g>';
+      '<text class="px-hi-lab" x="' + (W - padX) + '" y="' + (hy - 4) + '" text-anchor="end" font-size="11" font-weight="800" fill="#B46A11">52-wk high ' + fmtMoney(d.high52) + '</text></g>';
   }
   out += '<polyline class="px-line" points="' + line + '" fill="none" style="stroke:var(--chart-line)" stroke-width="2.2" stroke-linejoin="round"/>';
   out += '<text class="px-lab-l" x="' + padX + '" y="' + (H - 5) + '" font-size="11" font-weight="700" fill="#77705f">' + pxDateLabel(win.start, spanDays) + '</text>' +
@@ -3105,7 +3105,7 @@ function bindPriceChart(d) {
   }
   function finishGesture(fromPinch) {
     if (fromPinch) hapticTick(); // one settle tick when a pinch lands
-    read.textContent = HINT;
+    pinchRead(); // settle on the window summary, start to end
     var want = pxDesiredTier(scWin.end - scWin.start);
     if (want.range && !pxTierSeries(d, want)) {
       pxEnsureTier(d, want).then(function (ok) { if (ok && lastStock === d) renderScChart(d); });
@@ -3147,6 +3147,7 @@ function bindPriceChart(d) {
     var f = (cx - padX) / (W - padX * 2);
     return f < 0 ? 0 : (f > 1 ? 1 : f);
   }
+  pinchRead(); // the readout starts on the window summary too
   zone.addEventListener('pointerdown', function (e) {
     pointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
     try { zone.setPointerCapture(e.pointerId); } catch (err) {}
@@ -3206,7 +3207,12 @@ function bindPriceChart(d) {
           return;
         }
         lastTap = now;
-        read.textContent = HINT;
+        pinchRead();
+      } else if (downInfo) {
+        /* A real drag-scrub (or a slow press): the readout snaps back
+         * to the whole window, start to end, instead of staying where
+         * the finger left it (Justin's ask, 2026-11-18). */
+        pinchRead();
       }
       downInfo = null;
       pinch0 = null;
@@ -3283,7 +3289,7 @@ var INFO_TEXT = {
   size: 'Company size by market cap (price \u00d7 shares). Smaller companies tend to swing harder, get less analyst coverage, and can be harder to sell in a panic \u2014 so small size adds risk points here.',
   currentratio: 'Current ratio = short-term assets \u00f7 short-term bills. Above 1 means the company can cover what it owes within the year. Below 1 can mean cash stress if business dips.',
   boombust: 'Some businesses boom then bust in cycles (memory chips are the classic case). This flags it when the forecast shows a big earnings peak followed by a cliff, after revenue roughly doubled into the peak \u2014 peak earnings make a stock look deceptively cheap.',
-  scanscore: 'Every stock in the index gets two 0\u2013100 scores: a Value score (cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt) and a Risk score (debt, volatility, size, earnings trend, boom-bust pattern). The Score starts at 60% Value + 40% safety, where safety = 100 \u2212 Risk. Before the list is final, each top stock is deep-checked, and its Score becomes 75% of that value-and-safety score plus 25% growth points from its projected 4-year CAGR \u2014 the yearly return its forecast earnings path works out to, shown as the estimated return at the top of the stock\u2019s page when you tap it (\u221220%/yr earns 0 points, +40%/yr earns 100). A stock with no analyst forecast keeps its value-and-safety score. Only stocks with enough data to score fairly can appear, and it shows the Top 10 for each index. Scores refresh when a company reports earnings, and the full index is rescanned about once a week. The list is computed once a day on the server, so every phone shows the same scores; tapping Rescan still runs a fresh scan on this phone.',
+  scanscore: '<strong>Two scores</strong><br>Every stock in the index gets a Value score and a Risk score, both 0\u2013100. Value grades cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt. Risk grades danger \u2014 debt, volatility, size, earnings trend, boom-bust pattern.<br><br><strong>How the Score is built</strong><br>It starts at 60% Value + 40% safety, where safety = 100 \u2212 Risk.<br><br><strong>The deep check</strong><br>Before the list is final, each top stock is deep-checked, and its Score becomes 75% of that value-and-safety score plus 25% growth points from its projected 4-year CAGR \u2014 the yearly return its forecast earnings path works out to, the same number as the estimated return on the stock\u2019s page (\u221220%/yr earns 0 points, +40%/yr earns 100). A stock with no analyst forecast keeps its value-and-safety score.<br><br><strong>Who can appear</strong><br>Only stocks with enough data to score fairly \u2014 the Top 10 for each index.<br><br><strong>When it updates</strong><br>The list is computed once a day on the server, so every phone shows the same scores. Scores refresh when a company reports earnings, and the full index is rescanned about once a week. Tapping Rescan still runs a fresh scan on this phone.',
   radar: 'Five 0\u2013100 measures drawn as a snowflake: Value (the valuation score), Future (forecast EPS growth), Past (recent revenue growth), Health (debt, liquidity, margins) and Dividend (the yield). The further a point reaches, the stronger that measure \u2014 a big, even snowflake is strong all round. If the Future point is red, the cliff check fired \u2014 earnings are forecast to fall off a peak.',
 };
 var FACTOR_INFO = {
@@ -4153,7 +4159,7 @@ function renderScorecard(d) {
   html += kvItem('Debt / Equity', isNum(d.debtEq) ? fmtNum(d.debtEq, 2) : '—', 'debteq');
   html += kvItem('ROE', isNum(d.roe) ? fmtNum(d.roe, 1) + '%' : '—', 'roe');
   html += kvItem('Beta', isNum(d.beta) ? fmtNum(d.beta, 2) : '—', 'beta');
-  html += kvItem('52-wk range', (isNum(d.low52) ? fmtNum(d.low52, 0) : '—') + ' – ' + (isNum(d.high52) ? fmtNum(d.high52, 0) : '—'), 'range52');
+  html += kvItem('52-wk range', (isNum(d.low52) ? fmtMoney(d.low52) : '—') + ' – ' + (isNum(d.high52) ? fmtMoney(d.high52) : '—'), 'range52');
   html += kvItem('Below 52-wk high', isNum(d.pctBelowHigh) ? fmtNum(d.pctBelowHigh, 1) + '%' : '—', 'belowhigh');
   html += kvItem('Analyst 1-yr target', isNum(d.target1Y) ? fmtMoney(d.target1Y) : '—', 'target');
   if (isNum(d.instOwn)) html += kvItem('Institutional ownership', fmtNum(d.instOwn, 1) + '%', 'instown');
