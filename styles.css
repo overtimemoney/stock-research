@@ -189,20 +189,20 @@ label input, label textarea { margin-top: 5px; font-weight: 500; }
 .sc-price .chg { font-size: 13.5px; font-weight: 800; }
 .up { color: var(--good); } .down { color: var(--bad); }
 .verdict {
-  /* 2026-11-18 redesign: the filled banner becomes a flat row over a
-   * hairline; the thin score bar under it carries the emphasis. */
-  margin: 14px 0 8px; border-radius: 0; padding: 12px 0 2px; color: var(--ink);
-  border-top: 1px solid var(--row-line);
+  /* 2026-11-18 late: Justin asked for the verdict banner colors back
+   * (the redesign's flat row lasted one evening) — original gradients
+   * restored; the rest of the flat redesign stays. */
+  margin: 14px 0; border-radius: 14px; padding: 14px 16px; color: #141414;
   display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
 }
-.verdict.undervalued { background: none; }
-.verdict.fair { background: none; }
-.verdict.overpriced { background: none; color: var(--ink); }
+.verdict.undervalued { background: var(--gold-grad); }
+.verdict.fair { background: linear-gradient(90deg, #f3d98b, #fdeaa0); }
+.verdict.overpriced { background: linear-gradient(90deg, #2b2b2b, #141414); color: #f8c73d; }
 .verdict .v-label { font-size: 12px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; opacity: .75; }
 .verdict .v-word { font-size: 24px; font-weight: 900; line-height: 1.05; }
 .verdict .v-score { font-size: 30px; font-weight: 900; white-space: nowrap; }
 .verdict .v-score small { font-size: 13px; font-weight: 700; opacity: .7; }
-.score-bar { height: 3px; border-radius: 99px; background: var(--score-track); overflow: hidden; margin: 4px 0 14px; }
+.score-bar { height: 10px; border-radius: 99px; background: var(--score-track); overflow: hidden; margin: 4px 0 14px; }
 .score-bar > div { height: 100%; background: var(--gold-grad); border-radius: 99px; }
 table.factors, table.cmp, table.kv { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 table.factors td, table.factors th, table.cmp td, table.cmp th { padding: 7px 6px; border-bottom: 1px solid var(--row-line); text-align: left; vertical-align: top; }
@@ -708,10 +708,10 @@ body.nav-back-on #tab-settings .tab-title { padding-left: 52px; }
 .news-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .news-main b { font-size: 14.5px; font-weight: 700; line-height: 1.3; }
 .news-main span { color: var(--muted); font-size: 12px; font-weight: 700; }
-.verdict.risk-low { background: none; }
-.verdict.risk-mod { background: none; }
-.verdict.risk-elev { background: none; }
-.verdict.risk-high { background: none; color: var(--ink); }
+.verdict.risk-low { background: linear-gradient(90deg, #a8d8b9, #d7f0de); }
+.verdict.risk-mod { background: linear-gradient(90deg, #f3d98b, #fdeaa0); }
+.verdict.risk-elev { background: linear-gradient(90deg, #f5b971, #f8cf8f); }
+.verdict.risk-high { background: linear-gradient(90deg, #2b2b2b, #141414); color: #ff8a75; }
 .score-bar.risk-bar > div { background: linear-gradient(90deg, #e8b34b, #ff6b57); }
 .pj-saved-head { display: flex; justify-content: space-between; align-items: center; width: 100%; background: none; border: 0; padding: 6px 0; font: inherit; font-size: 13.5px; font-weight: 800; color: var(--ink); cursor: pointer; text-align: left; }
 .pj-saved-chev { color: var(--gold); font-size: 13px; }
