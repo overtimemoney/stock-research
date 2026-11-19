@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261119024002';
+var APP_BUILD = 'stock-research-20261119030938';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -11307,6 +11307,7 @@ function navClear() { navStack = []; syncNavBack(); }
 function syncNavBack() {
   var b = $('nav-back');
   if (b) b.hidden = !navStack.length;
+  document.body.classList.toggle('nav-back-on', !!navStack.length);
 }
 function navBack() {
   var st = navStack.pop();
@@ -11426,9 +11427,7 @@ function initApp() {
     $('signin-sheet-close').addEventListener('click', function () { signinSheet.hidden = true; });
     $('signin-sheet-go').addEventListener('click', function () {
       signinSheet.hidden = true;
-      switchTab('portfolio');
-      var sm = $('settings-menu');
-      if (sm) sm.hidden = false;
+      switchTab('settings');
     });
   }
   /* A scroll gesture of the user's own cancels any pending
@@ -11455,9 +11454,9 @@ function initApp() {
     var mn = document.querySelector('main');
     if (mn) { var y = st.scroll; requestAnimationFrame(function () { mn.scrollTop = y; }); }
   });
-  $('privacy-back').addEventListener('click', function () { switchTab('portfolio'); });
-  $('terms-back').addEventListener('click', function () { switchTab('portfolio'); });
-  $('disclaimer-back').addEventListener('click', function () { switchTab('portfolio'); });
+  $('privacy-back').addEventListener('click', function () { switchTab('settings'); });
+  $('terms-back').addEventListener('click', function () { switchTab('settings'); });
+  $('disclaimer-back').addEventListener('click', function () { switchTab('settings'); });
   $('search-form').addEventListener('submit', function (e) {
     e.preventDefault();
     navClear();
@@ -11631,33 +11630,23 @@ function initApp() {
   $('theme-light').addEventListener('click', function () { applyTheme('light'); });
   var settingsMenu = $('settings-menu');
   $('menu-glossary').addEventListener('click', function () {
-    glossReturn = 'portfolio';
+    glossReturn = 'settings';
     glossReturnState = null;
     glossStack = [];
     glossSyncBack();
-    settingsMenu.hidden = true;
-    $('btn-settings').setAttribute('aria-expanded', 'false');
     switchTab('glossary');
   });
   $('menu-journal').addEventListener('click', function () {
-    jrReturnTab = 'portfolio';
-    settingsMenu.hidden = true;
-    $('btn-settings').setAttribute('aria-expanded', 'false');
+    jrReturnTab = 'settings';
     switchTab('journal');
   });
   $('menu-privacy').addEventListener('click', function () {
-    settingsMenu.hidden = true;
-    $('btn-settings').setAttribute('aria-expanded', 'false');
     switchTab('privacy');
   });
   $('menu-terms').addEventListener('click', function () {
-    settingsMenu.hidden = true;
-    $('btn-settings').setAttribute('aria-expanded', 'false');
     switchTab('terms');
   });
   $('menu-disclaimer').addEventListener('click', function () {
-    settingsMenu.hidden = true;
-    $('btn-settings').setAttribute('aria-expanded', 'false');
     switchTab('disclaimer');
   });
   $('ov-back').addEventListener('click', function () { closeOverview(); });
@@ -11749,21 +11738,8 @@ function initApp() {
   }
   $('btn-settings').addEventListener('click', function (e) {
     e.stopPropagation();
-    var willOpen = settingsMenu.hidden;
-    settingsMenu.hidden = !willOpen;
-    $('btn-settings').setAttribute('aria-expanded', String(willOpen));
-  });
-  document.addEventListener('click', function (e) {
-    if (!settingsMenu.hidden && !settingsMenu.contains(e.target)) {
-      settingsMenu.hidden = true;
-      $('btn-settings').setAttribute('aria-expanded', 'false');
-    }
-  });
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') {
-      settingsMenu.hidden = true;
-      $('btn-settings').setAttribute('aria-expanded', 'false');
-    }
+    navPush();
+    switchTab('settings');
   });
   document.addEventListener('click', function (e) {
     var gl = e.target && e.target.closest ? e.target.closest('.info-gloss-link') : null;
@@ -12694,10 +12670,6 @@ if (typeof document !== 'undefined' && document.getElementById) {
     });
     var replayBtn = document.getElementById('menu-quiz');
     if (replayBtn) replayBtn.addEventListener('click', function () {
-      var menu = document.getElementById('settings-menu');
-      if (menu) menu.hidden = true;
-      var gear = document.getElementById('btn-settings');
-      if (gear) gear.setAttribute('aria-expanded', 'false');
       openQuiz('replay');
     });
 
@@ -12848,17 +12820,11 @@ if (typeof document !== 'undefined' && document.getElementById) {
   }
 
   function gotoSyncSignup() {
-    try { if (typeof switchTab === 'function') switchTab('portfolio'); } catch (e) {}
-    /* The menu opens on a tick, not synchronously: the app closes the
-     * settings menu on any document click outside it, and the CTA tap
-     * that brought us here is still bubbling toward document — opening
-     * the menu inside that same dispatch would close it instantly. */
+    try { if (typeof switchTab === 'function') switchTab('settings'); } catch (e) {}
+    /* The scroll + focus land on a tick, once the Settings page is
+     * the active tab and its layout is measurable. */
     setTimeout(function () {
       try {
-        var menu = document.getElementById('settings-menu');
-        var gear = document.getElementById('btn-settings');
-        if (menu) menu.hidden = false;
-        if (gear) gear.setAttribute('aria-expanded', 'true');
         var sec = document.getElementById('sync-section');
         if (sec && sec.scrollIntoView) sec.scrollIntoView({ behavior: 'smooth', block: 'center' });
       } catch (e) {}
@@ -13142,10 +13108,6 @@ if (typeof document !== 'undefined' && document.getElementById) {
         item.hidden = true;
       } else {
         item.addEventListener('click', function () {
-          var menu = document.getElementById('settings-menu');
-          if (menu) menu.hidden = true;
-          var gear = document.getElementById('btn-settings');
-          if (gear) gear.setAttribute('aria-expanded', 'false');
           setTimeout(function () { try { openSheet(); } catch (err) {} }, 60);
         });
       }

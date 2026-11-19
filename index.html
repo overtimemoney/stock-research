@@ -250,9 +250,40 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
   <section id="tab-portfolio" class="tab">
     <div class="pf-head">
       <h2 class="tab-title">Port<span class="gold-text">folio</span></h2>
-      <button id="btn-settings" class="gear-btn" type="button" aria-label="Settings" aria-haspopup="true" aria-expanded="false"><svg class="ico" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+      <button id="btn-settings" class="gear-btn" type="button" aria-label="Settings"><svg class="ico" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
     </div>
-    <div id="settings-menu" class="settings-menu" hidden>
+    <div class="pf-view-switch" role="tablist" aria-label="Portfolio view">
+      <button type="button" id="pf-view-overview" class="on">Overview</button>
+      <button type="button" id="pf-view-news">News</button>
+    </div>
+    <div id="pf-news" hidden></div>
+    <div id="pf-summary" class="pf-ov"></div>
+    <div class="card pf-add-card pf-ov">
+      <button id="pf-add-toggle" class="pf-add-head" type="button" aria-expanded="false"><span>Add a holding</span><span class="pf-chev">▾</span></button>
+      <div id="pf-add-body" hidden>
+      <form id="pf-form" autocomplete="off">
+        <div class="grid2">
+          <label>Ticker<input id="pf-ticker" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="e.g. KO"></label>
+          <label>How many shares do you own?<input id="pf-shares" type="number" step="any" min="0" placeholder="e.g. 12.5"></label>
+        </div>
+        <div class="grid2">
+          <label>Are dividends reinvested?<select id="pf-drip"><option value="yes">Yes — reinvested (DRIP)</option><option value="no">No — paid out as cash</option></select></label>
+        </div>
+        <button type="submit" class="btn-gold wide">Add to portfolio</button>
+      </form>
+      </div>
+    </div>
+    <div class="row-between wl-tools pf-ov">
+      <span id="pf-status" class="status"></span>
+      <span class="wl-tools-r"><button id="pf-refresh" class="btn-mini" type="button"><svg class="ico" style="width:14px;height:14px;vertical-align:-2px" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh prices</button></span>
+    </div>
+    <div id="pf-list" class="pf-ov"></div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="tab-settings" class="tab">
+    <h2 class="tab-title">Set<span class="gold-text">tings</span></h2>
+    <div id="settings-menu" class="settings-menu">
     <p class="fineprint" id="build-line" style="margin:0 0 8px"></p>
     <div class="set-h">Reference</div>
     <button id="menu-journal" class="btn-ghost wide" type="button" style="margin-bottom:6px"><svg class="ico" viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg> Journal — your research notes</button>
@@ -347,33 +378,6 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
     <div id="settings-note" class="status"></div>
     <p class="fineprint">Data: Finviz · Nasdaq · Yahoo · MarketBeat, via your own Cloudflare relay. Only the tickers you look up leave this device.</p>
   </div>
-
-    <div class="pf-view-switch" role="tablist" aria-label="Portfolio view">
-      <button type="button" id="pf-view-overview" class="on">Overview</button>
-      <button type="button" id="pf-view-news">News</button>
-    </div>
-    <div id="pf-news" hidden></div>
-    <div id="pf-summary" class="pf-ov"></div>
-    <div class="card pf-add-card pf-ov">
-      <button id="pf-add-toggle" class="pf-add-head" type="button" aria-expanded="false"><span>Add a holding</span><span class="pf-chev">▾</span></button>
-      <div id="pf-add-body" hidden>
-      <form id="pf-form" autocomplete="off">
-        <div class="grid2">
-          <label>Ticker<input id="pf-ticker" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="e.g. KO"></label>
-          <label>How many shares do you own?<input id="pf-shares" type="number" step="any" min="0" placeholder="e.g. 12.5"></label>
-        </div>
-        <div class="grid2">
-          <label>Are dividends reinvested?<select id="pf-drip"><option value="yes">Yes — reinvested (DRIP)</option><option value="no">No — paid out as cash</option></select></label>
-        </div>
-        <button type="submit" class="btn-gold wide">Add to portfolio</button>
-      </form>
-      </div>
-    </div>
-    <div class="row-between wl-tools pf-ov">
-      <span id="pf-status" class="status"></span>
-      <span class="wl-tools-r"><button id="pf-refresh" class="btn-mini" type="button"><svg class="ico" style="width:14px;height:14px;vertical-align:-2px" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh prices</button></span>
-    </div>
-    <div id="pf-list" class="pf-ov"></div>
   </section>
 
   <!-- JOURNAL -->

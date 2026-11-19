@@ -475,7 +475,13 @@ table.factors.scen.micro td, table.factors.scen.micro th { padding: 7px 3px; }
  * hamburger at its top (Justin, 2026-10-29): the old dropdown menu
  * becomes a full-width inline card when it opens there. */
 .pf-head { display: flex; align-items: center; justify-content: space-between; }
-#tab-portfolio .settings-menu { position: static; width: auto; max-height: none; overflow: visible; box-shadow: none; margin-bottom: 14px; }
+/* Settings is its own page now (Justin's ask, 2026-11-18): the menu
+ * block lives in #tab-settings and renders flat, full-width. */
+#tab-settings .settings-menu { position: static; width: auto; max-height: none; overflow: visible; box-shadow: none; margin: 0; background: transparent; border: none; border-radius: 0; padding: 0; }
+/* While the floating back arrow is up, the Settings title indents so
+ * the arrow never sits on its letters. */
+body.nav-back-on #tab-settings .tab-title { padding-left: 52px; }
+#tab-settings .tab-title { transition: padding-left .18s var(--ease-out); }
 .gear-btn {
   width: 34px; height: 34px; border-radius: 10px; cursor: pointer; line-height: 1;
   border: 1.5px solid var(--line); background: var(--field); color: var(--ink); font-size: 19px;
