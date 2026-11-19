@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261119033318';
+var APP_BUILD = 'stock-research-20261119040109';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -12100,14 +12100,25 @@ if (typeof document !== 'undefined' && document.getElementById) {
   }
 
   function betaClaim(userId) {
-    /* Fire-and-forget: a failed claim never affects the session. */
+    /* Fire-and-forget: a failed claim never affects the session.
+     * Since 2026-11-18 the claim carries the session token: the
+     * Worker counts only claims whose token the auth service itself
+     * confirms belongs to this userId. No token, no claim — a claim
+     * without proof is not counted anymore. */
     try {
       if (!userId) return;
-      fetch(BETA_WORKER + '/beta-claim', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: String(userId) })
-      }).catch(function () {});
+      var send = function (token) {
+        var headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+        fetch(BETA_WORKER + '/beta-claim', {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify({ userId: String(userId) })
+        }).catch(function () {});
+      };
+      if (typeof window.srSyncAccessToken === 'function') {
+        window.srSyncAccessToken().then(function (t) { if (t) send(t); }).catch(function () {});
+      }
     } catch (e) {}
   }
 
@@ -12241,6 +12252,17 @@ if (typeof document !== 'undefined' && document.getElementById) {
    * closed first). Both are safe no-ops when signed out or when the
    * sync module is not configured. */
   window.srSyncUserId = function () { return currentUser ? currentUser.id : null; };
+  /* The current session's access token (added 2026-11-18): the beta
+   * claim sends it so the Worker can verify the account is real
+   * instead of believing a self-reported userId. Resolves null when
+   * signed out or unreachable. */
+  window.srSyncAccessToken = function () {
+    if (!client) return Promise.resolve(null);
+    return client.auth.getSession().then(function (r) {
+      var s = r && r.data && r.data.session;
+      return s && s.access_token ? s.access_token : null;
+    }).catch(function () { return null; });
+  };
   window.srSyncFlushKey = function (key) {
     if (!currentUser || !SR_SYNC_BY_KEY[key]) return;
     if (pushTimers[key]) { clearTimeout(pushTimers[key]); delete pushTimers[key]; }
