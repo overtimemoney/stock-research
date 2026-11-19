@@ -1,6 +1,12 @@
 /* Stock Research — visual identity matched to 1000xStocks:
    white base, near-black ink, and their signature gold gradient
    (#B46A11 -> #D68D15 -> #E7AC18 -> #F8C73D) with amber accents. */
+/* No text selection anywhere (Justin's ask, 2026-11-18: a long-press
+ * on the price chart selected half the screen and popped the iOS
+ * Copy/Look Up callout). Only fields the user types into stay
+ * selectable/editable. */
+* { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 :root {
   --gold-grad: linear-gradient(90deg, #B46A11 0.24%, #D68D15 33.21%, #E7AC18 67.67%, #F8C73D 98.67%);
   --gold: #F8C73D;
