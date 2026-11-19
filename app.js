@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261118031800';
+var APP_BUILD = 'stock-research-20261119024002';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -2988,7 +2988,7 @@ function renderScChart(d) {
     box.innerHTML = '<div class="status">No prices in this window.</div>';
     return;
   }
-  box.innerHTML = '<div id="sc-chart-read" class="pf-bench-read">Drag to scrub \u00b7 pinch to zoom the time range.</div>' +
+  box.innerHTML = '<div id="sc-chart-read" class="pf-bench-read"></div>' +
     '<div class="chart-wrap">' + pxChartSVG(d, scWin, slice) + '</div>';
   bindPriceChart(d);
   // Ladder upkeep: fetch the tier this span wants, and the full
@@ -3055,7 +3055,7 @@ function bindPriceChart(d) {
   var hiG = svg.querySelector('.px-hi52'), hiLine = svg.querySelector('.px-hi-line'), hiLab = svg.querySelector('.px-hi-lab');
   var line = grp.querySelector('.px-scrub-line'), dot = grp.querySelector('.px-scrub-dot'), halo = grp.querySelector('.px-scrub-halo');
   var W = 640, H = 343, padT = 16, padB = 20, padX = 6; // 30% taller (2026-11-07: 264 -> 343)
-  var HINT = 'Drag to scrub \u00b7 pinch to zoom the time range.';
+  var HINT = '';
   var slice = pxSlice(d, scWin);
   if (!slice) return;
   var pointers = new Map();
@@ -3910,7 +3910,7 @@ function projStripHtml(id, ticker) {
   var v = isNum(cached)
     ? '<span class="sc-proj-v ' + (cached >= 0 ? 'up' : 'down') + (staleEnt && !isNum(saved) ? ' sc-proj-stale' : '') + '">' + (cached >= 0 ? '+' : '') + fmtNum(cached, 1) + '%/yr</span>'
     : '<span class="sc-proj-v sc-proj-wait">Estimating\u2026</span>';
-  return '<button type="button" class="sc-proj" id="' + id + '" data-proj-ticker="' + esc(ticker) + '" aria-label="Open the projection for ' + esc(ticker) + '"><span class="sc-proj-l"><b>Estimated return</b><span>Projected 4-yr CAGR \u00b7 base case</span></span><span class="sc-proj-r">' + v + '<span class="sc-proj-chev">\u203a</span></span></button>';
+  return '<button type="button" class="sc-proj" id="' + id + '" data-proj-ticker="' + esc(ticker) + '" aria-label="Open the projection for ' + esc(ticker) + '"><span class="sc-proj-l"><b>Estimated return</b></span><span class="sc-proj-r">' + v + '<span class="sc-proj-chev">\u203a</span></span></button>';
 }
 function projStripFill(id, ticker) {
   if (isNum(pjSavedCagr(ticker))) return;
@@ -3955,7 +3955,7 @@ function overallHtml(id, d) {
   var cc = overallCachedCagr(d.ticker);
   var v = overallScore(d, cc.cagr);
   if (v === null) return '';
-  return '<div class="sc-overall"><span class="sc-proj-l"><b>Overall score</b><span>Same math as the daily Top 10</span></span>' +
+  return '<div class="sc-overall"><span class="sc-proj-l"><b>Overall score</b></span>' +
     '<span class="sc-overall-v' + (cc.stale ? ' sc-proj-stale' : '') + '" id="' + id + '"' + scanScoreStyle(v) + '>' + v + '</span></div>';
 }
 function overallFill(id, d) {
@@ -3984,13 +3984,17 @@ function renderScorecard(d) {
   var vClass = sc.verdict === 'Undervalued' ? 'undervalued' : (sc.verdict === 'Fairly valued' || sc.verdict === 'Value (cyclical peak risk)') ? 'fair' : 'overpriced';
   var chgCls = isNum(d.dayChangePct) ? (d.dayChangePct >= 0 ? 'up' : 'down') : '';
   var html = '<div class="card">';
-  html += '<div class="sc-head"><div class="sc-head-l">' + logoTile(d.ticker, 'lg') + '<div><div class="sc-name">' + esc(d.companyName || d.ticker) + ' <span class="gold-text">' + esc(d.ticker) + '</span></div>' +
-    '<div class="sc-sub">' + esc([d.exchange, d.sector, d.industry].filter(Boolean).join(' · ')) + '</div></div></div>' +
+  html += '<div class="sc-head"><div class="sc-head-l">' + logoTile(d.ticker, 'lg') + '<div><div class="sc-name">' + esc(d.companyName || d.ticker) + '</div>' +
+    '<div class="sc-sub">' + esc([d.ticker, d.exchange, d.sector, d.industry].filter(Boolean).join(' · ')) + '</div></div></div>' +
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
   html += projStripHtml('sc-proj', d.ticker);
   html += overallHtml('sc-overall-v', d);
-  if (d.about) html += '<div class="sc-about">' + esc(d.about) + '</div>';
+  if (d.about) {
+    var abLong = d.about.length > 240;
+    html += '<div class="sc-about' + (abLong ? ' clamp' : '') + '" id="sc-about">' + esc(d.about) + '</div>';
+    if (abLong) html += '<button type="button" class="sc-about-btn" data-about-toggle aria-expanded="false">More</button>';
+  }
   html += moreBlockHtml(d);
   html += moatBlockHtml(d);
   html += compBlockHtml(d);
@@ -8623,6 +8627,17 @@ function ixPopShow(key, anchor) {
     { opacity: 1, transform: 'translateY(0) scale(1)' }
   ], { duration: 170, easing: 'cubic-bezier(0.23, 1, 0.32, 1)', fill: 'forwards' });
 }
+/* About clamp toggle (2026-11-18 redesign): the scorecard About text
+ * shows 3 lines with a More/Less button when it's long. */
+document.addEventListener('click', function (e) {
+  var b = e.target && e.target.closest ? e.target.closest('[data-about-toggle]') : null;
+  if (!b) return;
+  var ab = document.getElementById('sc-about');
+  if (!ab) return;
+  var open = ab.classList.toggle('clamp') === false;
+  b.textContent = open ? 'Less' : 'More';
+  b.setAttribute('aria-expanded', open ? 'true' : 'false');
+});
 document.addEventListener('click', function (e) {
   var t = e.target && e.target.closest ? e.target.closest('[data-ixpop]') : null;
   if (!t) return;
@@ -8688,7 +8703,7 @@ function renderScanCardInner() {
           '<span class="scan-rank">' + (i + 1) + '</span>' +
           logoTile(row.t, 'sm') + '<span class="scan-id"><span class="scan-tline"><b>' + esc(row.t) + '</b>' + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">partial</span>' : '') + '</span><span class="scan-sub"><span class="scan-nm">' + esc(row.name) + '</span></span><span class="scan-cagr-line">' + (isNum(row.cagr) ? 'CAGR ' + (row.cagr >= 0 ? '+' : '') + fmtNum(row.cagr, 0) + '%/yr' : 'CAGR \u2014') + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
-          '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
+          '<span class="scan-score"' + scanScoreStyle(row.score) + '>' + row.score + '</span></button>';
       });
       secs[ix.key] = out; out = out0;
     });
@@ -8742,7 +8757,7 @@ function renderScanCardInner() {
           '<span class="scan-rank">' + (i + 1) + '</span>' +
           logoTile(row.t, 'sm') + '<span class="scan-id"><span class="scan-tline"><b>' + esc(row.t) + '</b>' + scanNewPill(ix.key, row.t) + (isNum(row.sev) && row.sev >= 0.5 ? ' <span class="scan-cyc">Cyclical</span>' : '') + (row.partial ? ' <span class="scan-cyc partial">partial</span>' : '') + '</span><span class="scan-sub"><span class="scan-nm">' + esc(row.name) + '</span></span><span class="scan-cagr-line">' + (isNum(row.cagr) ? 'CAGR ' + (row.cagr >= 0 ? '+' : '') + fmtNum(row.cagr, 0) + '%/yr' : 'CAGR \u2014') + '</span></span>' +
           '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
-          '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
+          '<span class="scan-score"' + scanScoreStyle(row.score) + '>' + row.score + '</span></button>';
       });
       secs[ix.key] = out; out = out0;
     });
@@ -8971,7 +8986,7 @@ function runScreener() {
       '<span class="scan-rank">' + (i + 1) + '</span>' +
       logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name || row.t) + (row.sector !== 'Other' ? ' \u00b7 ' + esc(row.sector) : '') + (isNum(row.cagr) ? ' \u00b7 CAGR ' + (row.cagr >= 0 ? '+' : '') + fmtNum(row.cagr, 0) + '%/yr' : '') + '</span></span>' +
       '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
-      '<span class="scan-score"' + scanScoreStyle(row.score) + '>Score ' + row.score + '</span></button>';
+      '<span class="scan-score"' + scanScoreStyle(row.score) + '>' + row.score + '</span></button>';
   });
   if (!out.length && isNum(f.cagr) && !anyCagr) html += '<div class="status">Projected CAGR isn\'t in the stored data yet \u2014 it lands on the deep-checked stocks with the next scan, or tap Rescan on the Watchlist scan card to get it now. <button type="button" class="link-btn" data-scr-gocard="1">Open the scan card</button></div>';
   else if (!out.length && isNum(f.cagr) && anyCagr) html += '<div class="status">No matches \u2014 CAGR is stored for only ' + covN + ' deep-checked stocks so far, and none of them clears those filters. Coverage grows with each daily scan.</div>';
@@ -9056,8 +9071,8 @@ function renderOverview(d, item) {
   var rk = riskScore(d);
   var chgCls = isNum(d.dayChangePct) ? (d.dayChangePct >= 0 ? 'up' : 'down') : '';
   var html = '<div class="card">';
-  html += '<div class="sc-head"><div class="sc-head-l">' + logoTile(d.ticker, 'lg') + '<div><div class="sc-name">' + esc(d.companyName || d.ticker) + ' <span class="gold-text">' + esc(d.ticker) + '</span></div>' +
-    '<div class="sc-sub">' + esc([d.exchange, d.sector, d.industry].filter(Boolean).join(' \u00b7 ')) + '</div></div></div>' +
+  html += '<div class="sc-head"><div class="sc-head-l">' + logoTile(d.ticker, 'lg') + '<div><div class="sc-name">' + esc(d.companyName || d.ticker) + '</div>' +
+    '<div class="sc-sub">' + esc([d.ticker, d.exchange, d.sector, d.industry].filter(Boolean).join(' \u00b7 ')) + '</div></div></div>' +
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
   html += projStripHtml('ov-proj', d.ticker);
@@ -10939,12 +10954,12 @@ var MKT_DEFS = [
     big: function (s) { return mktFmt2(mktLast(s.points)); },
     fmtVal: function (v) { return mktFmt2(v); },
     read: function (s, b, view, win) { return mktRankText(view, mktLast(s.points), 'month', win); },
-    note: 'Prices the whole S&P 500 against ten years of real, inflation-adjusted profits. Smoothing out booms and recessions shows whether stocks are priced high or low against what companies actually earn over a full cycle.' },
+    note: 'Prices the S&P 500 against ten years of real, inflation-adjusted profits.' },
   { id: 'pe', name: 'S&P 500 P/E', ranges: [['10Y', 120], ['25Y', 300], ['All', 0]], def: '10Y',
     big: function (s) { return mktFmt2(mktLast(s.points)); },
     fmtVal: function (v) { return mktFmt2(v); },
     read: function (s, b, view, win) { return mktRankText(view, mktLast(s.points), 'month', win); },
-    note: 'What investors pay for one dollar of the S&P 500\u2019s yearly profit. Higher means the market is pricing in strong future growth — or getting ahead of itself.' },
+    note: 'What investors pay for one dollar of the S&P 500’s yearly profit.' },
   { id: 'fg', name: 'Fear & Greed Index', kind: 'fg', ranges: [['3M', 3], ['6M', 6], ['1Y', 12]], def: '1Y',
     big: function (s) { return mktFmt1(s.extra.score); },
     fmtVal: function (v) { return mktFmt1(v); },
@@ -10955,7 +10970,7 @@ var MKT_DEFS = [
       if (isNum(e.prevMonth)) bits.push((e.score >= e.prevMonth ? 'up' : 'down') + ' from ' + mktFmt1(e.prevMonth) + ' a month ago');
       return bits.length ? 'Running ' + bits.join(', ') + '.' : '';
     },
-    note: 'CNN\u2019s 0-to-100 gauge of investor mood, built from seven market signals. Low readings mean fear is running the market; high readings mean greed is. Extremes in either direction often show up near turning points.' },
+    note: 'CNN’s 0-to-100 gauge of investor mood — low is fear, high is greed.' },
   { id: 'vix', name: 'VIX', ranges: [['1Y', 12], ['5Y', 60], ['10Y', 120]], def: '5Y',
     big: function (s) { return mktFmt1(mktLast(s.points)); },
     fmtVal: function (v) { return mktFmt1(v); },
@@ -10964,7 +10979,7 @@ var MKT_DEFS = [
       var word = v < 15 ? 'Calm — traders see little risk ahead.' : v < 20 ? 'Normal — a typical level of caution.' : v < 30 ? 'Nervous — traders are paying up for protection.' : 'Fear — the kind of spike that usually comes with a hard sell-off.';
       return word + ' ' + mktRankText(view, v, 'month', win);
     },
-    note: 'The options market\u2019s fear gauge — how much traders pay to insure against a drop. Under 15 is calm, over 30 is panic. It spikes when stocks fall hard.' },
+    note: 'The options market’s fear gauge — under 15 is calm, over 30 is panic.' },
   { id: 'aaii', name: 'AAII Investor Sentiment', kind: 'aaii',
     big: function (s) { return (s.extra.bull - s.extra.bear > 0 ? '+' : '') + mktFmt1(s.extra.bull - s.extra.bear); },
     bigSub: function () { return 'bulls minus bears'; },
@@ -10974,12 +10989,12 @@ var MKT_DEFS = [
       if (isNum(typ)) t += ' In a typical week ' + (typ >= 0 ? 'bulls lead by ' + Math.round(typ) : 'bears lead by ' + Math.abs(Math.round(typ))) + '.';
       return t;
     },
-    note: 'A weekly survey of individual investors: bullish, bearish, or neutral on the next six months? The black tick on each bar is the long-run average. When one side gets this lopsided, the crowd has often been more emotional than right — but it can stay lopsided for weeks.' },
+    note: 'A weekly survey of individual investors: bullish, bearish, or neutral on the next six months.' },
   { id: 'mich', name: 'Consumer Sentiment', ranges: [['10Y', 120], ['25Y', 300], ['All', 0]], def: '25Y',
     big: function (s) { return mktFmt1(mktLast(s.points)); },
     fmtVal: function (v) { return mktFmt1(v); },
     read: function (s, b, view, win) { return mktLowText(view, mktLast(s.points), 'month', win); },
-    note: 'The University of Michigan\u2019s monthly survey of how consumers feel about their finances and the economy, running since 1952. It tracks whether households feel like spending — and household spending is most of the economy.' },
+    note: 'The University of Michigan’s monthly survey of how consumers feel about their finances and the economy.' },
   { id: 'eyx', name: 'Earnings Yield vs 10-Year', kind: 'dual', ranges: [['2Y', 24], ['5Y', 60], ['10Y', 120]], def: '10Y',
     big: function (s, b) {
       var g = mktDualGap(b);
@@ -10990,7 +11005,7 @@ var MKT_DEFS = [
       var ey = mktLast(b.series.ey.points), tn = mktLast(b.series.tnx.points), g = ey - tn;
       return 'Stocks yield ' + mktFmt2(ey) + '% in earnings; the 10-year Treasury pays ' + mktFmt2(tn) + '%. ' + (g >= 0 ? 'Stocks pay ' + mktFmt2(g) + ' points more — the extra you earn for taking stock-market risk.' : 'Bonds pay ' + mktFmt2(-g) + ' points more, with no stock-market risk — a tough offer for stocks to compete with.');
     },
-    note: 'Earnings yield is the flip side of the P/E: profit per dollar of price. Lined up against the 10-year Treasury, it shows what stocks pay you versus what a safe government bond pays you.' },
+    note: 'What stocks pay you in earnings versus what a safe 10-year Treasury pays you.' },
   { id: 'tnx', name: '10-Year Treasury', ranges: [['1Y', 12], ['5Y', 60], ['10Y', 120]], def: '10Y', pct: true,
     big: function (s) { return mktFmt2(mktLast(s.points)) + '%'; },
     fmtVal: function (v) { return mktFmt2(v) + '%'; },
@@ -10999,7 +11014,7 @@ var MKT_DEFS = [
       if (!isNum(ya)) return '';
       return 'That\u2019s ' + (v >= ya ? 'up' : 'down') + ' from ' + mktFmt2(ya) + '% a year ago.';
     },
-    note: 'The interest rate on the government\u2019s 10-year bond — the benchmark that mortgages, car loans, and company borrowing all price off. When it climbs, borrowing gets more expensive everywhere.' },
+    note: 'The benchmark rate that mortgages, car loans, and company borrowing all price off.' },
   { id: 'curve', name: 'Yield Curve (10Y \u2212 3M)', kind: 'curve', ranges: [['1Y', 12], ['5Y', 60], ['10Y', 120]], def: '5Y', zero: true,
     big: function (s, b) { var c = mktCurvePts(b); var v = mktLast(c); return (v > 0 ? '+' : '') + mktFmt2(v) + '%'; },
     fmtVal: function (v) { return (v > 0 ? '+' : '') + mktFmt2(v) + '%'; },
@@ -11007,7 +11022,7 @@ var MKT_DEFS = [
       var v = mktLast(mktCurvePts(b));
       return v < 0 ? 'Inverted — short-term rates sit above long-term rates. Every inversion since 1970 came before a recession.' : 'A normal upward slope — long-term rates sit above short-term rates, the healthy shape.';
     },
-    note: 'The gap between the 10-year rate and the 3-month rate. Normally long-term rates are higher, so the gap is positive. When it goes negative — inverted — it has preceded every recession since 1970.' },
+    note: 'The gap between the 10-year and 3-month rates — negative (inverted) has preceded every recession since 1970.' },
   { id: 'cpi', name: 'Inflation (CPI)', ranges: [['5Y', 60], ['10Y', 120], ['25Y', 300]], def: '10Y', pct: true,
     big: function (s) { return mktFmt1(mktLast(s.points)) + '%'; },
     fmtVal: function (v) { return mktFmt1(v) + '%'; },
@@ -11017,7 +11032,7 @@ var MKT_DEFS = [
       var ago = pts[pts.length - 4][1];
       return 'Prices rose ' + mktFmt1(v) + '% over the past year — ' + (v >= ago ? 'up' : 'down') + ' from ' + mktFmt1(ago) + '% three months ago. The Fed\u2019s target is 2%.';
     },
-    note: 'How much consumer prices rose over the past year. The Fed targets 2%; while inflation runs above that, pressure stays on interest rates to remain high.' }
+    note: 'How much consumer prices rose over the past year — the Fed targets 2%.' }
 ];
 
 function mktCurvePts(b) {
