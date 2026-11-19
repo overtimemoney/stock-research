@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261119232618';
+var APP_BUILD = 'stock-research-20261119233353';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -4293,6 +4293,26 @@ function renderScorecard(d) {
   $('sc-refresh').addEventListener('click', function () { runSearch(d.ticker, true); });
 }
 
+/* Skeleton loaders (2026-11-19): content-shaped shimmer blocks shown
+ * while a cold load is in flight, instead of a blank screen under a
+ * spinner. renderScorecard / renderMarket overwrite them wholesale
+ * when the real content lands. */
+function scSkeletonHtml() {
+  return '<div class="skl-wrap" aria-hidden="true">' +
+    '<div class="skl skl-name"></div><div class="skl skl-sub"></div>' +
+    '<div class="skl skl-price"></div>' +
+    '<div class="skl skl-strip"></div><div class="skl skl-strip"></div>' +
+    '<div class="skl skl-chart"></div>' +
+    '<div class="skl skl-banner"></div><div class="skl skl-banner"></div></div>';
+}
+function mktSkeletonHtml() {
+  var p = '<div class="skl-wrap" aria-hidden="true">';
+  for (var i = 0; i < 3; i++) {
+    p += '<div class="skl skl-mktname"></div><div class="skl skl-mktval"></div><div class="skl skl-mktchart"></div>';
+  }
+  return p + '</div>';
+}
+
 async function runSearch(ticker, fresh) {
   var rawQ = String(ticker || '').trim();
   if (!rawQ) return;
@@ -4322,6 +4342,20 @@ async function runSearch(ticker, fresh) {
       status.innerHTML = '<span class="spinner"></span>Showing your last saved data for ' + esc(T) + ' — refreshing…';
     }
   }
+  /* Cold lookup (nothing saved to paint): a skeleton shaped like the
+   * scorecard fills the space while the fast stage loads, instead of
+   * a blank screen under the spinner. The first real render — interim
+   * or final — replaces it. */
+  if (!showedStale) {
+    try {
+      var srEl = $('score-result');
+      if (srEl) {
+        srEl.innerHTML = scSkeletonHtml();
+        var seEl = $('score-empty');
+        if (seEl) seEl.style.display = 'none';
+      }
+    } catch (e) {}
+  }
   // The free relays fail in waves (rate limits, brief outages). Rather
   // than erroring on the first bad wave, retry the whole lookup a few
   // times with pauses — most waves clear within a minute.
@@ -4337,9 +4371,23 @@ async function runSearch(ticker, fresh) {
     } catch (e) {
       if (attempt >= 3) {
         status.className = 'status err';
+        /* If the skeleton is still up (nothing ever painted), put the
+         * empty state back so the tab is not left showing ghosts. */
+        if (!showedStale) {
+          try {
+            var srEl2 = $('score-result');
+            if (srEl2 && srEl2.querySelector('.skl-wrap')) {
+              srEl2.innerHTML = '';
+              var seEl2 = $('score-empty');
+              if (seEl2) seEl2.style.display = '';
+            }
+          } catch (e2) {}
+        }
         status.textContent = showedStale
           ? 'Couldn\'t refresh ' + T + ' — the data routes are having a bad stretch. You\'re still seeing your last saved data above; try Refresh again in a minute.'
-          : friendlyErr(e, 'Something went wrong fetching that ticker.') + ' (Tried 3 times — the data routes are having a bad stretch. Give it a minute and tap Research again.)';
+          : (navigator.onLine === false
+            ? 'You\'re offline — a new stock needs a connection to load. Your saved lists and stocks still work.'
+            : friendlyErr(e, 'Something went wrong fetching that ticker.') + ' (Tried 3 times — the data routes are having a bad stretch. Give it a minute and tap Research again.)');
         return;
       }
       status.innerHTML = '<span class="spinner"></span>A data route hiccuped — retrying automatically (' + attempt + ' of 3)…';
@@ -11170,6 +11218,10 @@ async function loadMarket() {
   try { cached = JSON.parse(localStorage.getItem(MKT_KEY) || 'null'); } catch (e) {}
   if (cached && cached.bundle) { mktBundle = cached.bundle; renderMarket(); }
   if (cached && Date.now() - cached.ts < 3 * 3600 * 1000) return;
+  /* First-ever open (nothing cached to paint): skeleton panels while
+   * the bundle loads, instead of a blank tab. The success and error
+   * paths below both overwrite this. */
+  if (!cached) { try { el.innerHTML = mktSkeletonHtml(); } catch (e) {} }
   mktLoading = true;
   try {
     var ctl = new AbortController();
@@ -11455,6 +11507,17 @@ setTimeout(fitShell, 1200);
 setTimeout(fitShell, 2500);
 
 function initApp() {
+  /* Offline pill (2026-11-19): the app is local-first, so offline is
+   * a workable state, not an error — say so while it lasts. The sync
+   * module already reconciles on the 'online' event; this is only
+   * the user-facing signal. */
+  var syncOfflineBar = function () {
+    var b = $('offline-bar');
+    if (b) b.hidden = navigator.onLine !== false;
+  };
+  window.addEventListener('online', syncOfflineBar);
+  window.addEventListener('offline', syncOfflineBar);
+  syncOfflineBar();
   document.querySelectorAll('.tabbar button').forEach(function (b) {
     b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); });
   });
