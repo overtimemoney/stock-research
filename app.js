@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261119030938';
+var APP_BUILD = 'stock-research-20261119031235';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -3242,6 +3242,16 @@ var lastStock = null;
  * next to a label and a plain-English explainer smoothly unfolds
  * under it. One delegated listener handles every dot. */
 var INFO_TEXT = {
+  mktcape: 'Prices the whole S&P 500 against ten years of real, inflation-adjusted profits. Smoothing out booms and recessions shows whether stocks are priced high or low against what companies actually earn over a full cycle.',
+  mktpe: 'What investors pay for one dollar of the S&P 500\u2019s yearly profit. Higher means the market is pricing in strong future growth \u2014 or getting ahead of itself.',
+  mktfg: 'CNN\u2019s 0-to-100 gauge of investor mood, built from seven market signals. Low readings mean fear is running the market; high readings mean greed is. Extremes in either direction often show up near turning points.',
+  mktvix: 'The options market\u2019s fear gauge \u2014 how much traders pay to insure against a drop. Under 15 is calm, over 30 is panic. It spikes when stocks fall hard.',
+  mktaaii: 'A weekly survey of individual investors: bullish, bearish, or neutral on the next six months? The tick on each bar is the long-run average. When one side gets this lopsided, the crowd has often been more emotional than right \u2014 but it can stay lopsided for weeks.',
+  mktmich: 'The University of Michigan\u2019s monthly survey of how consumers feel about their finances and the economy, running since 1952. It tracks whether households feel like spending \u2014 and household spending is most of the economy.',
+  mkteyx: 'Earnings yield is the flip side of the P/E: profit per dollar of price. Lined up against the 10-year Treasury, it shows what stocks pay you versus what a safe government bond pays you.',
+  mkttnx: 'The interest rate on the government\u2019s 10-year bond \u2014 the benchmark that mortgages, car loans, and company borrowing all price off. When it climbs, borrowing gets more expensive everywhere.',
+  mktcurve: 'The gap between the 10-year rate and the 3-month rate. Normally long-term rates are higher, so the gap is positive. When it goes negative \u2014 inverted \u2014 it has preceded every recession since 1970.',
+  mktcpi: 'How much consumer prices rose over the past year. The Fed targets 2%; while inflation runs above that, pressure stays on interest rates to remain high.',
   cycsev: 'Severity runs 0 to 1: how peak-cycle today\'s numbers look vs the company\'s own history \u2014 margin vs its long-run average, worst EPS drawdown, trailing EPS growth, revenue surge. 0 = nothing unusual; 1 = textbook cycle peak. Needs 2 strong signals to count; then it lifts the risk score toward 100. With fewer than 3 signals carrying data, severity caps at 0.8.',
   cliffsev: 'Severity runs 0 to 1: how hard earnings fall later in the analyst forecast, after their peak year. A fall of 10% or less counts as nothing; the scale tops out at a 75% fall, and falling into losses always counts as a full 1. It lifts the risk score toward 100 the same way the cyclical check does \u2014 the danger is the same, it just shows up in the forecast instead of in history. A fall into next year is scored separately, by the EPS trend factor.',
   fwpe: 'Forward P/E = today\'s price divided by next year\'s expected earnings per share. It prices the stock against where earnings are heading, not where they have been. Rough guide: under 15 is cheap for most stocks, over 30 is expensive.',
@@ -11081,7 +11091,8 @@ function mktPanelHTML(def, b) {
   (def.ranges || []).forEach(function (r) { if (r[0] === rangeKey) months = r[1]; });
   var view = mktSlice(s.points, months);
   var h = ['<div class="mkt-panel" data-mkt-panel="' + def.id + '">'];
-  h.push('<div class="mkt-head"><span class="mkt-name">' + esc(def.name) + '</span><span class="mkt-asof">' + esc(mktAsOfLabel(s)) + '</span></div>');
+  h.push('<div class="mkt-head"><span class="mkt-name">' + esc(def.name) + infoDot('mkt' + def.id) + '</span><span class="mkt-asof">' + esc(mktAsOfLabel(s)) + '</span></div>');
+  h.push(infoText('mkt' + def.id));
   var big = def.big(s, b);
   h.push('<div class="mkt-big">' + esc(big) + (def.bigSub ? '<span class="mkt-big-sub">' + esc(def.bigSub(s, b)) + '</span>' : '') + '</div>');
   var read = def.read ? def.read(s, b, view, rangeKey) : '';
