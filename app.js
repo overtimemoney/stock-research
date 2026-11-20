@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261120033950';
+var APP_BUILD = 'stock-research-20261120034440';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -1717,8 +1717,10 @@ function moreBlockHtml(d) {
   if (d.ceo) secs += '<div class="more-sec"><p class="earn-line ceo-line">' + ceoHeadHtml(d) + '</p>' + ceoInnerHtml(d) + '</div>';
   var bi = bizInnerHtml(d);
   if (bi) secs += '<div class="more-sec"><p class="earn-line ceo-line">How it makes money</p>' + bi + '</div>';
-  var el = earnLineHtml(d);
-  if (el) secs += '<div class="more-sec">' + el + '</div>';
+  /* The earnings line is NOT in here anymore (2026-11-19): it
+   * also rendered standalone under this block for confirmed
+   * dates, so those stocks showed it twice. It now lives in
+   * exactly one place — directly under More, always visible. */
   /* Moat / Competitors / Market size live UNDER More now
    * (Justin's call, 2026-11-19): the scorecard had two "More"
    * labels and a stack of sibling dropdowns. Their own toggles
@@ -2366,19 +2368,28 @@ function boomBust(d) {
  * statements (day-cached): one entry per fiscal year, ascending, with
  * EPS and gross/operating margin derived from the statements. Feeds
  * the cyclical severity overlay. */
+/* Charts-statement values arrive in MIXED units: StockAnalysis
+ * reports millions, the EDGAR backfill reports raw dollars, and
+ * a merged series can hold both. Anything downstream that
+ * assumes one unit breaks — Marvell's $8.2B revenue rendered as
+ * $8.20Q in the TAM block (2026-11-19). Normalize to millions
+ * where yearly data is built: a single year's figure above 1e6
+ * "millions" would mean over $1T, which no company reaches, so
+ * the threshold is safe. */
+function qmToMillions(v) { return (isNum(v) && Math.abs(v) > 1e6) ? v / 1e6 : v; }
 function buildYearly(d, qm) {
   if (!qm || !qm.periods) return;
   var byYear = {};
   qm.periods.forEach(function (p, i) {
     var m = String(p).match(/(\d{4})/);
     if (!m) return;
-    var rev = qm.revenue ? qm.revenue[i] : null;
+    var rev = qm.revenue ? qmToMillions(qm.revenue[i]) : null;
     var yr = parseInt(m[1], 10);
     byYear[yr] = {
       year: yr, rev: rev,
       eps: qm.eps ? qm.eps[i] : null,
-      gm: (qm.grossProfit && isNum(qm.grossProfit[i]) && isNum(rev) && rev > 0) ? qm.grossProfit[i] / rev * 100 : null,
-      om: (qm.operIncome && isNum(qm.operIncome[i]) && isNum(rev) && rev > 0) ? qm.operIncome[i] / rev * 100 : null
+      gm: (qm.grossProfit && isNum(qm.grossProfit[i]) && isNum(rev) && rev > 0) ? qmToMillions(qm.grossProfit[i]) / rev * 100 : null,
+      om: (qm.operIncome && isNum(qm.operIncome[i]) && isNum(rev) && rev > 0) ? qmToMillions(qm.operIncome[i]) / rev * 100 : null
     };
   });
   var yrs = Object.keys(byYear).map(function (k) { return byYear[k]; }).sort(function (a, b) { return a.year - b.year; });
@@ -2391,7 +2402,7 @@ function buildYearly(d, qm) {
  * shared by the scorecard, the watchlist and the scan enrichment.
  * fetchQMetrics has its own day cache underneath; this layer caches
  * the BUILT shapes so repeat readers skip the network entirely. */
-var CYC_KEY = 'sr_cyc_v1';
+var CYC_KEY = 'sr_cyc_v2';
 /* Revenue path from the annual-statements payload: reported years
  * from the statements plus StockAnalysis' forecast years, shaped
  * like parseSAForecast's output ({label, rev, est}); a reported
@@ -2402,7 +2413,7 @@ function revPathFromQm(qm) {
   qm.periods.forEach(function (p, i) {
     var m = String(p).match(/(\d{4})/);
     if (!m) return;
-    var rev = qm.revenue ? qm.revenue[i] : null;
+    var rev = qm.revenue ? qmToMillions(qm.revenue[i]) : null;
     if (isNum(rev) && rev > 0) byLabel['FY' + m[1]] = { label: 'FY' + m[1], rev: rev, est: false };
   });
   var est = (qm.est && qm.est.revenue) || [];
@@ -2410,7 +2421,7 @@ function revPathFromQm(qm) {
     var m = String(e.plabel || '').match(/(\d{4})/);
     if (!m) return;
     var label = 'FY' + m[1];
-    if (!byLabel[label] && isNum(e.value) && e.value > 0) byLabel[label] = { label: label, rev: e.value, est: true };
+    if (!byLabel[label] && isNum(e.value) && e.value > 0) byLabel[label] = { label: label, rev: qmToMillions(e.value), est: true };
   });
   var out = Object.keys(byLabel).map(function (k) { return byLabel[k]; });
   out.sort(function (a, b) { return a.label < b.label ? -1 : a.label > b.label ? 1 : 0; });
@@ -4094,7 +4105,7 @@ function renderScorecard(d) {
     if (abLong) html += '<button type="button" class="sc-about-btn" data-about-toggle aria-expanded="false">Read more</button>';
   }
   html += moreBlockHtml(d);
-  if (!d.earnEst) html += earnLineHtml(d);
+  html += earnLineHtml(d);
 
   if (d.history && d.history.length >= 2) {
     html += '<div class="section-h">Price — <span class="gold-text" id="sc-range-label">1 year</span></div>' +
