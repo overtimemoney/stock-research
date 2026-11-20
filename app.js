@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261120023424';
+var APP_BUILD = 'stock-research-20261120024802';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -11585,6 +11585,19 @@ function placeTabPill() {
     requestAnimationFrame(function () { nav.classList.add('pill-on'); });
   }
 }
+/* Splash exit: fade once init has landed, but never before the
+ * mark has had ~0.6s on screen (performance.now() already counts
+ * the load time the splash was covering, so a slow load hides it
+ * immediately). The inline failsafe in index.html is the backstop. */
+function hideSplash() {
+  var s = document.getElementById('splash');
+  if (!s) return;
+  var wait = Math.max(0, 600 - performance.now());
+  setTimeout(function () {
+    s.classList.add('splash-done');
+    setTimeout(function () { if (s.parentNode) s.parentNode.removeChild(s); }, 420);
+  }, wait);
+}
 function switchTab(name) {
   if (!navInternal && !navArmed) navStack = [];
   navArmed = false;
@@ -12248,6 +12261,7 @@ function initApp() {
   try { onboarded = !!localStorage.getItem('sr_onboard_v1'); } catch (e) {}
   if (onboarded) switchTab('watchlist');
   placeTabPill();
+  hideSplash();
 }
 if (typeof document !== 'undefined' && document.getElementById) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initApp);

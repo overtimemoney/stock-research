@@ -20,6 +20,18 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
 </script>
 </head>
 <body>
+<!-- Splash: brand mark on the theme background from the first
+     paint until the app is ready (Instagram-style, Justin's ask,
+     2026-11-19). app.js fades it once init lands (min ~0.5s); the
+     inline failsafe below clears it at 2.6s no matter what, so it
+     can never trap the app. -->
+<div id="splash" aria-hidden="true">
+  <div class="splash-mark"><svg viewBox="0 0 100 100" width="92" height="92"><circle cx="44" cy="44" r="29" fill="none" stroke="#F8C73D" stroke-width="6"/><polyline points="24,58 37,41 47,51 63,31" fill="none" stroke="#F8C73D" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/><line x1="65" y1="65" x2="85" y2="85" stroke="#F8C73D" stroke-width="7" stroke-linecap="round"/></svg></div>
+  <div class="splash-name">MISPRICED</div>
+</div>
+<script>
+setTimeout(function () { var s = document.getElementById('splash'); if (s) { s.classList.add('splash-done'); setTimeout(function () { if (s.parentNode) s.parentNode.removeChild(s); }, 450); } }, 2600);
+</script>
 <header class="topbar"></header>
 
 
