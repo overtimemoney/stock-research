@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261120020321';
+var APP_BUILD = 'stock-research-20261120022700';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -100,12 +100,15 @@ var RELAYS = [
   // The user's own Cloudflare Worker relay (deployed 2026-10-24) — first
   // route: fast and reliable. The free public relays below stay as backup.
   function (u) { return 'https://stock-research-relay.supplessayings-6e6.workers.dev/?url=' + encodeURIComponent(u); },
-  function (u) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); },
   function (u) { return 'https://api.cors.lol/?url=' + encodeURIComponent(u); }
   /* codetabs and corsproxy.io were dropped 2026-11-10: codetabs
    * returned origin-error 522s after ~20 s on every probe, and
    * corsproxy.io sits behind a 401 auth wall -- both were dead weight
-   * in the race, stretching every failure out to the full timeout. */
+   * in the race, stretching every failure out to the full timeout.
+   * allorigins joined them 2026-11-19: it still answers, but only
+   * after a 12+ s hang ending in a 520. In a first-success race a
+   * slow-dead route costs nothing on a good attempt and turns every
+   * bad attempt into a 10-30 s stall (Justin's call, 2026-11-19). */
 ];
 function fetchWithTimeout(url, ms) {
   if (typeof AbortController === 'undefined') return fetch(url);
