@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261120020005';
+var APP_BUILD = 'stock-research-20261120020321';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -11918,8 +11918,8 @@ function initApp() {
     mainEl.addEventListener('scroll', function () {
       var st = mainEl.scrollTop;
       if (st < 24) navEl.classList.remove('mini');
-      else if (st > lastSt + 4 && st > 80) navEl.classList.add('mini');
-      else if (st < lastSt - 4) navEl.classList.remove('mini');
+      else if (st > lastSt + 2 && st > 48) navEl.classList.add('mini');
+      else if (st < lastSt - 2) navEl.classList.remove('mini');
       lastSt = st;
       /* The tab's intro text folds into itself over the first ~150px
        * of scrolling and unfolds again back at the top (Justin's ask,

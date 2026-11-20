@@ -442,16 +442,16 @@ table.factors.scen.micro td, table.factors.scen.micro th { padding: 7px 3px; }
   background: var(--nav-bg);
   border: 1px solid var(--line); border-radius: 999px;
   box-shadow: 0 10px 28px var(--nav-shadow);
-  transition: padding .22s var(--ease-out);
+  transition: padding .28s var(--ease-out), transform .28s var(--ease-out);
 }
 .tabbar button {
   flex: 1; background: none; border: none; color: var(--muted); cursor: pointer;
   height: 46px; border-radius: 999px;
   display: flex; align-items: center; justify-content: center;
-  transition: background .18s var(--ease-out), color .18s var(--ease-out), height .22s var(--ease-out);
+  transition: background .18s var(--ease-out), color .18s var(--ease-out), height .28s var(--ease-out);
 }
 .tabbar button .tab-ico { line-height: 1; display: flex; }
-.tabbar button .tab-ico .ico { width: 24px; height: 24px; transition: width .22s var(--ease-out), height .22s var(--ease-out); }
+.tabbar button .tab-ico .ico { width: 24px; height: 24px; transition: width .28s var(--ease-out), height .28s var(--ease-out); }
 .tabbar button.active { background: var(--nav-active); color: var(--gold); }
 .spinner {
   display: inline-block; width: 14px; height: 14px; border-radius: 50%;
@@ -880,8 +880,11 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .ov-panel { position: fixed; inset: 0; z-index: 85; background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: calc(12px + env(safe-area-inset-top)) 14px calc(18px + env(safe-area-inset-bottom)); transform: translateX(103%); transition: transform .28s var(--ease-drawer); pointer-events: none; }
 .ov-panel.open { transform: translateX(0); pointer-events: auto; }
 
-/* Compact state while scrolling down (Instagram-style shrink). */
-.tabbar.mini { padding: 4px; }
+/* Compact state while scrolling down (Instagram-style shrink):
+ * the pill compacts AND slides down toward the home bar, then
+ * slides back up as it restores (strengthened 2026-11-19 so the
+ * motion is unmistakable). */
+.tabbar.mini { padding: 4px; transform: translateY(5px); }
 .tabbar.mini button { height: 36px; }
 .tabbar.mini button .tab-ico .ico { width: 20px; height: 20px; }
 
