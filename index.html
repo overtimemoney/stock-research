@@ -30,7 +30,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
   <div class="splash-name">MISPRICED</div>
 </div>
 <script>
-setTimeout(function () { var s = document.getElementById('splash'); if (s) { s.classList.add('splash-done'); setTimeout(function () { if (s.parentNode) s.parentNode.removeChild(s); }, 450); } }, 2600);
+setTimeout(function () { var s = document.getElementById('splash'); if (s) { s.classList.add('splash-done'); setTimeout(function () { if (s.parentNode) s.parentNode.removeChild(s); }, 680); } }, 2600);
 </script>
 <header class="topbar"></header>
 
@@ -47,7 +47,6 @@ setTimeout(function () { var s = document.getElementById('splash'); if (s) { s.c
     <div id="score-result"></div>
     <div id="score-empty" class="empty-note">
       <h2>Look up any stock</h2>
-      <p>A valuation scorecard with the math shown, a risk score, and an EPS cliff check — pulled live.</p>
       <div class="ex-row">
         <button type="button" class="w-chip" data-ex="AAPL">Try AAPL</button>
         <button type="button" class="w-chip" data-ex="NVDA">Try NVDA</button>
@@ -221,6 +220,7 @@ setTimeout(function () { var s = document.getElementById('splash'); if (s) { s.c
         <button type="button" class="btn-gold" id="scr-run">Run screen</button>
         <button type="button" class="btn-ghost" id="scr-save">Save screen</button>
         <button type="button" class="btn-ghost" id="scr-clear">Clear</button>
+        <button type="button" class="btn-ghost" id="scr-del" hidden>Delete saved</button>
       </div>
     </div>
     <div id="scr-results"></div>
@@ -417,6 +417,7 @@ setTimeout(function () { var s = document.getElementById('splash'); if (s) { s.c
         <div class="row-gap">
           <button type="submit" class="btn-gold">Save entry</button>
           <button type="button" id="j-cancel" class="btn-ghost" hidden>Cancel edit</button>
+          <button type="button" id="j-del" class="btn-ghost" hidden>Delete entry</button>
         </div>
       </form>
     </div>

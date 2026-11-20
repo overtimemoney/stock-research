@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261120024802';
+var APP_BUILD = 'stock-research-20261120025329';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -4642,7 +4642,7 @@ function pjRestore(T) {
   var st = $('pj-status');
   pjStatusBits = null;
   st.className = 'status';
-  st.textContent = 'Showing your saved projection for ' + T + ' (saved ' + String(s.savedAt || '').slice(0, 10) + '). Price and EPS are as saved -- load the ticker again any time for live numbers.';
+  st.textContent = 'Showing your saved projection for ' + T + '. Price and EPS are as saved -- load the ticker again any time for live numbers.';
 }
 function renderPjSaved() {
   var box = $('pj-saved');
@@ -4655,22 +4655,15 @@ function renderPjSaved() {
   var open = !!lsGet('sr_pjsaved_open', false);
   box.innerHTML = '<button type="button" class="pj-saved-head" id="pj-saved-toggle"><span>Saved projections \u00b7 ' + ts.length + '</span><span class="pj-saved-chev">' + (open ? '\u25b4' : '\u25be') + '</span></button>' +
     (open ? ts.map(function (T) {
-      var base = pjSavedBase(T);
-      return '<div class="pf-buy-row"><button class="pf-buy-txt" data-pj-open="' + esc(T) + '"><span>' + esc(T) + '</span><span>saved ' + esc(String(all[T].savedAt || '').slice(0, 10)) + (isNum(base) ? ' \u00b7 Base ' + fmtMoney(base) : '') + '</span></button><button class="link-btn danger" data-pj-del="' + esc(T) + '">' + ico(ICO_X, 'ico-xxs') + '</button></div>';
+      /* Ticker only (Justin's declutter, 2026-11-19): no saved
+       * date, no base figure, no exposed delete -- deletion lives
+       * in the builder's save row once the projection is loaded. */
+      return '<div class="pf-buy-row"><button class="pf-buy-txt" data-pj-open="' + esc(T) + '"><span>' + esc(T) + '</span></button></div>';
     }).join('') : '');
   var tg = $('pj-saved-toggle');
   if (tg) tg.addEventListener('click', function () { lsSet('sr_pjsaved_open', !open); renderPjSaved(); });
   box.querySelectorAll('[data-pj-open]').forEach(function (b) {
     b.addEventListener('click', function () { pjRestore(b.getAttribute('data-pj-open')); });
-  });
-  box.querySelectorAll('[data-pj-del]').forEach(function (b) {
-    b.addEventListener('click', function () {
-      var a2 = getProjections();
-      delete a2[b.getAttribute('data-pj-del')];
-      setProjections(a2);
-      renderPjSaved();
-      runProjection();
-    });
   });
 }
 
@@ -5076,7 +5069,7 @@ function runProjection() {
   if (divY > 0) html += '<p class="fineprint">Return and CAGR include dividends at the current ' + fmtNum(divY, 2) + '% yield, reinvested.</p>';
   html += '<div class="pj-save-row"><button class="btn-gold" id="pj-save" type="button">' + (savedPj ? 'Update saved projection' : 'Save projection') + '</button>' +
     (savedPj
-      ? '<span class="factor-note">Saved for ' + esc(curT) + ' on ' + esc(String(savedPj.savedAt || '').slice(0, 10)) + '</span><button class="link-btn danger" id="pj-del" type="button">Delete saved</button>'
+      ? '<span class="factor-note">Saved for ' + esc(curT) + '</span><button class="link-btn danger" id="pj-del" type="button">Delete saved</button>'
       : '') + '</div>';
   out.innerHTML = html;
   var svB = $('pj-save'); if (svB) svB.addEventListener('click', pjSaveCurrent);
@@ -9147,41 +9140,34 @@ function runScreener() {
   });
 }
 function getSavedScreens() { return lsGet(SCR_SAVED_KEY, []); }
+/* Which saved screen is currently loaded in the form, if any.
+ * Its Delete button lives in the form's action row -- the chips
+ * themselves carry no exposed delete (Justin's declutter,
+ * 2026-11-19). */
+var scrLoadedSavedIdx = null;
+function scrSyncDelBtn() {
+  var b = $('scr-del');
+  if (b) b.hidden = !(isNum(scrLoadedSavedIdx) && getSavedScreens()[scrLoadedSavedIdx]);
+}
 function renderSavedScreens() {
   var box = $('scr-saved');
   if (!box) return;
   var list = getSavedScreens();
-  if (!list.length) { box.innerHTML = ''; return; }
+  if (!list.length) { box.innerHTML = ''; scrLoadedSavedIdx = null; scrSyncDelBtn(); return; }
+  if (isNum(scrLoadedSavedIdx) && !list[scrLoadedSavedIdx]) scrLoadedSavedIdx = null;
   var html = '';
   list.forEach(function (s, i) {
-    html += '<span class="scr-chip"><button type="button" class="scr-chip-load" data-scr-load="' + i + '">' + esc(s.name) + '</button>' +
-      '<button type="button" class="scr-chip-x" data-scr-del="' + i + '" aria-label="Delete saved screen">' + ico(ICO_X, 'ico-xxs') + '</button></span>';
+    html += '<span class="scr-chip"><button type="button" class="scr-chip-load" data-scr-load="' + i + '">' + esc(s.name) + '</button></span>';
   });
   box.innerHTML = html;
   box.querySelectorAll('[data-scr-load]').forEach(function (b) {
     b.addEventListener('click', function () {
-      var s = getSavedScreens()[parseInt(b.getAttribute('data-scr-load'), 10)];
-      if (s) { scrApplyControls(s.f); runScreener(); }
+      var idx = parseInt(b.getAttribute('data-scr-load'), 10);
+      var s = getSavedScreens()[idx];
+      if (s) { scrLoadedSavedIdx = idx; scrSyncDelBtn(); scrApplyControls(s.f); runScreener(); }
     });
   });
-  box.querySelectorAll('[data-scr-del]').forEach(function (b) {
-    b.addEventListener('click', function () {
-      var list2 = getSavedScreens();
-      var sIdx = parseInt(b.getAttribute('data-scr-del'), 10);
-      var s = list2[sIdx];
-      if (s) {
-        list2.splice(sIdx, 1);
-        lsSet(SCR_SAVED_KEY, list2);
-        renderSavedScreens();
-        showUndoToast('Screen "' + s.name + '" deleted.', function () {
-          var l3 = getSavedScreens();
-          l3.splice(Math.min(sIdx, l3.length), 0, s);
-          lsSet(SCR_SAVED_KEY, l3);
-          renderSavedScreens();
-        });
-      }
-    });
-  });
+  scrSyncDelBtn();
 }
 /* The screener is a Tools sub-page (moved out of its watchlist
  * slide-over, Justin's ask, 2026-10-30); setTool('scr') activates it. */
@@ -10506,6 +10492,7 @@ function startJournalEdit(T) {
   $('j-bear').value = e.bear || '';
   $('j-review').value = e.review || '';
   $('j-cancel').hidden = false;
+  $('j-del').hidden = false;
   $('journal-editor-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function resetJournalForm() {
@@ -10513,6 +10500,7 @@ function resetJournalForm() {
   $('journal-editor-title').textContent = 'New entry';
   $('j-ticker').readOnly = false;
   $('j-cancel').hidden = true;
+  $('j-del').hidden = true;
   $('journal-form').reset();
 }
 function renderJournal() {
@@ -10533,16 +10521,15 @@ function renderJournal() {
   var html = '';
   tickers.forEach(function (T) {
     var e = j[T];
-    html += '<div class="j-row"><h4>' + esc(T) + '</h4><div class="j-meta">' +
-      (e.review ? 'Review by ' + esc(e.review) + ' · ' : '') + 'Updated ' + new Date(e.updatedAt || Date.now()).toLocaleDateString() + '</div>';
+    html += '<div class="j-row"><h4>' + esc(T) + '</h4>' +
+      (e.review ? '<div class="j-meta">Review by ' + esc(e.review) + '</div>' : '');
     if (e.thesis) html += '<p><span class="j-lab">Thesis</span><br>' + esc(e.thesis) + '</p>';
     if (e.catalysts) html += '<p><span class="j-lab">Catalysts</span><br>' + esc(e.catalysts) + '</p>';
     if (e.bull) html += '<p><span class="j-lab">Bull</span><br>' + esc(e.bull) + '</p>';
     if (e.base) html += '<p><span class="j-lab">Base</span><br>' + esc(e.base) + '</p>';
     if (e.bear) html += '<p><span class="j-lab">Bear</span><br>' + esc(e.bear) + '</p>';
     html += '<div><button class="link-btn" data-research="' + esc(T) + '">Research</button>' +
-      '<button class="link-btn" data-j-edit="' + esc(T) + '">Edit</button>' +
-      '<button class="link-btn danger" data-j-del="' + esc(T) + '">Delete</button></div></div>';
+      '<button class="link-btn" data-j-edit="' + esc(T) + '">Edit</button></div></div>';
   });
   box.innerHTML = html;
   box.querySelectorAll('[data-research]').forEach(function (b) {
@@ -10550,14 +10537,6 @@ function renderJournal() {
   });
   box.querySelectorAll('[data-j-edit]').forEach(function (b) {
     b.addEventListener('click', function () { startJournalEdit(b.getAttribute('data-j-edit')); });
-  });
-  box.querySelectorAll('[data-j-del]').forEach(function (b) {
-    b.addEventListener('click', function () {
-      var j2 = getJournal();
-      delete j2[b.getAttribute('data-j-del')];
-      setJournal(j2);
-      renderJournal();
-    });
   });
 }
 
@@ -11585,17 +11564,19 @@ function placeTabPill() {
     requestAnimationFrame(function () { nav.classList.add('pill-on'); });
   }
 }
-/* Splash exit: fade once init has landed, but never before the
- * mark has had ~0.6s on screen (performance.now() already counts
- * the load time the splash was covering, so a slow load hides it
- * immediately). The inline failsafe in index.html is the backstop. */
+/* Splash exit: a quick, gradual dissolve into the app once init
+ * has landed (Justin's refinement, 2026-11-19 -- a .35s fade
+ * read as sudden). The mark blooms a touch as it fades. Never
+ * before ~0.45s on screen; performance.now() already counts the
+ * load time the splash was covering, so a slow load hides it
+ * immediately. The inline failsafe in index.html is the backstop. */
 function hideSplash() {
   var s = document.getElementById('splash');
   if (!s) return;
-  var wait = Math.max(0, 600 - performance.now());
+  var wait = Math.max(0, 450 - performance.now());
   setTimeout(function () {
     s.classList.add('splash-done');
-    setTimeout(function () { if (s.parentNode) s.parentNode.removeChild(s); }, 420);
+    setTimeout(function () { if (s.parentNode) s.parentNode.removeChild(s); }, 680);
   }, wait);
 }
 function switchTab(name) {
@@ -11932,7 +11913,24 @@ function initApp() {
   });
   $('ov-back').addEventListener('click', function () { closeOverview(); });
   $('scr-run').addEventListener('click', function () { runScreener(); });
-  $('scr-clear').addEventListener('click', function () { scrApplyControls({ ix: 'both', sort: 'combined' }); runScreener(); });
+  $('scr-clear').addEventListener('click', function () { scrLoadedSavedIdx = null; scrSyncDelBtn(); scrApplyControls({ ix: 'both', sort: 'combined' }); runScreener(); });
+  $('scr-del').addEventListener('click', function () {
+    if (!isNum(scrLoadedSavedIdx)) return;
+    var list2 = getSavedScreens();
+    var sIdx = scrLoadedSavedIdx;
+    var s = list2[sIdx];
+    if (!s) { scrLoadedSavedIdx = null; scrSyncDelBtn(); return; }
+    list2.splice(sIdx, 1);
+    lsSet(SCR_SAVED_KEY, list2);
+    scrLoadedSavedIdx = null;
+    renderSavedScreens();
+    showUndoToast('Screen "' + s.name + '" deleted.', function () {
+      var l3 = getSavedScreens();
+      l3.splice(Math.min(sIdx, l3.length), 0, s);
+      lsSet(SCR_SAVED_KEY, l3);
+      renderSavedScreens();
+    });
+  });
   $('scr-save').addEventListener('click', function () {
     var name = window.prompt('Name this screen:', '');
     if (name === null) return;
@@ -11941,6 +11939,7 @@ function initApp() {
     var list = getSavedScreens();
     list.push({ name: name, f: scrReadControls() });
     lsSet(SCR_SAVED_KEY, list);
+    scrLoadedSavedIdx = null;
     renderSavedScreens();
   });
   $('scr-ix').addEventListener('change', function () { runScreener(); });
@@ -12238,6 +12237,16 @@ function initApp() {
     renderJournal();
   });
   $('j-cancel').addEventListener('click', resetJournalForm);
+  /* Entry deletion lives in the editor now, not on the list
+   * (Justin's declutter, 2026-11-19). */
+  $('j-del').addEventListener('click', function () {
+    if (!editingTicker) return;
+    var j2 = getJournal();
+    delete j2[editingTicker];
+    setJournal(j2);
+    resetJournalForm();
+    renderJournal();
+  });
   $('gloss-search').addEventListener('input', function (e) { renderGlossary(e.target.value); });
   $('gloss-list').addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('[data-gterm]') : null;

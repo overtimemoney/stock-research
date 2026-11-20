@@ -112,9 +112,10 @@ h2, h3 { font-weight: 800; letter-spacing: -0.01em; }
 /* ---------- header ---------- */
 /* Splash (markup in index.html): covers the first paint with the
  * brand mark, fades when the app is ready. */
-#splash { position: fixed; inset: 0; z-index: 300; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; transition: opacity .35s ease; }
+#splash { position: fixed; inset: 0; z-index: 300; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; transition: opacity .6s var(--ease-out); }
 #splash.splash-done { opacity: 0; pointer-events: none; }
-.splash-mark { animation: splash-in .45s var(--ease-out); }
+#splash.splash-done .splash-mark { transform: scale(1.07); }
+.splash-mark { animation: splash-in .45s var(--ease-out); transition: transform .6s var(--ease-out); }
 .splash-name { color: var(--gold); font-size: 13px; font-weight: 700; letter-spacing: .38em; margin-right: -.38em; }
 @keyframes splash-in { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: scale(1); } }
 .topbar {
@@ -370,7 +371,6 @@ table.factors td:first-child:has(.info-dot) { padding-right: 28px; }
 .scr-saved { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .scr-chip { display: inline-flex; align-items: center; border: 1px solid var(--line); background: var(--chip-bg); border-radius: 999px; overflow: hidden; }
 .scr-chip-load { background: none; border: 0; color: inherit; font: inherit; font-size: 12.5px; font-weight: 700; padding: 5px 3px 5px 11px; cursor: pointer; }
-.scr-chip-x { background: none; border: 0; color: var(--muted); font: inherit; font-size: 11px; padding: 5px 9px 5px 4px; cursor: pointer; }
 .scr-controls { padding: 12px 14px 6px; margin-bottom: 6px; }
 .scr-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; padding: 3px 0; font-size: 13.5px; }
 .scr-row > span { flex: 1; }
