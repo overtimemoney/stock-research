@@ -453,6 +453,18 @@ table.factors.scen.micro td, table.factors.scen.micro th { padding: 7px 3px; }
 .tabbar button .tab-ico { line-height: 1; display: flex; }
 .tabbar button .tab-ico .ico { width: 24px; height: 24px; transition: width .28s var(--ease-out), height .28s var(--ease-out); }
 .tabbar button.active { background: var(--nav-active); color: var(--gold); }
+/* Sliding selection pill (Justin's ask, 2026-11-19, modelled on
+ * the iOS App Store's Liquid Glass bar): one raised lens that
+ * physically slides to the active tab instead of the highlight
+ * fading in place. Positioned by placeTabPill() in app.js. The
+ * transition only exists once .pill-on lands (first placement
+ * snaps), and while the pill is live the buttons' own active
+ * background steps aside so the lens is the highlight. */
+.tab-pill { position: absolute; left: 0; top: 7px; height: 46px; border-radius: 999px; background: var(--nav-active); box-shadow: 0 2px 10px var(--nav-shadow), inset 0 0 0 1px var(--line); pointer-events: none; opacity: 0; }
+.tabbar.mini .tab-pill { top: 5px; height: 36px; }
+.tabbar.pill-on .tab-pill { opacity: 1; transition: transform .34s cubic-bezier(.30, 1.15, .36, 1), width .34s cubic-bezier(.30, 1.15, .36, 1), height .28s var(--ease-out), top .28s var(--ease-out), opacity .2s ease; }
+.tabbar.pill-on button { position: relative; z-index: 1; }
+.tabbar.pill-on button.active { background: transparent; }
 .spinner {
   display: inline-block; width: 14px; height: 14px; border-radius: 50%;
   border: 2.5px solid var(--gold-pale); border-top-color: var(--gold-deep);
@@ -962,7 +974,7 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
  * (the glossary gold flash, the spinner) are intentionally untouched. */
 @media (prefers-reduced-motion: reduce) {
   .ov-panel { transition: none; }
-  .toolseg-pill, .tabbar, .tabbar button, .tabbar button .tab-ico .ico,
+  .toolseg-pill, .tab-pill, .tabbar, .tabbar button, .tabbar button .tab-ico .ico,
   .info-text, .tool-intro.locked, .intro-tri, .pf-chev, .scan-bar i { transition-duration: .01s; }
   .toast-bubble { transition: opacity .2s ease; }
   .tool-page.active { animation: none; }

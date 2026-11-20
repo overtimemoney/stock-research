@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261120023054';
+var APP_BUILD = 'stock-research-20261120023424';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -11565,6 +11565,26 @@ function navBack() {
     setTimeout(applyY, 420);
   }
 }
+/* Sliding selection pill: park the .tab-pill lens exactly over
+ * the active tab button. Measured in px so it follows the bar
+ * through the mini shrink and resizes. First placement snaps --
+ * .pill-on (which carries the transition) lands a frame later. */
+var tabPillPlaced = false;
+function placeTabPill() {
+  var nav = document.querySelector('.tabbar');
+  var pill = document.getElementById('tab-pill');
+  var btn = nav ? nav.querySelector('button.active') : null;
+  if (!nav || !pill || !btn) return;
+  /* X and width are measured; the vertical fit (top/height) is
+   * CSS-owned via .tabbar.mini variants so it rides the bar's own
+   * transitions exactly, with no mid-animation measurement. */
+  pill.style.width = btn.offsetWidth + 'px';
+  pill.style.transform = 'translateX(' + btn.offsetLeft + 'px)';
+  if (!tabPillPlaced) {
+    tabPillPlaced = true;
+    requestAnimationFrame(function () { nav.classList.add('pill-on'); });
+  }
+}
 function switchTab(name) {
   if (!navInternal && !navArmed) navStack = [];
   navArmed = false;
@@ -11572,6 +11592,7 @@ function switchTab(name) {
   document.querySelectorAll('.tab').forEach(function (s) { s.classList.toggle('active', s.id === 'tab-' + name); });
   document.querySelectorAll('.tabbar button').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-tab') === name); });
   document.querySelectorAll('.tabbar').forEach(function (n) { n.classList.remove('mini'); });
+  placeTabPill();
   var mn = document.querySelector('main');
   if (mn) mn.scrollTop = 0;
   var ti = document.querySelector('.tool-intro');
@@ -11944,12 +11965,20 @@ function initApp() {
   });
   if (navEl && mainEl) {
     var lastSt = 0;
+    window.addEventListener('resize', function () { placeTabPill(); });
     mainEl.addEventListener('scroll', function () {
       var st = mainEl.scrollTop;
+      var wasMini = navEl.classList.contains('mini');
       if (st < 24) navEl.classList.remove('mini');
       else if (st > lastSt + 2 && st > 48) navEl.classList.add('mini');
       else if (st < lastSt - 2) navEl.classList.remove('mini');
       lastSt = st;
+      if (navEl.classList.contains('mini') !== wasMini) {
+        placeTabPill();
+        /* The bar's padding is mid-transition at the flip, which
+         * shifts the buttons slightly; re-measure once it settles. */
+        setTimeout(placeTabPill, 320);
+      }
       /* The tab's intro text folds into itself over the first ~150px
        * of scrolling and unfolds again back at the top (Justin's ask,
        * 2026-10-29). Height is re-measured at the top, where the
@@ -12218,6 +12247,7 @@ function initApp() {
   var onboarded = false;
   try { onboarded = !!localStorage.getItem('sr_onboard_v1'); } catch (e) {}
   if (onboarded) switchTab('watchlist');
+  placeTabPill();
 }
 if (typeof document !== 'undefined' && document.getElementById) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initApp);
