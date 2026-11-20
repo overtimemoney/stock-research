@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261120031920';
+var APP_BUILD = 'stock-research-20261120032252';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -1719,6 +1719,13 @@ function moreBlockHtml(d) {
   if (bi) secs += '<div class="more-sec"><p class="earn-line ceo-line">How it makes money</p>' + bi + '</div>';
   var el = earnLineHtml(d);
   if (el) secs += '<div class="more-sec">' + el + '</div>';
+  /* Moat / Competitors / Market size live UNDER More now
+   * (Justin's call, 2026-11-19): the scorecard had two "More"
+   * labels and a stack of sibling dropdowns. Their own toggles
+   * keep working inside the More body (delegated handlers). */
+  secs += moatBlockHtml(d);
+  secs += compBlockHtml(d);
+  secs += tamBlockHtml(d);
   if (!secs) return '';
   return '<button type="button" class="ceo-toggle" data-moretoggle aria-expanded="false"><span class="earn-line ceo-line">More</span><span class="ceo-chev">\u25be</span></button>' +
     '<div class="ceo-body more-body" hidden>' + secs + '</div>';
@@ -4084,12 +4091,9 @@ function renderScorecard(d) {
   if (d.about) {
     var abLong = d.about.length > 240;
     html += '<div class="sc-about' + (abLong ? ' clamp' : '') + '" id="sc-about">' + esc(d.about) + '</div>';
-    if (abLong) html += '<button type="button" class="sc-about-btn" data-about-toggle aria-expanded="false">More</button>';
+    if (abLong) html += '<button type="button" class="sc-about-btn" data-about-toggle aria-expanded="false">Read more</button>';
   }
   html += moreBlockHtml(d);
-  html += moatBlockHtml(d);
-  html += compBlockHtml(d);
-  html += tamBlockHtml(d);
   if (!d.earnEst) html += earnLineHtml(d);
 
   if (d.history && d.history.length >= 2) {
@@ -8786,7 +8790,7 @@ document.addEventListener('click', function (e) {
   var ab = document.getElementById('sc-about');
   if (!ab) return;
   var open = ab.classList.toggle('clamp') === false;
-  b.textContent = open ? 'Less' : 'More';
+  b.textContent = open ? 'Show less' : 'Read more';
   b.setAttribute('aria-expanded', open ? 'true' : 'false');
 });
 document.addEventListener('click', function (e) {
