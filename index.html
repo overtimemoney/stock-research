@@ -7,6 +7,8 @@
 <meta name="description" content="Personal stock research: scorecards, value screen, EPS cliff check, comparisons and projections — live data, math shown.">
 <meta name="theme-color" content="#0d0d0f">
 <link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://stock-research-relay.supplessayings-6e6.workers.dev">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -656,7 +658,9 @@ setTimeout(function () { var s = document.getElementById('splash'); if (s) { s.c
 </div>
 
 <script src="supabase-config.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<!-- The Supabase library is NOT loaded here anymore: app.js pulls
+     it in on demand (loadSupabaseLib) so a ~110KB CDN download no
+     longer blocks the app's first paint. -->
 <script src="app.js"></script>
 <script>
 if ('serviceWorker' in navigator) {

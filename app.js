@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261120032844';
+var APP_BUILD = 'stock-research-20261120033950';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -9751,7 +9751,7 @@ function logoTile(ticker, cls) {
   return '<span class="logo-tile ' + (cls || '') + '" aria-hidden="true"><span class="logo-txt" style="font-size:' + Math.round(base * f) + 'px">' + esc(t) + '</span>' + pfLogoImg(ticker) + '</span>';
 }
 function pfLogoImg(ticker) {
-  return '<img class="pf-logo" src="https://financialmodelingprep.com/image-stock/' + encodeURIComponent(ticker) + '.png" data-fb="https://assets.parqet.com/logos/symbol/' + encodeURIComponent(ticker) + '?format=png" crossorigin="anonymous" onload="pfLogoOk(this)" onerror="pfLogoErr(this)" alt="">';
+  return '<img class="pf-logo" loading="lazy" decoding="async" src="https://financialmodelingprep.com/image-stock/' + encodeURIComponent(ticker) + '.png" data-fb="https://assets.parqet.com/logos/symbol/' + encodeURIComponent(ticker) + '?format=png" crossorigin="anonymous" onload="pfLogoOk(this)" onerror="pfLogoErr(this)" alt="">';
 }
 function pfKv(k, v) { return '<div class="pf-kv"><span>' + k + '</span><b>' + v + '</b></div>'; }
 
@@ -12357,13 +12357,33 @@ if (typeof document !== 'undefined' && document.getElementById) {
   if (!url || !anonKey) return; // not configured: behave exactly as today
 
   var client = null;
-  try {
-    if (!window.supabase || typeof window.supabase.createClient !== 'function') {
-      throw new Error('Supabase library did not load');
-    }
-    client = window.supabase.createClient(url, anonKey);
-  } catch (e) {
-    client = null;
+  /* The Supabase library used to sit in index.html as a blocking
+   * script ahead of app.js: every cold start waited on a ~110KB
+   * CDN download before the app could run, though sync is only
+   * needed after the first paint. It now loads in parallel, on
+   * demand (2026-11-19 perf pass), and sync boots when it lands.
+   * Every use site already tolerates client === null, so the app
+   * itself never waits on it. */
+  var sbLibPromise = null;
+  function loadSupabaseLib() {
+    if (window.supabase && typeof window.supabase.createClient === 'function') return Promise.resolve(true);
+    if (sbLibPromise) return sbLibPromise;
+    sbLibPromise = new Promise(function (res) {
+      var sc = document.createElement('script');
+      sc.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+      sc.onload = function () { res(!!(window.supabase && window.supabase.createClient)); };
+      sc.onerror = function () { sbLibPromise = null; res(false); };
+      document.head.appendChild(sc);
+    });
+    return sbLibPromise;
+  }
+  function ensureClient() {
+    if (client) return Promise.resolve(client);
+    return loadSupabaseLib().then(function (ok) {
+      if (!ok) return null;
+      try { client = window.supabase.createClient(url, anonKey); } catch (e) { client = null; }
+      return client;
+    });
   }
 
   var section = document.getElementById('sync-section');
@@ -12715,6 +12735,7 @@ if (typeof document !== 'undefined' && document.getElementById) {
       };
     }
     if (signInBtn) signInBtn.addEventListener('click', async function () {
+      if (!client) await ensureClient();
       if (!client) { setSyncStatus('Sync is unavailable right now — the app still works offline.', true); return; }
       var c = creds();
       if (!c.email || !c.password) { setSyncStatus('Enter your email and password first.', true); return; }
@@ -12729,6 +12750,7 @@ if (typeof document !== 'undefined' && document.getElementById) {
       }
     });
     if (signUpBtn) signUpBtn.addEventListener('click', async function () {
+      if (!client) await ensureClient();
       if (!client) { setSyncStatus('Sync is unavailable right now — the app still works offline.', true); return; }
       var c = creds();
       if (!c.email || !c.password) { setSyncStatus('Enter an email and a password first.', true); return; }
@@ -12772,27 +12794,29 @@ if (typeof document !== 'undefined' && document.getElementById) {
     wireSyncUi();
     wireBetaWaitlist();
     betaFetchStatus();
-    if (!client) {
-      setSyncStatus('Sync is unavailable (library or connection problem) — the app still works from this device.', true);
-      return;
-    }
-    showAuthState();
-    setSyncStatus('Not signed in.');
-    client.auth.getSession().then(function (r) {
-      var session = r && r.data && r.data.session;
-      if (session && session.user) return afterSignIn(session.user);
-      return null;
-    }).catch(function () {
-      setSyncStatus('Could not reach Supabase — the app keeps working from this device.', true);
-    });
-    try {
-      client.auth.onAuthStateChange(function (event) {
-        if (event === 'SIGNED_OUT') {
-          currentUser = null;
-          showAuthState();
-        }
+    ensureClient().then(function (ready) {
+      if (!ready) {
+        setSyncStatus('Sync is unavailable (library or connection problem) — the app still works from this device.', true);
+        return;
+      }
+      showAuthState();
+      setSyncStatus('Not signed in.');
+      client.auth.getSession().then(function (r) {
+        var session = r && r.data && r.data.session;
+        if (session && session.user) return afterSignIn(session.user);
+        return null;
+      }).catch(function () {
+        setSyncStatus('Could not reach Supabase — the app keeps working from this device.', true);
       });
-    } catch (e) {}
+      try {
+        client.auth.onAuthStateChange(function (event) {
+          if (event === 'SIGNED_OUT') {
+            currentUser = null;
+            showAuthState();
+          }
+        });
+      } catch (e) {}
+    });
   } catch (e) {
     try { setSyncStatus('Sync failed to start — the app still works from this device.', true); } catch (e2) {}
   }
