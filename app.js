@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261120022700';
+var APP_BUILD = 'stock-research-20261120023054';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -892,7 +892,7 @@ var VAL_FACTOR_DEFS = [
   { name: 'Forward P/E', def: 25 },
   { name: 'PEG ratio', def: 20 },
   { name: 'Below 52-wk high', def: 15 },
-  { name: 'EPS growth, next yr', def: 15 },
+  { name: 'Future EPS growth', def: 15 },
   { name: 'Profit margin', def: 10 },
   { name: 'Gross margin', def: 5 },
   { name: 'Debt / Equity', def: 10 }
@@ -915,22 +915,22 @@ var STD_W = stdWeights();
 var SCORE_PRESETS = {
   balanced: stdWeights(),
   deepvalue: {
-    val: { 'Forward P/E': 35, 'PEG ratio': 25, 'Below 52-wk high': 20, 'EPS growth, next yr': 5, 'Profit margin': 5, 'Gross margin': 5, 'Debt / Equity': 5 },
+    val: { 'Forward P/E': 35, 'PEG ratio': 25, 'Below 52-wk high': 20, 'Future EPS growth': 5, 'Profit margin': 5, 'Gross margin': 5, 'Debt / Equity': 5 },
     risk: { 'Beta (volatility)': 5, 'Debt / Equity': 30, 'Profit margin': 20, 'Company size': 10, 'EPS trend, next yr': 20, 'Current ratio': 15 }
   },
   safety: {
-    val: { 'Forward P/E': 15, 'PEG ratio': 10, 'Below 52-wk high': 10, 'EPS growth, next yr': 10, 'Profit margin': 20, 'Gross margin': 10, 'Debt / Equity': 25 },
+    val: { 'Forward P/E': 15, 'PEG ratio': 10, 'Below 52-wk high': 10, 'Future EPS growth': 10, 'Profit margin': 20, 'Gross margin': 10, 'Debt / Equity': 25 },
     risk: { 'Beta (volatility)': 15, 'Debt / Equity': 35, 'Profit margin': 20, 'Company size': 10, 'EPS trend, next yr': 5, 'Current ratio': 15 }
   },
   growth: {
-    val: { 'Forward P/E': 10, 'PEG ratio': 20, 'Below 52-wk high': 10, 'EPS growth, next yr': 35, 'Profit margin': 10, 'Gross margin': 10, 'Debt / Equity': 5 },
+    val: { 'Forward P/E': 10, 'PEG ratio': 20, 'Below 52-wk high': 10, 'Future EPS growth': 35, 'Profit margin': 10, 'Gross margin': 10, 'Debt / Equity': 5 },
     risk: { 'Beta (volatility)': 15, 'Debt / Equity': 10, 'Profit margin': 15, 'Company size': 5, 'EPS trend, next yr': 40, 'Current ratio': 15 }
   },
   /* Beta and company size switched off entirely: risk is judged
    * only on the balance sheet, profitability, earnings trend and
    * bill-paying ability (Justin's requirement, 2026-11-08). */
   fundamentals: {
-    val: { 'Forward P/E': 20, 'PEG ratio': 15, 'Below 52-wk high': 10, 'EPS growth, next yr': 15, 'Profit margin': 20, 'Gross margin': 10, 'Debt / Equity': 10 },
+    val: { 'Forward P/E': 20, 'PEG ratio': 15, 'Below 52-wk high': 10, 'Future EPS growth': 15, 'Profit margin': 20, 'Gross margin': 10, 'Debt / Equity': 10 },
     risk: { 'Beta (volatility)': 0, 'Debt / Equity': 40, 'Profit margin': 25, 'Company size': 0, 'EPS trend, next yr': 20, 'Current ratio': 15 }
   }
 };
@@ -943,6 +943,10 @@ function getScoreWeights() {
       var defs = side === 'val' ? VAL_FACTOR_DEFS : RISK_FACTOR_DEFS;
       defs.forEach(function (f) {
         var v = stored[side] && stored[side][f.name];
+        /* The growth factor was renamed ('EPS growth, next yr' ->
+         * 'Future EPS growth', 2026-11-19): a weight saved under
+         * the old name still applies. */
+        if (!isNum(v) && side === 'val' && f.name === 'Future EPS growth') v = stored.val && stored.val['EPS growth, next yr'];
         if (isNum(v)) out[side][f.name] = Math.max(0, Math.min(60, v));
       });
     });
@@ -970,6 +974,23 @@ function applyWeights(factors, map) {
       : ' \u2192 your weights count this factor as ' + f.pts + ' of ' + w + ' pts';
     f.max = w;
   });
+}
+
+/* Future EPS growth: the annualized EPS growth from today's
+ * trailing EPS to the LAST analyst forecast year (Justin's call,
+ * 2026-11-19). The old factor graded one step -- next fiscal year
+ * vs this one -- which let a collapsed base year fake growth
+ * (HNST: FY27 +100% off FY26's $0.06, while the path ran $0.70 ->
+ * $0.20). Guards: needs trailing EPS > 0 and at least 2 forecast
+ * years; a path ending in losses returns -100. Null when it can't
+ * be computed -- the factor then falls back to next-year growth. */
+function epsPathGrowth(d) {
+  if (!d || !isNum(d.epsTTM) || d.epsTTM <= 0) return null;
+  var fc = (d.epsForecasts || []).filter(function (f) { return f && isNum(f.eps); }).slice(0, 4);
+  if (fc.length < 2) return null;
+  var last = fc[fc.length - 1].eps;
+  if (!(last > 0)) return -100;
+  return (Math.pow(last / d.epsTTM, 1 / fc.length) - 1) * 100;
 }
 
 function scoreStock(d, w) {
@@ -1024,10 +1045,14 @@ function scoreStock(d, w) {
     add('Below 52-wk high', d.pctBelowHigh, fmtNum(d.pctBelowHigh, 1) + '%', 15,
       pick(d.pctBelowHigh, bBh, true), 'Bigger discount to the high = more points', bBh, true, pctL);
   }
-  if (isNum(d.epsGrowthNextY)) {
+  var pathG = epsPathGrowth(d);
+  var grVal = isNum(pathG) ? pathG : d.epsGrowthNextY;
+  if (isNum(grVal)) {
     var bGr = [[50, 15], [25, 13], [15, 10], [8, 7], [0, 3], [-Infinity, 0]];
-    add('EPS growth, next yr', d.epsGrowthNextY, fmtPct(d.epsGrowthNextY), 15,
-      pick(d.epsGrowthNextY, bGr, true), 'Consensus EPS, next fiscal year vs this fiscal year', bGr, true, pctL);
+    add('Future EPS growth', grVal, fmtPct(grVal), 15,
+      pick(grVal, bGr, true), isNum(pathG)
+        ? 'EPS growth per year, trailing EPS to the last forecast year'
+        : 'Consensus EPS, next fiscal year vs this fiscal year', bGr, true, pctL);
   }
   if (isNum(d.profitMargin)) {
     var bPm = [[25, 10], [15, 8], [10, 6], [5, 4], [0, 2, 'gt'], [-Infinity, 0]];
@@ -3317,6 +3342,7 @@ var INFO_TEXT = {
   peg: 'PEG = the forward P/E divided by the expected earnings growth rate. It checks whether the price is fair for the growth you are getting. Under 1 is the classic \u201cgrowth at a reasonable price\u201d zone; under 0.75 is rare.',
   epsttm: 'Earnings per share over the last twelve months (TTM = trailing twelve months) \u2014 the profit already reported, per share.',
   epsgrowth: 'How much analysts expect earnings per share to grow next fiscal year versus this one. Growing earnings are what ultimately pull a stock\'s price upward.',
+  futuregrowth: 'How fast analysts expect earnings per share to grow each year across the whole forecast, from trailing EPS today to the last forecast year. Grading the full path keeps one rebound year from faking growth.',
   epstrend: 'Whether analysts expect earnings per share to grow or shrink next year. Shrinking earnings are a risk because prices tend to follow earnings down.',
   epsmiss: 'In how many of the last few quarters the company reported EPS below what analysts expected. Frequent misses can mean a business that is hard to predict.',
   epsbeat: 'In how many of the last few quarters reported EPS beat what analysts expected. Companies that regularly beat tend to be conservatively forecast \u2014 or genuinely executing well.',
@@ -3346,7 +3372,7 @@ var INFO_TEXT = {
 };
 var FACTOR_INFO = {
   'Forward P/E': 'fwpe', 'PEG ratio': 'peg', 'Below 52-wk high': 'belowhigh',
-  'EPS growth, next yr': 'epsgrowth', 'Profit margin': 'pmargin', 'Gross margin': 'gmargin',
+  'Future EPS growth': 'futuregrowth', 'Profit margin': 'pmargin', 'Gross margin': 'gmargin',
   'Debt / Equity': 'debteq', 'Beta (volatility)': 'beta', 'Company size': 'size',
   'EPS trend, next yr': 'epstrend', 'Current ratio': 'currentratio', 'Boom-bust pattern': 'boombust'
 };
@@ -7387,7 +7413,7 @@ var SCAN_KEY = 'sr_scan_v4';
  * rules is recomputed from the stored dataset on the next open
  * instead of being re-shown all day. States saved before the stamp
  * existed read as undefined and mismatch once, by design. */
-var SCAN_RULES_V = 6;
+var SCAN_RULES_V = 7;
 var scanRunning = false, scanActive = 0, scanCoolUntil = 0, scanTimer = null;
 
 function scanTodayKey() { return pfKeyToISO(pfDkey(new Date())); }
