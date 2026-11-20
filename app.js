@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261120030913';
+var APP_BUILD = 'stock-research-20261120031920';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -5331,7 +5331,7 @@ async function fetchQMetrics(T, freq) {
  * the same arithmetic every data vendor uses (validated against SA's
  * published quarters). Only the small extracted series are cached,
  * never the multi-MB raw facts file. */
-var EDGAR_KEY = 'sr_edgar_v2';
+var EDGAR_KEY = 'sr_edgar_v3';
 var edgarCikMap = null;
 
 var CIK_KEY = 'sr_cik_v1';
@@ -5551,6 +5551,15 @@ function edgarQuarterMap(facts, concepts, unitPref, perShare) {
                     : edgarMap(facts, concepts, unitPref, mode);
   }
   var out = pick('qDur');
+  /* Share counts are weighted averages, not flows: a fiscal Q4
+   * derived as FY minus 9M leaves a small NEGATIVE residue, not a
+   * share count (proved on AAPL's real facts, 2026-11-19: every
+   * derived Q4 2016-2022 came out -69M to -163M against real
+   * quarters of 16-22B -- the broken bars in Justin's screenshot).
+   * Shares keep only real reported quarters. Flows (revenue,
+   * income, cash flow) still derive: for them the subtraction is
+   * the filer's own arithmetic. */
+  if (perShare && perShare.isShares) return out;
   var fy = pick('aDur');
   var ytd = pick('ytd9');
   Object.keys(fy).forEach(function (fEnd) {
@@ -5957,6 +5966,31 @@ var QM_METRICS = {
   flow: { name: 'Income flow', special: true, fmt: fmtMoneyShort, get: function () { return null; } }
 };
 
+/* What each metric means, in one plain line. This is the ONLY
+ * text under a chart now (Justin's call, 2026-11-19): the old
+ * footers mixed source credits, paywall notes and "the outlined
+ * bar is..." hints, which he called random text. Empty-state
+ * notes (why a chart has no data) still say their piece. */
+var QM_MEANS = {
+  revenue: 'All the money the company took in from selling what it sells.',
+  netIncome: 'The profit left after every cost, interest, and tax is paid.',
+  eps: 'Profit for each share of stock \u2014 total earnings split across all the shares.',
+  fcf: 'Cash left after running the business and buying equipment \u2014 money the company can actually spend, save, or pay out.',
+  shares: 'How many shares of stock exist. Shrinking usually means the company is buying its own stock back; growing means it is issuing new shares.',
+  grossMargin: 'Of each dollar of sales, what is left after the direct cost of making what was sold.',
+  operMargin: 'Of each dollar of sales, what is left as profit from the core business, before interest and taxes.',
+  netMargin: 'Of each dollar of sales, what ends up as final profit.',
+  bsCash: 'Cash and short-term investments the company has on hand.',
+  bsDebt: 'The money the company owes lenders.',
+  bsNet: 'Cash minus debt. Above zero means it holds more cash than it owes; below zero means it owes more than it holds.',
+  peHist: 'How many dollars investors pay for $1 of yearly earnings.',
+  psHist: 'How many dollars investors pay for $1 of yearly sales.',
+  segRev: 'How the company\u2019s sales split across its lines of business.',
+  segOp: 'How much operating profit each line of business makes.',
+  avEps: 'What analysts expected the company to earn per share, against what it actually earned.',
+  flow: 'How each dollar of revenue flows through costs, interest, and taxes down to profit.'
+};
+
 /* ============ Charts pack (2026-11-03, from the Fiscal.ai list) ====
  * Segments (SEC 10-K segment note via the relay's /segments),
  * trailing P/E + P/S by year (StockAnalysis ratios), reported-vs-
@@ -6261,7 +6295,7 @@ function renderQmSegments(key) {
   }
   var wd = qmSegWindow(data);
   box.innerHTML = '<div class="chart-wrap">' + qmStackedSVG(wd, key) + '</div>' + qmSegLegend(wd, key);
-  note.textContent = 'Annual, as reported in the 10-K segment note (filed ' + data.filed + ') \u00b7 SEC EDGAR. Stacks sum to the reported total. The outlined column is the latest reported year.';
+  note.textContent = QM_MEANS[key === 'op' ? 'segOp' : 'segRev'];
 }
 
 function qmPairsSVG(pairs, mini) {
@@ -6316,7 +6350,7 @@ function renderQmAv() {
     '<div class="qm-leg-row"><span class="qm-dot" style="background:#5a5546"></span><span class="qm-leg-name">Consensus estimate</span></div>' +
     '<div class="qm-leg-row"><span class="qm-dot" style="background:var(--neon-up)"></span><span class="qm-leg-name">Reported EPS</span></div>' +
     '</div>';
-  note.textContent = 'Reported EPS vs the consensus estimate for each quarter (MarketBeat) \u00b7 beat the estimate in ' + beats + ' of the last ' + shown.length + ' quarters. The outlined bar is the most recent quarter.';
+  note.textContent = QM_MEANS.avEps;
 }
 
 function renderQmRatios(key) {
@@ -6335,7 +6369,7 @@ function renderQmRatios(key) {
   }
   var pts = qmTail(series.map(function (p) { return { label: 'FY ' + p.fy, value: p.v, kind: 'actual', axis: String(p.fy) }; }), qmWin);
   box.innerHTML = '<div class="chart-wrap">' + qmBarsSVG(pts, QM_METRICS[key === 'pe' ? 'peHist' : 'psHist'].fmt, true) + '</div>';
-  note.textContent = (key === 'pe' ? 'Price / earnings' : 'Price / sales') + ' at each fiscal year end (StockAnalysis ratios; older years from SEC filings) \u00b7 the current multiple is on the scorecard. The outlined bar is the latest fiscal year.';
+  note.textContent = QM_MEANS[key === 'pe' ? 'peHist' : 'psHist'];
 }
 
 /* ============ Income flow (Sankey) ============
@@ -6548,7 +6582,7 @@ function renderQmFlow() {
   }
   box.innerHTML = '<div class="chart-wrap">' + qmFlowSVG(model, false) + '</div>' +
     (model.takeaway ? '<div class="qm-flow-take">' + esc(model.takeaway) + '</div>' : '');
-  note.textContent = 'Annual \u00b7 ' + model.period + ' as reported \u00b7 SEC filings via StockAnalysis. Each split adds up to the line it flows from; anything the statement doesn\u2019t itemize sits in \u201cOther.\u201d R&D = research & development; SG&A = selling, general & administrative.';
+  note.textContent = QM_MEANS.flow;
 }
 
 /* Mini bar chart for grid cards: shape only (the card header
@@ -6931,18 +6965,7 @@ function renderQmDetail() {
   }
   var per = qmFreq === 'y' ? 'years' : 'quarters';
   var note = $('qm-note');
-  if (view === 'growth') {
-    note.textContent = 'Year-over-year change for each reported ' + (qmFreq === 'y' ? 'year' : 'quarter') + (M.kind === 'pct' ? ', in percentage points for margins' : '') + ' \u00b7 SEC filings via StockAnalysis. Estimates are shown in the Values view. The outlined bar is the latest reported ' + (qmFreq === 'y' ? 'year' : 'quarter') + '.';
-  } else if (view === 'csize') {
-    note.textContent = 'Each bar is the period\u2019s value as a % of that same period\u2019s revenue \u00b7 SEC filings via StockAnalysis. Estimates are shown in the Values view. The outlined bar is the latest reported ' + (qmFreq === 'y' ? 'year' : 'quarter') + '.';
-  } else {
-    var hasEst = pts.some(function (p) { return p.kind === 'est'; });
-    note.textContent = !hasEst
-      ? 'Reported ' + per + ' only \u2014 SEC filings via StockAnalysis. No free consensus is published for this metric in this view. The outlined bar is the latest reported ' + (qmFreq === 'y' ? 'year' : 'quarter') + '.'
-      : qmMetric === 'eps'
-        ? 'Solid bars: reported ' + per + ' (SEC filings via StockAnalysis). Faded bars: analyst consensus for the next few ' + per + ' (Nasdaq). The outlined bar is the current ' + (qmFreq === 'y' ? 'fiscal year' : 'quarter') + ', still in progress.'
-        : 'Solid bars: reported years (SEC filings via StockAnalysis). Faded bars: analyst consensus for the current fiscal year (StockAnalysis) \u2014 deeper years are paywalled there, so only EPS runs further out (via Nasdaq). Quarterly consensus is published only for EPS. The outlined bar is the current fiscal year, still in progress.';
-  }
+  note.textContent = QM_MEANS[qmMetric] || '';
 }
 
 /* Yearly estimate labels continue the reported fiscal years:
