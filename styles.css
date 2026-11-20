@@ -292,6 +292,18 @@ table.factors td:first-child:has(.info-dot) { padding-right: 28px; }
 .ceo-toggle .ceo-line { margin: 0; }
 .ceo-chev { color: var(--gold); font-size: 12px; flex: none; margin-left: 10px; transition: transform 160ms ease-out; }
 .ceo-toggle[aria-expanded="true"] .ceo-chev { transform: rotate(180deg); }
+/* Main-vs-sub dropdown hierarchy (2026-11-19): the scorecard's
+ * "More" toggle PARENTS the Moat / Competitors / Market size
+ * toggles nested in its body, so it alone gets the strong
+ * treatment — bigger, heavier, gold, a full-size tap target and
+ * a separator above it — while the subs keep the small muted
+ * treatment and sit slightly indented, so the nesting reads at
+ * a glance. One highlighted level only. */
+.ceo-toggle.more-toggle { min-height: 48px; padding: 12px 2px; margin: 12px 0 2px; border-top: 1px solid var(--line); }
+.ceo-toggle.more-toggle .ceo-line { font-size: 17px; font-weight: 800; color: var(--gold); letter-spacing: .01em; }
+.ceo-toggle.more-toggle .ceo-chev { font-size: 17px; }
+.more-body .ceo-toggle { padding-left: 10px; }
+.more-body .ceo-body { margin-left: 10px; }
 .ceo-meta { font-size: 13px; font-weight: 700; color: var(--ink2); margin: 0 0 8px; }
 .ceo-body { margin-bottom: 2px; }
 .more-sec + .more-sec { border-top: 1px solid var(--row-line); margin-top: 8px; padding-top: 8px; }
