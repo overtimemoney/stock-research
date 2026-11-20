@@ -1136,6 +1136,11 @@ table.factors .info-row .info-text.open { max-height: 900px; }
 .toast-bubble.has-action { pointer-events: auto; display: flex; align-items: center; gap: 14px; text-align: left; }
 .toast-undo { background: none; border: none; color: var(--gold); font: inherit; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; cursor: pointer; padding: 4px 2px; flex: none; }
 .sc-price .p { font-variant-numeric: tabular-nums; }
-h2, .ob-q { text-wrap: balance; }
+/* Balanced titles: multi-line headings wrap evenly instead of
+ * stranding an orphan word on the last line. Was h2-only from
+ * the polish pass; extended app-wide at Justin's word
+ * (2026-11-19) to every heading level plus the scorecard's
+ * company name and the quiz question. */
+h1, h2, h3, h4, .ob-q, .sc-name { text-wrap: balance; }
 .info-dot { position: relative; }
 .info-dot::after { content: ''; position: absolute; inset: -10px; border-radius: 50%; }
