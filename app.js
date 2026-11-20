@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261119234748';
+var APP_BUILD = 'stock-research-20261120014109';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -4331,6 +4331,7 @@ async function runSearch(ticker, fresh) {
   var T = await resolveTickerInput(rawQ);
   if (T === null) {
     if (stEl) { stEl.className = 'status err'; stEl.textContent = noMatchMsg(rawQ); }
+    shakeEl($('search-input'));
     return;
   }
   if (!T) return;
@@ -4903,7 +4904,7 @@ async function loadProjectionTicker() {
   var T = await resolveTickerInput(rawQ);
   if (T && T !== rawQ.toUpperCase()) $('pj-ticker').value = T;
   var status = $('pj-status');
-  if (T === null) { status.className = 'status err'; status.textContent = noMatchMsg(rawQ); return; }
+  if (T === null) { status.className = 'status err'; status.textContent = noMatchMsg(rawQ); shakeEl($('pj-ticker')); return; }
   if (!T) { status.className = 'status err'; status.textContent = 'Type a ticker first.'; return; }
   status.className = 'status';
   status.innerHTML = '<span class="spinner"></span>Loading live data for ' + esc(T) + '…';
@@ -6947,7 +6948,7 @@ async function loadQm() {
   var rawQ = String(($('qm-ticker').value || '')).trim();
   if (!rawQ) return;
   var T = await resolveTickerInput(rawQ);
-  if (T === null) { $('qm-status').innerHTML = '<span class="status err">' + esc(noMatchMsg(rawQ)) + '</span>'; return; }
+  if (T === null) { $('qm-status').innerHTML = '<span class="status err">' + esc(noMatchMsg(rawQ)) + '</span>'; shakeEl($('qm-ticker')); return; }
   if (!T) return;
   if (T !== rawQ.toUpperCase()) $('qm-ticker').value = T;
   if (qmStore.ticker !== T) { qmStore = { ticker: T, q: null, y: null }; qmMode = 'grid'; }
@@ -9129,11 +9130,18 @@ function renderSavedScreens() {
   box.querySelectorAll('[data-scr-del]').forEach(function (b) {
     b.addEventListener('click', function () {
       var list2 = getSavedScreens();
-      var s = list2[parseInt(b.getAttribute('data-scr-del'), 10)];
-      if (s && window.confirm('Delete saved screen "' + s.name + '"?')) {
-        list2.splice(parseInt(b.getAttribute('data-scr-del'), 10), 1);
+      var sIdx = parseInt(b.getAttribute('data-scr-del'), 10);
+      var s = list2[sIdx];
+      if (s) {
+        list2.splice(sIdx, 1);
         lsSet(SCR_SAVED_KEY, list2);
         renderSavedScreens();
+        showUndoToast('Screen "' + s.name + '" deleted.', function () {
+          var l3 = getSavedScreens();
+          l3.splice(Math.min(sIdx, l3.length), 0, s);
+          lsSet(SCR_SAVED_KEY, l3);
+          renderSavedScreens();
+        });
       }
     });
   });
@@ -9153,18 +9161,92 @@ function scrActivate() {
 var ovTicker = null;
 var jrReturnTab = 'portfolio';
 var toastTimer = null;
+function hideToast() {
+  var t = $('toast-bubble');
+  if (!t) return;
+  t.classList.remove('show');
+  setTimeout(function () { t.hidden = true; t.classList.remove('has-action'); }, 280);
+}
 function showToast(msg) {
   var t = $('toast-bubble');
   if (!t) return;
+  t.classList.remove('has-action');
   t.textContent = msg;
   t.hidden = false;
   void t.offsetWidth;
   t.classList.add('show');
   if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(function () {
-    t.classList.remove('show');
-    setTimeout(function () { t.hidden = true; }, 280);
-  }, 2600);
+  toastTimer = setTimeout(hideToast, 2600);
+}
+/* Henry: destructive taps act first and offer Undo in the toast,
+ * instead of blocking on an "are you sure" pop-up. */
+function showUndoToast(msg, onUndo) {
+  var t = $('toast-bubble');
+  if (!t) return;
+  t.innerHTML = '';
+  var span = document.createElement('span');
+  span.textContent = msg;
+  t.appendChild(span);
+  var b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'toast-undo';
+  b.textContent = 'Undo';
+  b.addEventListener('click', function () {
+    if (toastTimer) clearTimeout(toastTimer);
+    hideToast();
+    if (onUndo) onUndo();
+  });
+  t.appendChild(b);
+  t.classList.add('has-action');
+  t.hidden = false;
+  void t.offsetWidth;
+  t.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, 5000);
+}
+/* Henry: bottom sheets dismiss with a downward swipe, not only a
+ * backdrop tap. Delegated, so sheets created on the fly get it too.
+ * Drags that start on a control inside the sheet are left alone,
+ * and the drag animates transform (Liu) throughout. The close goes
+ * through the sheet's own backdrop-click path, so any promise or
+ * cleanup tied to closing (the share-amount sheet resolves on
+ * cancel) still runs exactly as a backdrop tap would run it. */
+function bindSheetSwipe() {
+  var drag = null;
+  document.addEventListener('touchstart', function (e) {
+    var sheet = (e.target && e.target.closest) ? e.target.closest('.pf-sheet') : null;
+    if (!sheet || e.target.closest('input, textarea, select, button, a')) { drag = null; return; }
+    drag = { sheet: sheet, startY: e.touches[0].clientY, dy: 0 };
+    sheet.style.transition = 'none';
+  }, { passive: true });
+  document.addEventListener('touchmove', function (e) {
+    if (!drag) return;
+    drag.dy = Math.max(0, e.touches[0].clientY - drag.startY);
+    if (drag.dy > 0) { e.preventDefault(); drag.sheet.style.transform = 'translateY(' + drag.dy + 'px)'; }
+  }, { passive: false });
+  document.addEventListener('touchend', function () {
+    if (!drag) return;
+    var sheet = drag.sheet, dy = drag.dy;
+    drag = null;
+    var bg = sheet.closest('.pf-sheet-bg');
+    if (dy > 90 && bg) {
+      sheet.style.transition = 'transform .22s ease-in';
+      sheet.style.transform = 'translateY(110%)';
+      setTimeout(function () {
+        sheet.style.transition = '';
+        sheet.style.transform = '';
+        bg.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        if (bg.parentNode && !bg.hidden) {
+          if (bg.id) bg.hidden = true;
+          else bg.parentNode.removeChild(bg);
+        }
+      }, 230);
+    } else {
+      sheet.style.transition = 'transform .22s var(--ease-out)';
+      sheet.style.transform = '';
+      setTimeout(function () { sheet.style.transition = ''; }, 240);
+    }
+  });
 }
 function renderOverview(d, item) {
   var sc = scoreStock(d);
@@ -9317,9 +9399,18 @@ function wireOverviewActions(d) {
   });
   var rm = $('ov-remove');
   if (rm) rm.addEventListener('click', function () {
-    setWatchlist(getWatchlist().filter(function (x) { return x.ticker !== d.ticker; }));
+    var wlNow = getWatchlist();
+    var rmIdx = -1, rmItem = null;
+    wlNow.forEach(function (x, i) { if (x.ticker === d.ticker) { rmIdx = i; rmItem = x; } });
+    setWatchlist(wlNow.filter(function (x) { return x.ticker !== d.ticker; }));
     closeOverview();
     renderWatchlist(false);
+    if (rmItem) showUndoToast(d.ticker + ' removed from your watchlist.', function () {
+      var wl2 = getWatchlist();
+      wl2.splice(Math.min(rmIdx, wl2.length), 0, rmItem);
+      setWatchlist(wl2);
+      renderWatchlist(false);
+    });
   });
 }
 
@@ -10628,7 +10719,15 @@ function importBackupText(text) {
 
 /* ============================== theme & settings ============================== */
 function applyTheme(t) {
-  document.documentElement.setAttribute('data-theme', t);
+  /* Liu: a theme flip must not fire every transition in the app at
+   * once — suppress them for the switch, restore two frames later. */
+  var rootEl = document.documentElement;
+  rootEl.classList.add('theme-switching');
+  rootEl.setAttribute('data-theme', t);
+  requestAnimationFrame(function () {
+    requestAnimationFrame(function () { rootEl.classList.remove('theme-switching'); });
+  });
+  setTimeout(function () { rootEl.classList.remove('theme-switching'); }, 150);
   try { localStorage.setItem('sr_theme', t); } catch (e) {}
   var meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', t === 'dark' ? '#0d0d0f' : '#ffffff');
@@ -10758,6 +10857,14 @@ async function resolveTickerInput(raw) {
   }
   if (/^[A-Z]{1,5}([\.\-][A-Z])?$/.test(up) && localKnowsTicker(up)) return up;
   return null;
+}
+/* Liu: an input that can't be used shakes, so the error is felt,
+ * not just read. Re-adding the class restarts the animation. */
+function shakeEl(el) {
+  if (!el) return;
+  el.classList.remove('shake');
+  void el.offsetWidth;
+  el.classList.add('shake');
 }
 function noMatchMsg(raw) {
   return 'No matching stocks for \u201c' + String(raw || '').trim() + '\u201d. Check the spelling, or type the company name and pick from the list.';
@@ -11701,6 +11808,11 @@ function initApp() {
   $('wl-refresh').addEventListener('click', function () { renderWatchlist(true); });
   try { setTimeout(function () { try { maybeStartScan(); } catch (e) {} }, 4000); } catch (e) {}
   try { maybeStartScan(); } catch (e) { try { scanDiag('maybeStartScan threw: ' + (e && e.message)); } catch (e2) {} }
+  /* Henry: pre-render the Market tab in the background (its own
+   * cache-first paint makes the first real open instant), and arm
+   * swipe-to-dismiss on every bottom sheet. */
+  try { bindSheetSwipe(); } catch (e) {}
+  try { loadMarket(); } catch (e) {}
   var wlSortSel = $('wl-sort');
   if (wlSortSel) {
     wlSortSel.value = getWlSort();
@@ -11985,21 +12097,43 @@ function initApp() {
   });
   var wReset = $('weights-reset');
   if (wReset) wReset.addEventListener('click', function () {
-    if (!window.confirm('Reset scoring weights to the standard rubric?')) return;
+    var prevW = getScoreWeights();
     setScoreWeights(stdWeights());
     afterWeightsChange();
+    showUndoToast('Scoring weights reset to the standard rubric.', function () {
+      setScoreWeights(prevW);
+      afterWeightsChange();
+    });
   });
   renderWeightsPanel();
   $('set-clear-ai').addEventListener('click', function () {
-    if (!window.confirm('Are you sure you\u2019d like to clear saved AI SWOTs?')) return;
+    var savedSwots = null;
+    try { savedSwots = localStorage.getItem(AI_SWOT_KEY); } catch (e) {}
     try { localStorage.removeItem(AI_SWOT_KEY); } catch (e) {}
     $('settings-note').textContent = 'Saved AI SWOTs cleared — regenerate any of them from a scorecard.';
     if (lastStock) renderScorecard(lastStock);
+    showUndoToast('Saved AI SWOTs cleared.', function () {
+      try {
+        if (savedSwots === null) localStorage.removeItem(AI_SWOT_KEY);
+        else localStorage.setItem(AI_SWOT_KEY, savedSwots);
+      } catch (e) {}
+      if (window.srSyncFlushKey) window.srSyncFlushKey(AI_SWOT_KEY);
+      if (lastStock) renderScorecard(lastStock);
+      $('settings-note').textContent = 'Saved AI SWOTs restored.';
+    });
   });
   $('set-clear-cache').addEventListener('click', function () {
-    if (!window.confirm('Are you sure you\u2019d like to clear the price cache?')) return;
+    var savedCache = null;
+    try { savedCache = localStorage.getItem(CACHE_KEY); } catch (e) {}
     try { localStorage.removeItem(CACHE_KEY); } catch (e) {}
     $('settings-note').textContent = 'Price cache cleared — the next lookups fetch fresh data.';
+    showUndoToast('Price cache cleared.', function () {
+      try {
+        if (savedCache === null) localStorage.removeItem(CACHE_KEY);
+        else localStorage.setItem(CACHE_KEY, savedCache);
+      } catch (e) {}
+      $('settings-note').textContent = 'Price cache restored.';
+    });
   });
   $('set-reload').addEventListener('click', function () { location.reload(); });
   $('journal-form').addEventListener('submit', function (e) {
@@ -12474,6 +12608,7 @@ if (typeof document !== 'undefined' && document.getElementById) {
         await afterSignIn(r.data && r.data.user);
       } catch (e) {
         setSyncStatus('Sign-in failed: ' + (e && e.message ? e.message : 'unknown error'), true);
+        shakeEl(document.getElementById('sync-password'));
       }
     });
     if (signUpBtn) signUpBtn.addEventListener('click', async function () {

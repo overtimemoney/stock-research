@@ -20,9 +20,10 @@ input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-sele
   --ink: #141414;
   --ink2: #313131;
   --muted: #77705f;
-  --line: #ece2c8;
+  --line: rgb(110 92 25 / .18);
   --bg: #ffffff;
   --card: #ffffff;
+  --elev: #ffffff;
   --good: #1e9e52;
   --bad: #d33a2c;
   --neon-up: #00c853;
@@ -33,7 +34,7 @@ input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-sele
   --field: #ffffff;
   --topbar: rgba(255,255,255,.92);
   --shadow: rgba(180, 106, 17, .06);
-  --row-line: #f4ecd6;
+  --row-line: rgb(110 92 25 / .10);
   --accent-text: #B46A11;
   --chip-bg: #FFF9E9;
   --chip-pass-bg: #effaf2; --chip-pass-line: #bfe6cd;
@@ -58,13 +59,14 @@ input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-sele
   --ink: #f4efe3;
   --ink2: #cfc9b8;
   --muted: #a79f8c;
-  --line: #37342c;
+  --line: rgb(255 250 230 / .20);
   --bg: #000000;
   --card: #000000;
+  --elev: #202023;
   --field: #1e1e20;
   --topbar: rgba(0,0,0,.92);
   --shadow: rgba(0,0,0,.45);
-  --row-line: #29271f;
+  --row-line: rgb(255 250 230 / .13);
   --accent-text: #f0b93e;
   --good: #2fbf6b;
   --bad: #ff6b57;
@@ -153,12 +155,14 @@ label input, label textarea { margin-top: 5px; font-weight: 500; }
    * transition instead of snapping in and out instantly. */
   transition: transform .16s var(--ease-out);
 }
-.btn-gold:active { transform: translateY(1px); }
+.btn-gold:active { transform: scale(.97); }
 .btn-gold.wide { width: 100%; margin-top: 4px; }
 .btn-ghost {
   background: var(--field); color: var(--accent-text); border: 1.5px solid var(--gold-mid);
   font-weight: 800; border-radius: 10px; padding: 8px 14px; cursor: pointer; font-size: 13px;
+  transition: transform .15s ease-out;
 }
+.btn-ghost:active { transform: scale(.97); }
 .search-row { display: flex; gap: 10px; }
 .search-row input { flex: 1; font-size: 17px; font-weight: 700; text-transform: uppercase; }
 .compare-inputs, .wl-inputs { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -259,7 +263,7 @@ table.factors td:first-child:has(.info-dot) { padding-right: 28px; }
 .alert.ok { background: var(--alert-ok-bg); border: 1.5px solid var(--alert-ok-line); color: var(--alert-ok-ink); }
 .chart-wrap { width: 100%; }
 .chart-wrap svg { width: 100%; height: auto; display: block; }
-.nav-back { position: fixed; left: 14px; top: calc(10px + env(safe-area-inset-top)); z-index: 65; width: 40px; height: 40px; border-radius: 50%; background: var(--card); border: 1.5px solid var(--line); color: var(--accent-text); display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(0,0,0,.35); cursor: pointer; padding: 0; }
+.nav-back { position: fixed; left: 14px; top: calc(10px + env(safe-area-inset-top)); z-index: 65; width: 40px; height: 40px; border-radius: 50%; background: var(--elev); border: 1.5px solid var(--line); color: var(--accent-text); display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(0,0,0,.35); cursor: pointer; padding: 0; }
 .nav-back svg { width: 20px; height: 20px; display: block; }
 .nav-back[hidden] { display: none; }
 .qm-zoomer { overflow: hidden; touch-action: none; }
@@ -307,7 +311,7 @@ table.factors td:first-child:has(.info-dot) { padding-right: 28px; }
 .biz-row-top { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; margin-bottom: 3px; }
 .biz-mgn { color: var(--muted); font-weight: 600; font-size: 12.5px; }
 .biz-bar { height: 5px; border-radius: 3px; background: var(--field); overflow: hidden; }
-.biz-bar > div { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #d9a92c, var(--gold)); }
+.biz-bar > div { height: 100%; border-radius: 3px; background: linear-gradient(90deg in oklch, #d9a92c, var(--gold)); }
 .fv-labs { position: relative; height: 17px; }
 .fv-lab { position: absolute; bottom: 1px; transform: translateX(-50%); font-size: 11px; font-weight: 800; letter-spacing: .04em; white-space: nowrap; }
 .fv-labs:last-child .fv-lab { bottom: auto; top: 2px; }
@@ -718,7 +722,7 @@ body.nav-back-on main { padding-top: 56px; }
 .verdict.risk-mod { background: linear-gradient(90deg, #f3d98b, #fdeaa0); }
 .verdict.risk-elev { background: linear-gradient(90deg, #f5b971, #f8cf8f); }
 .verdict.risk-high { background: linear-gradient(90deg, #2b2b2b, #141414); color: #ff8a75; }
-.score-bar.risk-bar > div { background: linear-gradient(90deg, #e8b34b, #ff6b57); }
+.score-bar.risk-bar > div { background: linear-gradient(90deg in oklch, #e8b34b, #ff6b57); }
 .pj-saved-head { display: flex; justify-content: space-between; align-items: center; width: 100%; background: none; border: 0; padding: 6px 0; font: inherit; font-size: 13.5px; font-weight: 800; color: var(--ink); cursor: pointer; text-align: left; }
 .pj-saved-chev { color: var(--gold); font-size: 13px; }
 .qm-picker-btn { display: flex; justify-content: space-between; align-items: center; width: 100%; background: var(--field); border: 1px solid var(--line); color: var(--ink); border-radius: 12px; padding: 12px 14px; font: inherit; font-size: 15px; font-weight: 800; cursor: pointer; margin: 2px 0 8px; }
@@ -736,7 +740,7 @@ body.nav-back-on main { padding-top: 56px; }
  * the floating pill nav floats over this sheet too, and with only a
  * small pad the last content (the chart note) could never scroll out
  * from under it (Justin's report, 2026-11-09). */
-#qm-detail { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); left: 10px; background: var(--bg); border: 1.5px solid var(--line); border-radius: 20px; padding: 14px 10px calc(88px + env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+#qm-detail { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); left: 10px; background: var(--bg); border: 1.5px solid var(--line); border-radius: 20px; padding: 14px 10px calc(88px + env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; animation: dlg-in .25s var(--ease-drawer); }
 .qm-sheet-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .qm-x { background: var(--field); border: 1.5px solid var(--line); color: var(--ink); width: 38px; height: 38px; border-radius: 50%; font-size: 15px; font-weight: 800; cursor: pointer; flex: 0 0 auto; }
 /* The real scroll lock for open sheets: <main> is the app's only
@@ -771,7 +775,7 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 /* Share-amount sheet (purchases/sales) */
 .pf-sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 90; display: flex; align-items: flex-end; justify-content: center; }
 .pf-sheet-bg[hidden] { display: none; }
-.pf-sheet { background: var(--card); border: 1.5px solid var(--line); border-bottom: none; border-radius: 18px 18px 0 0; padding: 18px 16px calc(16px + env(safe-area-inset-bottom)); width: 100%; max-width: 480px; }
+.pf-sheet { background: var(--elev); border: 1.5px solid var(--line); border-bottom: none; border-radius: 18px 18px 0 0; padding: 18px 16px calc(16px + env(safe-area-inset-bottom)); width: 100%; max-width: 480px; animation: sheet-in .28s var(--ease-drawer); }
 .pf-sheet h4 { margin: 0 0 12px; font-size: 16px; font-weight: 800; }
 .pf-sheet-row { display: flex; gap: 8px; align-items: stretch; }
 .pf-sheet input { flex: 1; min-width: 0; background: var(--field); border: 1.5px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 17px; font-weight: 700; padding: 11px 12px; }
@@ -959,6 +963,7 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
   .toast-bubble { transition: opacity .2s ease; }
   .tool-page.active { animation: none; }
   .radar-svg { animation: none; }
+  .pf-sheet, #qm-detail, .shake { animation: none; }
 }
 
 /* Tappable points: exact math behind every factor score */
@@ -992,8 +997,8 @@ table.factors .info-row .info-text.open { max-height: 900px; }
 .w-row:last-child { border-bottom: none; }
 .w-name { font-size: 14px; font-weight: 600; min-width: 0; }
 .w-step { display: flex; align-items: center; gap: 8px; flex: none; }
-.w-btn { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font-size: 17px; font-weight: 800; line-height: 1; cursor: pointer; }
-.w-btn:active { transform: scale(.94); }
+.w-btn { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font-size: 17px; font-weight: 800; line-height: 1; cursor: pointer; transition: transform .15s ease-out; }
+.w-btn:active { transform: scale(.97); }
 .w-val { min-width: 26px; text-align: center; font-weight: 800; font-size: 15px; }
 .w-val.off { color: var(--muted); }
 
@@ -1015,7 +1020,7 @@ table.factors .info-row .info-text.open { max-height: 900px; }
 .mkt-note { color: var(--muted); font-size: 12.5px; line-height: 1.55; margin: 10px 0 0; }
 .mkt-legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin: 2px 0 0; }
 .mkt-legend .sw { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
-.mkt-gauge { position: relative; height: 10px; border-radius: 5px; margin: 12px 0 4px; background: linear-gradient(90deg, #d33f2e 0%, #ef8f3c 25%, #e7c948 50%, #8bc34a 75%, #2e9e5b 100%); }
+.mkt-gauge { position: relative; height: 10px; border-radius: 5px; margin: 12px 0 4px; background: linear-gradient(90deg in oklch, #d33f2e 0%, #ef8f3c 25%, #e7c948 50%, #8bc34a 75%, #2e9e5b 100%); }
 .mkt-gauge .mkt-pin { position: absolute; top: -5px; width: 4px; height: 20px; border-radius: 2px; background: var(--ink); transform: translateX(-2px); }
 .mkt-gauge-labs { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted); margin-bottom: 6px; }
 .mkt-aaii-row { display: flex; align-items: center; gap: 8px; margin: 7px 0; font-size: 12.5px; }
@@ -1054,7 +1059,7 @@ table.factors .info-row .info-text.open { max-height: 900px; }
 /* Tap feedback for the tappables that lacked it: the press should
  * register instantly, before anything loads. */
 .tabbar button { transition: transform .18s var(--ease-out); }
-.tabbar button:active { transform: scale(.9); }
+.tabbar button:active { transform: scale(.97); }
 .toolseg button:active { opacity: .5; }
 .seg button:active { transform: translateY(1px); }
 .wl-row:active, .j-row:active { opacity: .5; }
@@ -1064,7 +1069,7 @@ table.factors .info-row .info-text.open { max-height: 900px; }
 /* Offline pill: floats above the tab bar while the connection is
  * down. The app itself keeps working from on-device data; this just
  * says so, and that sync resumes when the connection returns. */
-.offline-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(86px + env(safe-area-inset-bottom)); z-index: 66; max-width: calc(100vw - 32px); background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-size: 12.5px; font-weight: 600; text-align: center; box-shadow: 0 6px 24px var(--shadow); }
+.offline-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(86px + env(safe-area-inset-bottom)); z-index: 66; max-width: calc(100vw - 32px); background: var(--elev); color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-size: 12.5px; font-weight: 600; text-align: center; box-shadow: 0 6px 24px var(--shadow); }
 .offline-bar[hidden] { display: none; }
 
 /* Flags (2026-11-19): the guardrail warnings that replaced the value
@@ -1074,3 +1079,39 @@ table.factors .info-row .info-text.open { max-height: 900px; }
 .flag-row { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--row-line); }
 .flag-row .ico { color: var(--bad); flex: none; margin-top: 2px; }
 .flag-row strong { font-size: 14.5px; }
+
+/* Charles Liu pass (2026-11-19): icons inside gold/ghost buttons sit
+ * beside bold labels, so their stroke steps up to match the text
+ * weight (base icons stay 2.1). */
+.btn-gold .ico, .btn-ghost .ico { stroke-width: 2.4; }
+
+/* Charles Liu animation pass (2026-11-19): entrances never start
+ * from scale 0 — sheets rise, dialogs grow from .97 with a fade;
+ * errors shake (his exact keyframes, 360ms); theme flips suppress
+ * transitions so colors land all at once; interpolate-size lets
+ * height: auto animate where CSS drives it. */
+@keyframes sheet-in { from { opacity: 0; transform: translateY(16px); } }
+@keyframes dlg-in { from { opacity: 0; transform: scale(.97); } }
+@keyframes shake-x {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-10px); }
+  40% { transform: translateX(10px); }
+  55% { transform: translateX(-6px); }
+  70% { transform: translateX(6px); }
+  85% { transform: translateX(-3px); }
+}
+.shake { animation: shake-x .36s ease; }
+.theme-switching *, .theme-switching *::before, .theme-switching *::after { transition: none !important; }
+:root { interpolate-size: allow-keywords; }
+
+/* Caleb Henry pass (2026-11-19): undo toasts carry a real Undo
+ * button (so the bubble takes taps while it is up); the big price
+ * gets tabular figures like the rest of the money in the app;
+ * headlines balance; the tiny info dots get a finger-sized target
+ * without growing visually. */
+.toast-bubble.has-action { pointer-events: auto; display: flex; align-items: center; gap: 14px; text-align: left; }
+.toast-undo { background: none; border: none; color: var(--gold); font: inherit; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; cursor: pointer; padding: 4px 2px; flex: none; }
+.sc-price .p { font-variant-numeric: tabular-nums; }
+h2, .ob-q { text-wrap: balance; }
+.info-dot { position: relative; }
+.info-dot::after { content: ''; position: absolute; inset: -10px; border-radius: 50%; }
