@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261120014109';
+var APP_BUILD = 'stock-research-20261120020005';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -4073,7 +4073,7 @@ function renderScorecard(d) {
     html += '<div class="verdict ' + vClass + '"><div><div class="v-label">Valuation verdict</div>' +
       '<div class="v-word">' + esc(sc.verdict) + '</div></div>' +
       '<button type="button" class="v-score pts-btn" data-mathbtn data-mathtarget="math-vscore" aria-expanded="false">' + sc.score + '<small> / 100</small></button></div>';
-    html += '<div class="score-bar"><div style="width:' + sc.score + '%"></div></div>';
+    html += '<div class="score-bar"><div style="width:' + sc.score + '%;' + scoreBarBg(sc.score) + '"></div></div>';
     if (weightsAreCustom()) {
       var scStd = scoreStock(d, STD_W);
       if (scStd.score != null && scStd.rawScore !== sc.rawScore) html += '<p class="fineprint">Your scoring weights \u00b7 with the standard weights this scores ' + scStd.rawScore + '.</p>';
@@ -4102,7 +4102,7 @@ function renderScorecard(d) {
     html += '<div class="verdict ' + rClass + '"><div><div class="v-label">Risk score</div>' +
       '<div class="v-word">' + esc(rk.verdict) + '</div></div>' +
       '<button type="button" class="v-score pts-btn" data-mathbtn data-mathtarget="math-rscore" aria-expanded="false">' + rk.score + '<small> / 100</small></button></div>';
-    html += '<div class="score-bar risk-bar"><div style="width:' + rk.score + '%"></div></div>';
+    html += '<div class="score-bar risk-bar"><div style="width:' + rk.score + '%;' + scoreBarBg(100 - rk.score) + '"></div></div>';
     if (weightsAreCustom()) {
       var rkStd = riskScore(d, STD_W);
       if (rkStd.score != null && rkStd.score !== rk.score) html += '<p class="fineprint">Your scoring weights \u00b7 with the standard weights the risk score is ' + rkStd.score + '.</p>';
@@ -8602,18 +8602,26 @@ function scanScoreClass(score) { return score >= 70 ? 'up' : (score >= 45 ? '' :
  * 30, the app's gold at 50 (Justin's middle tier, 2026-10-31: the
  * middle of the scale gets the color between green and red), green
  * at 70, clamped outside. */
-function scanScoreStyle(score) {
-  if (!isNum(score)) return '';
+function scoreRgb(score) {
+  if (!isNum(score)) return null;
   var stops = [[30, [255, 90, 77]], [50, [248, 199, 61]], [70, [47, 191, 107]]];
-  var c;
-  if (score <= stops[0][0]) c = stops[0][1];
-  else if (score >= stops[2][0]) c = stops[2][1];
-  else {
-    var a = score < 50 ? stops[0] : stops[1], b = score < 50 ? stops[1] : stops[2];
-    var t = (score - a[0]) / (b[0] - a[0]);
-    c = a[1].map(function (v, i) { return Math.round(v + (b[1][i] - v) * t); });
-  }
+  if (score <= stops[0][0]) return stops[0][1];
+  if (score >= stops[2][0]) return stops[2][1];
+  var a = score < 50 ? stops[0] : stops[1], b = score < 50 ? stops[1] : stops[2];
+  var t = (score - a[0]) / (b[0] - a[0]);
+  return a[1].map(function (v, i) { return Math.round(v + (b[1][i] - v) * t); });
+}
+function scanScoreStyle(score) {
+  var c = scoreRgb(score);
+  if (!c) return '';
   return ' style=' + String.fromCharCode(34) + 'color:rgb(' + c.join(',') + ');border-color:rgba(' + c.join(',') + ',.45)' + String.fromCharCode(34);
+}
+/* Score bars wear the same scale as the score numbers (Justin's
+ * pick, 2026-11-19): red at the low end, gold in the middle, green
+ * at the top. Risk bars flip it — low risk is the green end. */
+function scoreBarBg(score) {
+  var c = scoreRgb(score);
+  return c ? 'background:rgb(' + c.join(',') + ');' : '';
 }
 
 /* Tappable share-amount sheet for purchases/sales (Justin's ask,
@@ -9272,7 +9280,7 @@ function renderOverview(d, item) {
     html += '<div class="verdict ' + vClass + '"><div><div class="v-label">Valuation verdict</div>' +
       '<div class="v-word">' + esc(sc.verdict) + '</div></div>' +
       '<button type="button" class="v-score pts-btn" data-mathbtn data-mathtarget="math-ovv" aria-expanded="false">' + sc.score + '<small> / 100</small></button></div>';
-    html += '<div class="score-bar"><div style="width:' + sc.score + '%"></div></div>';
+    html += '<div class="score-bar"><div style="width:' + sc.score + '%;' + scoreBarBg(sc.score) + '"></div></div>';
     if (weightsAreCustom()) {
       var ovScStd = scoreStock(d, STD_W);
       if (ovScStd.score != null && ovScStd.rawScore !== sc.rawScore) html += '<p class="fineprint">Your scoring weights \u00b7 standard weights score this ' + ovScStd.rawScore + '.</p>';
@@ -9286,7 +9294,7 @@ function renderOverview(d, item) {
     html += '<div class="verdict ' + rClass + '"><div><div class="v-label">Risk score</div>' +
       '<div class="v-word">' + esc(rk.verdict) + '</div></div>' +
       '<button type="button" class="v-score pts-btn" data-mathbtn data-mathtarget="math-ovr" aria-expanded="false">' + rk.score + '<small> / 100</small></button></div>';
-    html += '<div class="score-bar risk-bar"><div style="width:' + rk.score + '%"></div></div>';
+    html += '<div class="score-bar risk-bar"><div style="width:' + rk.score + '%;' + scoreBarBg(100 - rk.score) + '"></div></div>';
     if (weightsAreCustom()) {
       var ovRkStd = riskScore(d, STD_W);
       if (ovRkStd.score != null && ovRkStd.score !== rk.score) html += '<p class="fineprint">Your scoring weights \u00b7 standard weights put the risk at ' + ovRkStd.score + '.</p>';
