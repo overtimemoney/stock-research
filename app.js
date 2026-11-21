@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261121141546';
+var APP_BUILD = 'stock-research-20261121143318';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -3414,6 +3414,7 @@ var INFO_TEXT = {
   cashinv: 'Cash & investments = the cash in the bank plus short- and long-term investments the company could sell -- everything it could turn into money to pay its debts.',
   totdebt: 'Total debt = all the money the company owes lenders, short-term and long-term, as StockAnalysis totals it from the balance sheet.',
   netcash: 'Net cash = cash & investments minus total debt. Positive means the company could pay off every debt today and still have cash left over. Negative (net debt) means it owes more than it holds.',
+  pricebook: 'Price / Book = the share price divided by book value per share -- what the company would be worth on paper if it sold everything and paid every debt. Near 1 means you pay about what the assets say; high numbers (5, 10+) mean the market is paying for future earnings, not assets. Banks and insurers usually trade near 1-2; asset-light tech runs far higher. It reads blank when book value is negative (buybacks can push it below zero), where the ratio stops meaning anything.',
   instown: 'Institutional ownership = the % of the company\u2019s shares held by big professional investors \u2014 mutual funds, pension funds, hedge funds. High means the pros have committed real money after doing their own homework; very high can also mean a crowded trade if they all head for the exit at once.',
   target: 'Analysts who cover this stock each publish a 12-month price target \u2014 where they think the price is headed. The bar shows the average of those targets: the white dot is today\u2019s price, the gold dot is the average target, and the % is the gap between them. Treat it as a sentiment check, not a promise \u2014 targets are opinions, they are often wrong, and they tend to chase the price after it moves rather than predict it.',
   mktcap: 'Market cap = share price \u00d7 total shares \u2014 what the whole company is worth at today\'s price. Big (over $200B) usually means steadier; small (under $2B) usually means swingier.',
@@ -4032,6 +4033,7 @@ function cashDebtHtml(d) {
   if (isNum(d.bsNet)) {
     html += kvItem(d.bsNet >= 0 ? 'Net cash' : 'Net debt', fmtCap(Math.abs(d.bsNet)), 'netcash');
   }
+  html += kvItem('Price / Book', isNum(d.pb) ? fmtNum(d.pb, 2) : '\u2014', 'pricebook');
   html += '</div>';
   var v = cashDebtVerdict(d.bsCash, d.bsDebt);
   if (v) html += '<div class="alert ' + v.cls + '">' + (v.cls === 'ok' ? ico(ICO_OKCIRCLE, 'ico-sm') : ico(ICO_ALERT, 'ico-sm')) + esc(v.text) + '</div>';
