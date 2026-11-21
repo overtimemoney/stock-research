@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Stock Research</title>
 <meta name="description" content="Personal stock research: scorecards, value screen, EPS cliff check, comparisons and projections — live data, math shown.">
-<meta name="theme-color" content="#231C0A">
+<meta name="theme-color" content="#0d0d0f">
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://stock-research-relay.supplessayings-6e6.workers.dev">
 <link rel="preconnect" href="https://cdn.jsdelivr.net">
@@ -28,7 +28,7 @@ try { var _t = localStorage.getItem('sr_theme'); if (_t === 'light' || _t === 'd
      inline failsafe below clears it at 2.6s no matter what, so it
      can never trap the app. -->
 <div id="splash" aria-hidden="true">
-  <div class="splash-mark"><svg viewBox="0 0 100 100" width="92" height="92"><circle cx="44" cy="44" r="29" fill="none" stroke="currentColor" stroke-width="6"/><polyline points="24,58 37,41 47,51 63,31" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/><line x1="65" y1="65" x2="85" y2="85" stroke="currentColor" stroke-width="7" stroke-linecap="round"/></svg></div>
+  <div class="splash-mark"><svg viewBox="0 0 100 100" width="92" height="92"><circle cx="44" cy="44" r="29" fill="none" stroke="#F8C73D" stroke-width="6"/><polyline points="24,58 37,41 47,51 63,31" fill="none" stroke="#F8C73D" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/><line x1="65" y1="65" x2="85" y2="85" stroke="#F8C73D" stroke-width="7" stroke-linecap="round"/></svg></div>
   <div class="splash-name">MISPRICED</div>
 </div>
 <script>
@@ -73,7 +73,7 @@ setTimeout(function () { var s = document.getElementById('splash'); if (s) { s.c
     <div class="card">
       <form id="pj-load-form" class="search-row" autocomplete="off" style="margin-bottom:12px">
         <input id="pj-ticker" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="Ticker" aria-label="Projection ticker">
-        <button type="submit" class="btn-load">Load stock</button>
+        <button type="submit" class="btn-gold">Load stock</button>
       </form>
       <div id="pj-status" class="status" role="status" style="margin:0 2px 8px"></div>
       <div class="grid2">
@@ -99,7 +99,7 @@ setTimeout(function () { var s = document.getElementById('splash'); if (s) { s.c
     <div class="card">
       <form id="qm-load-form" class="search-row" autocomplete="off" style="margin-bottom:12px">
         <input id="qm-ticker" type="text" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="Ticker" aria-label="Stock charts ticker">
-        <button type="submit" class="btn-load">Load stock</button>
+        <button type="submit" class="btn-gold">Load stock</button>
       </form>
       <div id="qm-status" class="status" role="status" style="margin:0 2px 8px"></div>
       <div id="qm-body" hidden>

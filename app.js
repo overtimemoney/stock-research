@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261121220354';
+var APP_BUILD = 'stock-research-20261121221133';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -2921,7 +2921,8 @@ function barChartSVG(pts, w, h) {
     out += '<text x="' + (x + bwid / 2) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="11.5" font-weight="700" fill="#77705f">' + esc(p.label) + (p.kind === 'est' ? ' est' : '') + '</text>';
   });
   out += '<defs><linearGradient id="goldGrad" x1="0" y1="0" x2="1" y2="0">' +
-    '<stop offset="0%" style="stop-color:var(--ink)"/><stop offset="100%" style="stop-color:var(--ink)"/></linearGradient></defs>';
+    '<stop offset="0%" stop-color="#B46A11"/><stop offset="33%" stop-color="#D68D15"/>' +
+    '<stop offset="68%" stop-color="#E7AC18"/><stop offset="99%" stop-color="#F8C73D"/></linearGradient></defs>';
   out += '</svg>';
   return out;
 }
@@ -6532,8 +6533,7 @@ function renderQmRatios(key) {
  * Companies whose statements lack the cascade's lines (banks and
  * insurers report no gross profit or operating income) get the
  * plain unavailable message instead of a half-diagram. */
-var FLOW_RED = '#FE0000';
-function flowGold() { return isLightTheme() ? '#231C0A' : '#F8C73D'; }
+var FLOW_GOLD = '#F8C73D', FLOW_RED = '#FE0000';
 function fetchFlowAnnual(T) { return fetchQMetrics(T, 'y'); }
 
 function qmFlowModel(d) {
@@ -6591,8 +6591,8 @@ function qmFlowModel(d) {
   function nd(name, v, yoy, color, role) { return { name: name, v: v, yoy: yoy, color: color, role: role || 'sink' }; }
   var revN = nd('Revenue', rev, yy(rev, revP), '#a79b7d', 'src');
   var costN = nd('Cost of revenue', cost, yy(cost, costP), '#6b6656');
-  var grossN = nd('Gross profit', gross, yy(gross, grossP), flowGold());
-  var operN = nd('Operating income', oper, yy(oper, operP), oper < 0 ? FLOW_RED : flowGold(), oper < 0 ? 'marker' : 'sink');
+  var grossN = nd('Gross profit', gross, yy(gross, grossP), FLOW_GOLD);
+  var operN = nd('Operating income', oper, yy(oper, operP), oper < 0 ? FLOW_RED : FLOW_GOLD, oper < 0 ? 'marker' : 'sink');
   var cols = [[revN], [costN, grossN], [], []];
   var links = [];
   /* Feed sinks from a stack of source nodes in order, tracking the
@@ -6628,7 +6628,7 @@ function qmFlowModel(d) {
   var intN = null, taxN = null;
   if (otherNet < 0) { intN = nd('Interest & other', otherNet, yy(otherNet, otherNetP), '#8a8271'); cols[3].push(intN); }
   if (tax > 0) { taxN = nd('Taxes', tax, yy(tax, taxP), '#b08968'); cols[3].push(taxN); }
-  var netN = nd('Net income', net, yy(net, netP), net < 0 ? FLOW_RED : flowGold(), net < 0 ? 'marker' : 'sink');
+  var netN = nd('Net income', net, yy(net, netP), net < 0 ? FLOW_RED : FLOW_GOLD, net < 0 ? 'marker' : 'sink');
   cols[3].push(netN);
   var sources3 = [];
   if (oper > 0) sources3.push({ node: operN, avail: oper });
@@ -7193,8 +7193,8 @@ function runCompound() {
   var Y = function (v) { return 8 + (max - v) / ((max - min) || 1) * (h - 34); };
   var pts = series.map(function (v, i) { return X(i).toFixed(1) + ',' + Y(v).toFixed(1); }).join(' ');
   var area = '6,' + (h - 26) + ' ' + pts + ' ' + X(series.length - 1).toFixed(1) + ',' + (h - 26);
-  var svg = '<svg viewBox="0 0 ' + w + ' ' + h + '"><polygon points="' + area + '" style="fill:var(--chart-area)"/>' +
-    '<polyline points="' + pts + '" fill="none" style="stroke:var(--chart-line)" stroke-width="2.4"/>' +
+  var svg = '<svg viewBox="0 0 ' + w + ' ' + h + '"><polygon points="' + area + '" fill="rgba(248,199,61,.35)"/>' +
+    '<polyline points="' + pts + '" fill="none" stroke="#B46A11" stroke-width="2.4"/>' +
     '<text x="6" y="' + (h - 6) + '" font-size="11" font-weight="700" fill="#77705f">today</text>' +
     '<text x="' + (w - 6) + '" y="' + (h - 6) + '" text-anchor="end" font-size="11" font-weight="700" fill="#77705f">year ' + years + '</text></svg>';
   out.innerHTML = '<div class="tool-big">Worth ' + fmtMoney(bal, 0) + ' in ' + years + ' years</div>' +
@@ -8810,14 +8810,9 @@ function scanScoreClass(score) { return score >= 70 ? 'up' : (score >= 45 ? '' :
  * 30, the app's gold at 50 (Justin's middle tier, 2026-10-31: the
  * middle of the scale gets the color between green and red), green
  * at 70, clamped outside. */
-function isLightTheme() { return document.documentElement.getAttribute('data-theme') === 'light'; }
 function scoreRgb(score) {
   if (!isNum(score)) return null;
-  /* 2026-11-21 design system: on the light (gold) field the scale's
-   * stops deepen so a mid score never renders gold-on-gold. */
-  var stops = isLightTheme()
-    ? [[30, [201, 44, 32]], [50, [146, 100, 8]], [70, [22, 128, 66]]]
-    : [[30, [255, 90, 77]], [50, [248, 199, 61]], [70, [47, 191, 107]]];
+  var stops = [[30, [255, 90, 77]], [50, [248, 199, 61]], [70, [47, 191, 107]]];
   if (score <= stops[0][0]) return stops[0][1];
   if (score >= stops[2][0]) return stops[2][1];
   var a = score < 50 ? stops[0] : stops[1], b = score < 50 ? stops[1] : stops[2];
@@ -10573,17 +10568,17 @@ function paintBench(box, hist, positions) {
     : 'Both lines start at 100. Your line is rebuilt from the share counts you entered, held constant over the period -- add purchase dates (or an average cost) on a holding to date it properly. Price return only, dividends not included. S&amp;P 500 tracked via SPY.';
   box.innerHTML = '<div class="card">' +
     '<div class="pf-bench-head"><span class="pf-bench-title">Portfolio vs S&amp;P 500</span>' +
-    '<span class="pf-bench-legend"><span><span class="pf-bench-dot" style="background:var(--ink)"></span>You</span><span><span class="pf-bench-dot" style="background:#61A5C2"></span>S&amp;P 500</span></span></div>' +
+    '<span class="pf-bench-legend"><span><span class="pf-bench-dot" style="background:#F8C73D"></span>You</span><span><span class="pf-bench-dot" style="background:#61A5C2"></span>S&amp;P 500</span></span></div>' +
     '<div class="seg pf-bench-seg" role="group" aria-label="Benchmark period">' + chips + '</div>' +
     '<div id="pf-bench-read" class="pf-bench-read">Drag across the chart to see any day.</div>' +
     '<svg class="pf-bench-chart" viewBox="0 0 340 186" role="img" aria-label="Portfolio versus S&P 500 chart">' +
     '<polyline points="' + line(spyLine) + '" fill="none" stroke="#61A5C2" stroke-width="2" stroke-linejoin="round"/>' +
-    '<polyline points="' + line(pfLine) + '" fill="none" style="stroke:var(--ink)" stroke-width="2.5" stroke-linejoin="round"/>' +
-    '<circle cx="' + X(win.length - 1) + '" cy="' + Y(pfIdx[pfIdx.length - 1]) + '" r="3.2" style="fill:var(--ink)"/>' +
+    '<polyline points="' + line(pfLine) + '" fill="none" stroke="#F8C73D" stroke-width="2.5" stroke-linejoin="round"/>' +
+    '<circle cx="' + X(win.length - 1) + '" cy="' + Y(pfIdx[pfIdx.length - 1]) + '" r="3.2" fill="#F8C73D"/>' +
     '<circle cx="' + X(win.length - 1) + '" cy="' + Y(spyIdx[spyIdx.length - 1]) + '" r="3" fill="#61A5C2"/>' + ticksSvg +
     '<g id="pf-scrub" style="display:none"><line id="pf-scrub-line" y1="4" y2="166" stroke-width="1" stroke-dasharray="3 3" style="stroke:var(--muted)"/>' +
-    '<circle id="pf-scrub-pf" r="4.2" style="fill:var(--ink);stroke:var(--bg)" stroke-width="1.5"/>' +
-    '<circle id="pf-scrub-spy" r="3.8" fill="#61A5C2" style="stroke:var(--bg)" stroke-width="1.5"/></g>' +
+    '<circle id="pf-scrub-pf" r="4.2" fill="#F8C73D" stroke="#0d0d0f" stroke-width="1.5"/>' +
+    '<circle id="pf-scrub-spy" r="3.8" fill="#61A5C2" stroke="#0d0d0f" stroke-width="1.5"/></g>' +
     '<rect id="pf-scrub-zone" x="0" y="0" width="340" height="172" fill="transparent" style="touch-action:none"/></svg>' +
     '<div class="pf-bench-stats"><span>You <b class="' + (pfRet >= 0 ? 'up' : 'down') + '">' + fmtPct(pfRet) + '</b></span>' +
     '<span>S&amp;P 500 <b class="' + (spyRet >= 0 ? 'up' : 'down') + '">' + fmtPct(spyRet) + '</b></span>' +
@@ -10937,7 +10932,7 @@ function applyTheme(t) {
   setTimeout(function () { rootEl.classList.remove('theme-switching'); }, 150);
   try { localStorage.setItem('sr_theme', t); } catch (e) {}
   var meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', t === 'dark' ? '#231C0A' : '#F8C73D');
+  if (meta) meta.setAttribute('content', t === 'dark' ? '#0d0d0f' : '#ffffff');
   var dBtn = $('theme-dark'), lBtn = $('theme-light');
   if (dBtn && lBtn) {
     dBtn.classList.toggle('active', t === 'dark');
