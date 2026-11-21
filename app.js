@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261121045129';
+var APP_BUILD = 'stock-research-20261121140542';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -8586,6 +8586,18 @@ async function scanAdoptShared() {
         if (tot) scanPersistIdx('tot', tot.recs);
         var ds1 = getScanData();
         if (ds1) { ds1.asOf = asOfDay; setScanData(ds1); }
+        /* The checked-score map must land on this branch too
+         * (2026-11-21): it used to be written only when today's
+         * pass was adopted, so on every ordinary morning the
+         * screener missed deep-checked scores the server had
+         * already published (TIGR: checked 69, screener showed
+         * its ~90 thin-record quick score). Merge over any stored
+         * map -- the payloads are the fresher source per ticker. */
+        var yMap = {};
+        var prevMap = lsGet(SCAN_SCORES_KEY, null);
+        if (prevMap && prevMap.map) Object.keys(prevMap.map).forEach(function (t) { yMap[t] = prevMap.map[t]; });
+        [spx, rut, tot].forEach(function (p) { if (p && p.checked) Object.keys(p.checked).forEach(function (t) { yMap[t] = p.checked[t]; }); });
+        if (Object.keys(yMap).length) { try { lsSet(SCAN_SCORES_KEY, { date: asOfDay, map: yMap }); } catch (e) {} }
         return 'data';
       }
       return false;
