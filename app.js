@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261121140542';
+var APP_BUILD = 'stock-research-20261121141546';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -9100,7 +9100,7 @@ function scrReadControls() {
 }
 function scrApplyControls(f) {
   $('scr-ix').value = (f.ix === 'spx' || f.ix === 'rut' || f.ix === 'tot') ? f.ix : 'both'; // saved index screens reopen on their own index
-  $('scr-sort').value = f.sort || 'combined';
+  $('scr-sort').value = (f.sort && f.sort !== 'combined') ? f.sort : 'mcap'; // 'combined' was the pre-2026-11-21 score sort, now removed
   var ss = $('scr-sector'); if (ss) ss.value = f.sector || 'all';
   SCR_FIELDS.forEach(function (k) { $('scr-' + k).value = isNum(f[k]) ? f[k] : ''; });
 }
@@ -9168,27 +9168,24 @@ function runScreener() {
     if (isNum(cg)) { anyCagr = true; covN++; }
     var eff = isNum(cg) && cg !== rec.cagr ? Object.assign({}, rec, { cagr: cg }) : rec;
     if (!scrPasses(eff, f)) return;
-    /* Same math as the daily list (2026-11-17): a fully-checked
-     * stock shows its checked score verbatim; any other stock with
-     * a stored CAGR gets the scan's own 75/25 growth blend applied
-     * to its quick score, exactly as the deep check does. */
-    var sc = scanRecordScore(rec);
-    var score = null;
-    if (chk && isNum(chk.score)) score = chk.score;
-    else if (sc) score = isNum(cg) ? Math.round(0.75 * sc.combined + 0.25 * Math.max(0, Math.min(100, (cg + 20) / 60 * 100))) : sc.combined;
-    if (score === null) return;
-    out.push({ t: t, name: rec.name, price: rec.price, forwardPE: rec.forwardPE, epsGrowthNextY: rec.epsGrowthNextY, pctBelowHigh: rec.pctBelowHigh, marketCap: rec.marketCap, cagr: cg, score: score, sector: sectorOf(rec) });
+    /* No scores in the screener (Justin's call, 2026-11-21): the
+     * quick score off the thin record misled next to the checked
+     * scorecard read (TIGR ~90 here vs 69 researched). A row is a
+     * match, nothing more -- tap through to Research for the full
+     * check. CAGR stays: it is only ever the deep-checked number,
+     * never a quick estimate, and only the checked finalists
+     * carry one. */
+    out.push({ t: t, name: rec.name, price: rec.price, forwardPE: rec.forwardPE, epsGrowthNextY: rec.epsGrowthNextY, pctBelowHigh: rec.pctBelowHigh, marketCap: rec.marketCap, cagr: cg, sector: sectorOf(rec) });
   });
   var sorters = {
-    combined: function (a, b) { return b.score - a.score; },
     fpe: function (a, b) { return a.forwardPE - b.forwardPE; },
     growth: function (a, b) { return (isNum(b.epsGrowthNextY) ? b.epsGrowthNextY : -1e9) - (isNum(a.epsGrowthNextY) ? a.epsGrowthNextY : -1e9); },
     cagr: function (a, b) { return (isNum(b.cagr) ? b.cagr : -1e9) - (isNum(a.cagr) ? a.cagr : -1e9); },
     below: function (a, b) { return (isNum(b.pctBelowHigh) ? b.pctBelowHigh : -1) - (isNum(a.pctBelowHigh) ? a.pctBelowHigh : -1); },
     mcap: function (a, b) { return (isNum(b.marketCap) ? b.marketCap : 0) - (isNum(a.marketCap) ? a.marketCap : 0); },
-    sector: function (a, b) { var sa = a.sector === 'Other' ? 'ZZZ' : a.sector, sb = b.sector === 'Other' ? 'ZZZ' : b.sector; return sa < sb ? -1 : sa > sb ? 1 : (b.score - a.score); }
+    sector: function (a, b) { var sa = a.sector === 'Other' ? 'ZZZ' : a.sector, sb = b.sector === 'Other' ? 'ZZZ' : b.sector; return sa < sb ? -1 : sa > sb ? 1 : ((isNum(b.marketCap) ? b.marketCap : 0) - (isNum(a.marketCap) ? a.marketCap : 0)); }
   };
-  out.sort(sorters[f.sort] || sorters.combined);
+  out.sort(sorters[f.sort] || sorters.mcap);
   var html = '<div class="fineprint" style="margin:10px 0 4px">' + out.length + ' matches \u00b7 stored data from ' + esc(ds.asOf || 'an earlier scan') + '</div>';
   if ((isNum(f.cagr) || f.sort === 'cagr') && covN > 0 && covN < Object.keys(ds.recs).length) html += '<div class="fineprint" style="margin:0 0 4px">CAGR is stored for ' + covN + ' deep-checked stocks \u2014 only those can pass a CAGR filter or rank by it. Coverage grows with each daily scan.</div>';
   var sectorCounts = {};
@@ -9202,8 +9199,7 @@ function runScreener() {
     html += '<button type="button" class="scan-row" data-scr-research="' + esc(row.t) + '">' +
       '<span class="scan-rank">' + (i + 1) + '</span>' +
       logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name || row.t) + (row.sector !== 'Other' ? ' \u00b7 ' + esc(row.sector) : '') + (isNum(row.cagr) ? ' \u00b7 CAGR ' + (row.cagr >= 0 ? '+' : '') + fmtNum(row.cagr, 0) + '%/yr' : '') + '</span></span>' +
-      '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span>' +
-      '<span class="scan-score"' + scanScoreStyle(row.score) + '>' + row.score + '</span></button>';
+      '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span></button>';
   });
   if (!out.length && isNum(f.cagr) && !anyCagr) html += '<div class="status">Projected CAGR isn\'t in the stored data yet \u2014 it lands on the deep-checked stocks with the next scan, or tap Rescan on the Watchlist scan card to get it now. <button type="button" class="link-btn" data-scr-gocard="1">Open the scan card</button></div>';
   else if (!out.length && isNum(f.cagr) && anyCagr) html += '<div class="status">No matches \u2014 CAGR is stored for only ' + covN + ' deep-checked stocks so far, and none of them clears those filters. Coverage grows with each daily scan.</div>';
@@ -9212,7 +9208,7 @@ function runScreener() {
   else if (!out.length) html += '<div class="status">No stored stocks match those filters. <button type="button" class="link-btn" data-scr-clear="1">Clear the filters</button></div>';
   box.innerHTML = html;
   var scb = box.querySelector('[data-scr-clear]');
-  if (scb) scb.addEventListener('click', function () { scrApplyControls({ ix: 'both', sort: 'combined' }); runScreener(); });
+  if (scb) scb.addEventListener('click', function () { scrApplyControls({ ix: 'both', sort: 'mcap' }); runScreener(); });
   var sgb = box.querySelector('[data-scr-gocard]');
   if (sgb) sgb.addEventListener('click', function () { switchTab('watchlist'); });
   box.querySelectorAll('[data-scr-research]').forEach(function (b) {
@@ -11992,7 +11988,7 @@ function initApp() {
   });
   $('ov-back').addEventListener('click', function () { closeOverview(); });
   $('scr-run').addEventListener('click', function () { runScreener(); });
-  $('scr-clear').addEventListener('click', function () { scrLoadedSavedIdx = null; scrSyncDelBtn(); scrApplyControls({ ix: 'both', sort: 'combined' }); runScreener(); });
+  $('scr-clear').addEventListener('click', function () { scrLoadedSavedIdx = null; scrSyncDelBtn(); scrApplyControls({ ix: 'both', sort: 'mcap' }); runScreener(); });
   $('scr-del').addEventListener('click', function () {
     if (!isNum(scrLoadedSavedIdx)) return;
     var list2 = getSavedScreens();
