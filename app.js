@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261120035350';
+var APP_BUILD = 'stock-research-20261121045129';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -1009,7 +1009,7 @@ function scoreStock(d, w) {
     return { pts: bands[bands.length - 1][1], idx: bands.length - 1 };
   }
   function limFmt(x) { return String(Math.round(x * 100) / 100); }
-  function mathFor(display, bands, idx, ge, max, fmtL) {
+  function rangeFor(bands, idx, ge, fmtL) {
     fmtL = fmtL || limFmt;
     var L = bands[idx][0], P = idx > 0 ? bands[idx - 1][0] : null, range;
     /* Plain words, no jargon (Justin's call, 2026-11-01): users do
@@ -1024,10 +1024,16 @@ function scoreStock(d, w) {
       else if (!isFinite(L)) range = pExcl ? fmtL(P) + ' or less' : 'under ' + fmtL(P);
       else range = (excl ? 'more than ' + fmtL(L) : fmtL(L) + ' or more') + (pExcl ? ', up to ' : ', under ') + fmtL(P);
     }
-    return display + ' \u2192 ' + range + ' \u2192 ' + bands[idx][1] + ' of ' + max + ' pts';
+    return range;
+  }
+  function mathFor(display, bands, idx, ge, max, fmtL) {
+    return display + ' \u2192 ' + rangeFor(bands, idx, ge, fmtL) + ' \u2192 ' + bands[idx][1] + ' of ' + max + ' pts';
   }
   function add(name, value, display, max, pk, note, bands, ge, fmtL) {
-    factors.push({ name: name, value: value, display: display, max: max, pts: pk.pts, note: note || '', math: mathFor(display, bands, pk.idx, ge, max, fmtL) });
+    /* sMath is the same sentence in safety points (max - pts): the
+     * UI shows Safety since 2026-11-20, so the factor table's math
+     * has to speak safety too. */
+    factors.push({ name: name, value: value, display: display, max: max, pts: pk.pts, note: note || '', math: mathFor(display, bands, pk.idx, ge, max, fmtL), sMath: display + ' \u2192 ' + rangeFor(bands, pk.idx, ge, fmtL) + ' \u2192 ' + (max - pk.pts) + ' of ' + max + ' safety pts' });
   }
   function pctL(x) { return limFmt(x) + '%'; }
   if (isNum(d.forwardPE) && d.forwardPE > 0) {
@@ -2704,8 +2710,26 @@ function riskScore(d, w) {
     }
     return display + ' \u2192 ' + range + ' \u2192 ' + bands[idx][1] + ' of ' + max + ' pts';
   }
+  function rangeFor(bands, idx, ge, fmtL) {
+    fmtL = fmtL || limFmt;
+    var L = bands[idx][0], P = idx > 0 ? bands[idx - 1][0] : null, range;
+    if (!ge) {
+      if (idx === 0) range = fmtL(L) + ' or less';
+      else if (!isFinite(L)) range = 'more than ' + fmtL(P);
+      else range = 'more than ' + fmtL(P) + ', up to ' + fmtL(L);
+    } else {
+      var excl = bands[idx][2] === 'gt', pExcl = idx > 0 && bands[idx - 1][2] === 'gt';
+      if (idx === 0) range = excl ? 'more than ' + fmtL(L) : fmtL(L) + ' or more';
+      else if (!isFinite(L)) range = pExcl ? fmtL(P) + ' or less' : 'under ' + fmtL(P);
+      else range = (excl ? 'more than ' + fmtL(L) : fmtL(L) + ' or more') + (pExcl ? ', up to ' : ', under ') + fmtL(P);
+    }
+    return range;
+  }
   function add(name, value, display, max, pk, note, bands, ge, fmtL) {
-    factors.push({ name: name, value: value, display: display, max: max, pts: pk.pts, note: note || '', math: mathFor(display, bands, pk.idx, ge, max, fmtL) });
+    /* sMath is the same sentence in safety points (max - pts): the
+     * UI shows Safety since 2026-11-20, so the factor table's math
+     * has to speak safety too. */
+    factors.push({ name: name, value: value, display: display, max: max, pts: pk.pts, note: note || '', math: mathFor(display, bands, pk.idx, ge, max, fmtL), sMath: display + ' \u2192 ' + rangeFor(bands, pk.idx, ge, fmtL) + ' \u2192 ' + (max - pk.pts) + ' of ' + max + ' safety pts' });
   }
   function pctL(x) { return limFmt(x) + '%'; }
   if (isNum(d.beta) && d.beta > 0) {
@@ -2762,6 +2786,17 @@ function riskScore(d, w) {
   if (score != null) verdict = score <= 25 ? 'Low risk' : score <= 45 ? 'Moderate risk' : score <= 65 ? 'Elevated risk' : 'High risk';
   return { factors: factors, got: got, maxAvailable: maxAvailable, base: base, score: score, verdict: verdict, cyc: cyc, cycAdj: base != null ? afterCyc - base : null, cliff: cliff, cliffAdj: afterCyc != null ? score - afterCyc : null };
 }
+
+/* Display flip (Justin's call, 2026-11-20): everywhere a person
+ * reads the number it is SAFETY = 100 - risk, so higher is better,
+ * same as Value and Overall. riskScore() itself, the shared scan,
+ * the R/R ratio and every internal formula keep the risk
+ * direction -- only the presentation flips. The verdict words
+ * still name the risk level (a low safety score IS elevated
+ * risk), and safetyClass picks the same banner colors the risk
+ * bands always produced. */
+function safetyOf(rk) { return rk && isNum(rk.score) ? 100 - rk.score : null; }
+function safetyClass(s) { return s >= 75 ? 'risk-low' : s >= 55 ? 'risk-mod' : s >= 35 ? 'risk-elev' : 'risk-high'; }
 
 function valueScreen(d) {
   return [
@@ -3353,8 +3388,8 @@ var INFO_TEXT = {
   mkttnx: 'The interest rate on the government\u2019s 10-year bond \u2014 the benchmark that mortgages, car loans, and company borrowing all price off. When it climbs, borrowing gets more expensive everywhere.',
   mktcurve: 'The gap between the 10-year rate and the 3-month rate. Normally long-term rates are higher, so the gap is positive. When it goes negative \u2014 inverted \u2014 it has preceded every recession since 1970.',
   mktcpi: 'How much consumer prices rose over the past year. The Fed targets 2%; while inflation runs above that, pressure stays on interest rates to remain high.',
-  cycsev: 'Severity runs 0 to 1: how peak-cycle today\'s numbers look vs the company\'s own history \u2014 margin vs its long-run average, worst EPS drawdown, trailing EPS growth, revenue surge. 0 = nothing unusual; 1 = textbook cycle peak. Needs 2 strong signals to count; then it lifts the risk score toward 100. With fewer than 3 signals carrying data, severity caps at 0.8.',
-  cliffsev: 'Severity runs 0 to 1: how hard earnings fall later in the analyst forecast, after their peak year. A fall of 10% or less counts as nothing; the scale tops out at a 75% fall, and falling into losses always counts as a full 1. It lifts the risk score toward 100 the same way the cyclical check does \u2014 the danger is the same, it just shows up in the forecast instead of in history. A fall into next year is scored separately, by the EPS trend factor.',
+  cycsev: 'Severity runs 0 to 1: how peak-cycle today\'s numbers look vs the company\'s own history \u2014 margin vs its long-run average, worst EPS drawdown, trailing EPS growth, revenue surge. 0 = nothing unusual; 1 = textbook cycle peak. Needs 2 strong signals to count; then it pulls the safety score down toward 0. With fewer than 3 signals carrying data, severity caps at 0.8.',
+  cliffsev: 'Severity runs 0 to 1: how hard earnings fall later in the analyst forecast, after their peak year. A fall of 10% or less counts as nothing; the scale tops out at a 75% fall, and falling into losses always counts as a full 1. It pulls the safety score down the same way the cyclical check does \u2014 the danger is the same, it just shows up in the forecast instead of in history. A fall into next year is scored separately, by the EPS trend factor.',
   fwpe: 'Forward P/E = today\'s price divided by next year\'s expected earnings per share. It prices the stock against where earnings are heading, not where they have been. Rough guide: under 15 is cheap for most stocks, over 30 is expensive.',
   pe: 'P/E (trailing) = today\'s price divided by the last twelve months\' actual earnings per share. Higher means investors pay more for each $1 of profit the company already makes.',
   peg: 'PEG = the forward P/E divided by the expected earnings growth rate. It checks whether the price is fair for the growth you are getting. Under 1 is the classic \u201cgrowth at a reasonable price\u201d zone; under 0.75 is rare.',
@@ -3385,7 +3420,7 @@ var INFO_TEXT = {
   size: 'Company size by market cap (price \u00d7 shares). Smaller companies tend to swing harder, get less analyst coverage, and can be harder to sell in a panic \u2014 so small size adds risk points here.',
   currentratio: 'Current ratio = short-term assets \u00f7 short-term bills. Above 1 means the company can cover what it owes within the year. Below 1 can mean cash stress if business dips.',
   boombust: 'Some businesses boom then bust in cycles (memory chips are the classic case). This flags it when the forecast shows a big earnings peak followed by a cliff, after revenue roughly doubled into the peak \u2014 peak earnings make a stock look deceptively cheap.',
-  scanscore: '<strong>Two scores</strong><br>Every stock in the index gets a Value score and a Risk score, both 0\u2013100. Value grades cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt. Risk grades danger \u2014 debt, volatility, size, earnings trend, boom-bust pattern.<br><br><strong>How the Score is built</strong><br>It starts at 60% Value + 40% safety, where safety = 100 \u2212 Risk.<br><br><strong>The deep check</strong><br>Before the list is final, each top stock is deep-checked, and its Score becomes 75% of that value-and-safety score plus 25% growth points from its projected 4-year CAGR \u2014 the yearly return its forecast earnings path works out to, the same number as the estimated return on the stock\u2019s page (\u221220%/yr earns 0 points, +40%/yr earns 100). A stock with no analyst forecast keeps its value-and-safety score.<br><br><strong>Who can appear</strong><br>Only stocks with enough data to score fairly \u2014 the Top 10 for each index.<br><br><strong>When it updates</strong><br>The list is computed once a day on the server, so every phone shows the same scores. Scores refresh when a company reports earnings, and the full index is rescanned about once a week. Tapping Rescan still runs a fresh scan on this phone.',
+  scanscore: '<strong>Two scores</strong><br>Every stock in the index gets a Value score and a Safety score, both 0\u2013100. Value grades cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt. Safety grades how safe it is \u2014 debt, volatility, size, earnings trend, boom-bust pattern; higher is safer.<br><br><strong>How the Score is built</strong><br>It starts at 60% Value + 40% Safety.<br><br><strong>The deep check</strong><br>Before the list is final, each top stock is deep-checked, and its Score becomes 75% of that value-and-safety score plus 25% growth points from its projected 4-year CAGR \u2014 the yearly return its forecast earnings path works out to, the same number as the estimated return on the stock\u2019s page (\u221220%/yr earns 0 points, +40%/yr earns 100). A stock with no analyst forecast keeps its value-and-safety score.<br><br><strong>Who can appear</strong><br>Only stocks with enough data to score fairly \u2014 the Top 10 for each index.<br><br><strong>When it updates</strong><br>The list is computed once a day on the server, so every phone shows the same scores. Scores refresh when a company reports earnings, and the full index is rescanned about once a week. Tapping Rescan still runs a fresh scan on this phone.',
   radar: 'Five 0\u2013100 measures drawn as a snowflake: Value (the valuation score), Future (forecast EPS growth), Past (recent revenue growth), Health (debt, liquidity, margins) and Dividend (the yield). The further a point reaches, the stronger that measure \u2014 a big, even snowflake is strong all round. If the Future point is red, the cliff check fired \u2014 earnings are forecast to fall off a peak.',
 };
 var FACTOR_INFO = {
@@ -4142,25 +4177,26 @@ function renderScorecard(d) {
 
   var rk = riskScore(d);
   if (rk.score != null) {
-    var rClass = rk.score <= 25 ? 'risk-low' : rk.score <= 45 ? 'risk-mod' : rk.score <= 65 ? 'risk-elev' : 'risk-high';
-    html += '<div class="verdict ' + rClass + '"><div><div class="v-label">Risk score</div>' +
+    var sf = safetyOf(rk);
+    var rClass = safetyClass(sf);
+    html += '<div class="verdict ' + rClass + '"><div><div class="v-label">Safety score</div>' +
       '<div class="v-word">' + esc(rk.verdict) + '</div></div>' +
-      '<button type="button" class="v-score pts-btn" data-mathbtn data-mathtarget="math-rscore" aria-expanded="false">' + rk.score + '<small> / 100</small></button></div>';
-    html += '<div class="score-bar risk-bar"><div style="width:' + rk.score + '%;' + scoreBarBg(100 - rk.score) + '"></div></div>';
+      '<button type="button" class="v-score pts-btn" data-mathbtn data-mathtarget="math-rscore" aria-expanded="false">' + sf + '<small> / 100</small></button></div>';
+    html += '<div class="score-bar risk-bar"><div style="width:' + sf + '%;' + scoreBarBg(sf) + '"></div></div>';
     if (weightsAreCustom()) {
       var rkStd = riskScore(d, STD_W);
-      if (rkStd.score != null && rkStd.score !== rk.score) html += '<p class="fineprint">Your scoring weights \u00b7 with the standard weights the risk score is ' + rkStd.score + '.</p>';
+      if (rkStd.score != null && rkStd.score !== rk.score) html += '<p class="fineprint">Your scoring weights \u00b7 with the standard weights the safety score is ' + (100 - rkStd.score) + '.</p>';
     }
-    var rkMath = 'Base = ' + rk.got + ' pts \u00f7 ' + rk.maxAvailable + ' pts available \u00d7 100 = ' + rk.base + '.';
-    if (rk.cyc && rk.cyc.severity > 0) rkMath += ' Cyclical overlay: ' + rk.base + ' + (100 \u2212 ' + rk.base + ') \u00d7 ' + fmtNum(rk.cyc.severity, 2) + ' \u00d7 0.6 = ' + (rk.base + rk.cycAdj) + '.';
-    if (rk.cliff && rk.cliff.severity > 0) rkMath += ' Cliff overlay: ' + (rk.base + rk.cycAdj) + ' + (100 \u2212 ' + (rk.base + rk.cycAdj) + ') \u00d7 ' + fmtNum(rk.cliff.severity, 2) + ' \u00d7 0.6 = ' + rk.score + '.';
+    var rkMath = 'Base safety = 100 \u2212 base risk ' + rk.base + ' (from ' + rk.got + ' risk pts \u00f7 ' + rk.maxAvailable + ' pts available \u00d7 100) = ' + (100 - rk.base) + '.';
+    if (rk.cyc && rk.cyc.severity > 0) rkMath += ' Cyclical overlay: ' + (100 - rk.base) + ' \u2212 (100 \u2212 ' + rk.base + ') \u00d7 ' + fmtNum(rk.cyc.severity, 2) + ' \u00d7 0.6 = ' + (100 - rk.base - rk.cycAdj) + '.';
+    if (rk.cliff && rk.cliff.severity > 0) rkMath += ' Cliff overlay: ' + (100 - rk.base - rk.cycAdj) + ' \u2212 (100 \u2212 ' + (rk.base + rk.cycAdj) + ') \u00d7 ' + fmtNum(rk.cliff.severity, 2) + ' \u00d7 0.6 = ' + sf + '.';
     html += '<div class="math-box banner-math" id="math-rscore" hidden>' + esc(rkMath) + '</div>';
-    html += '<table class="factors"><tr><th>Risk factor</th><th>Value</th><th class="num">Risk pts</th></tr>';
+    html += '<table class="factors"><tr><th>Safety factor</th><th>Value</th><th class="num">Safety pts</th></tr>';
     rk.factors.forEach(function (f, fi) {
       var ik = FACTOR_INFO[f.name];
-      html += '<tr><td><strong>' + esc(f.name) + '</strong>' + (ik ? infoDot(ik) : '') + '<div class="factor-note">' + esc(f.note) + '</div></td><td>' + esc(f.display) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-r' + fi + '" aria-expanded="false">' + (f.max === 0 ? '<strong>off</strong>' : '<strong>' + f.pts + '</strong> / ' + f.max) + '</button></td></tr>';
+      html += '<tr><td><strong>' + esc(f.name) + '</strong>' + (ik ? infoDot(ik) : '') + '<div class="factor-note">' + esc(f.note) + '</div></td><td>' + esc(f.display) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-r' + fi + '" aria-expanded="false">' + (f.max === 0 ? '<strong>off</strong>' : '<strong>' + (f.max - f.pts) + '</strong> / ' + f.max) + '</button></td></tr>';
       if (ik) html += '<tr class="info-row"><td colspan="3">' + infoText(ik) + '</td></tr>';
-      html += '<tr class="math-row" id="math-r' + fi + '" hidden><td colspan="3"><div class="math-box">' + esc(f.math) + '</div></td></tr>';
+      html += '<tr class="math-row" id="math-r' + fi + '" hidden><td colspan="3"><div class="math-box">' + esc(f.sMath || f.math) + '</div></td></tr>';
     });
     var cycSig = rk.cyc ? [rk.cyc.signals.margin, rk.cyc.signals.epsDD, rk.cyc.signals.epsGrowth, rk.cyc.signals.revSurge].filter(isNum) : [];
     if (rk.cyc && cycSig.length) {
@@ -4179,9 +4215,9 @@ function renderScorecard(d) {
       if (!rk.cyc.gatePassed) cNote += ' \u00b7 gate not met, no adjustment';
       else if (rk.cyc.limitedHistory) cNote += ' \u00b7 limited history';
       var cDetail = INFO_TEXT.cycsev + (cParts.length ? '<br><br>This stock: ' + esc(cParts.join(' \u00b7 ')) + '.' : '');
-      html += '<tr><td><strong>Cyclical earnings risk</strong>' + infoDot('cycsev') + '<div class="factor-note">' + esc(cNote) + '</div></td><td>Severity ' + fmtNum(rk.cyc.severity, 2) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-cyc" aria-expanded="false"><strong>+' + rk.cycAdj + '</strong></button></td></tr>';
+      html += '<tr><td><strong>Cyclical earnings risk</strong>' + infoDot('cycsev') + '<div class="factor-note">' + esc(cNote) + '</div></td><td>Severity ' + fmtNum(rk.cyc.severity, 2) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-cyc" aria-expanded="false"><strong>\u2212' + rk.cycAdj + '</strong></button></td></tr>';
       html += '<tr class="info-row"><td colspan="3"><span class="info-text" data-info-text="cycsev">' + cDetail + '</span></td></tr>';
-      var cycMath = 'Risk added = (100 \u2212 base ' + rk.base + ') \u00d7 severity ' + fmtNum(rk.cyc.severity, 2) + ' \u00d7 0.6 = +' + rk.cycAdj + ' \u2192 final ' + rk.score + '.';
+      var cycMath = 'Safety lost = (100 \u2212 base risk ' + rk.base + ') \u00d7 severity ' + fmtNum(rk.cyc.severity, 2) + ' \u00d7 0.6 = \u2212' + rk.cycAdj + ' \u2192 safety ' + (100 - rk.base - rk.cycAdj) + '.';
       if (cParts.length) cycMath = 'Severity ' + fmtNum(rk.cyc.severity, 2) + ': ' + cParts.join(' \u00b7 ') + '.<br>' + cycMath;
       html += '<tr class="math-row" id="math-cyc" hidden><td colspan="3"><div class="math-box">' + cycMath + '</div></td></tr>';
     }
@@ -4190,16 +4226,16 @@ function renderScorecard(d) {
       if (rk.cliff.stamped) fNote = 'From the stored scan check';
       var fDetail = INFO_TEXT.cliffsev;
       if (rk.cliff.severity > 0 && isNum(rk.cliff.peak) && isNum(rk.cliff.worst)) fDetail += '<br><br>This stock: EPS peaks at ' + fmtNum(rk.cliff.peak) + ' (' + esc(rk.cliff.peakLabel) + '), then falls to ' + fmtNum(rk.cliff.worst) + ' by ' + esc(rk.cliff.worstLabel) + ' \u2014 a ' + fmtNum(Math.abs(rk.cliff.drop) * 100, 0) + '% fall.';
-      html += '<tr><td><strong>Earnings cliff ahead</strong>' + infoDot('cliffsev') + '<div class="factor-note">' + esc(fNote) + '</div></td><td>Severity ' + fmtNum(rk.cliff.severity, 2) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-cliff" aria-expanded="false"><strong>+' + rk.cliffAdj + '</strong></button></td></tr>';
+      html += '<tr><td><strong>Earnings cliff ahead</strong>' + infoDot('cliffsev') + '<div class="factor-note">' + esc(fNote) + '</div></td><td>Severity ' + fmtNum(rk.cliff.severity, 2) + '</td><td class="num"><button type="button" class="pts-btn" data-mathbtn data-mathtarget="math-cliff" aria-expanded="false"><strong>\u2212' + rk.cliffAdj + '</strong></button></td></tr>';
       html += '<tr class="info-row"><td colspan="3"><span class="info-text" data-info-text="cliffsev">' + fDetail + '</span></td></tr>';
-      var cliffMath = 'Risk added = (100 \u2212 ' + (rk.base + rk.cycAdj) + ') \u00d7 severity ' + fmtNum(rk.cliff.severity, 2) + ' \u00d7 0.6 = +' + rk.cliffAdj + ' \u2192 final ' + rk.score + '.';
+      var cliffMath = 'Safety lost = (100 \u2212 ' + (rk.base + rk.cycAdj) + ') \u00d7 severity ' + fmtNum(rk.cliff.severity, 2) + ' \u00d7 0.6 = \u2212' + rk.cliffAdj + ' \u2192 final safety ' + sf + '.';
       html += '<tr class="math-row" id="math-cliff" hidden><td colspan="3"><div class="math-box">' + cliffMath + '</div></td></tr>';
     }
     html += '</table>';
     if ((rk.cyc && cycSig.length) || (rk.cliff && rk.cliff.known)) {
-      html += '<p class="fineprint">Base risk ' + rk.base + ' \u00b7 cyclical adjustment +' + rk.cycAdj + ' \u00b7 cliff adjustment +' + rk.cliffAdj + ' \u00b7 final ' + rk.score + '. Higher = riskier \u00b7 base scaled to 100 over factors with data (' + rk.maxAvailable + ' pts).</p>';
+      html += '<p class="fineprint">Base safety ' + (100 - rk.base) + ' \u00b7 cyclical \u2212' + rk.cycAdj + ' \u00b7 cliff \u2212' + rk.cliffAdj + ' \u00b7 final ' + sf + '. Higher = safer \u00b7 base scaled to 100 over factors with data (' + rk.maxAvailable + ' pts).</p>';
     } else {
-      html += '<p class="fineprint">Higher = riskier \u00b7 scaled to 100 over factors with data (' + rk.maxAvailable + ' pts).</p>';
+      html += '<p class="fineprint">Higher = safer \u00b7 scaled to 100 over factors with data (' + rk.maxAvailable + ' pts).</p>';
     }
   }
 
@@ -4490,7 +4526,7 @@ async function runCompare() {
     { label: 'Beta ↓', get: function (d) { return d.beta; }, fmt: function (v) { return fmtNum(v, 2); }, best: 'min' },
     { label: 'Dividend yield', get: function (d) { return d.divYield; }, fmt: function (v) { return isNum(v) ? fmtNum(v, 2) + '%' : '\u2014'; }, best: 'max' },
     { label: 'Score', get: function (d) { return scoreStock(d).score; }, fmt: function (v) { return isNum(v) ? v + ' / 100' : '—'; }, best: 'max' },
-    { label: 'Risk score \u2193', get: function (d) { var rk = riskScore(d); return rk && isNum(rk.score) ? rk.score : null; }, fmt: function (v) { return isNum(v) ? v + ' / 100' : '—'; }, best: 'min' },
+    { label: 'Safety score \u2191', get: function (d) { var rk = riskScore(d); return rk && isNum(rk.score) ? 100 - rk.score : null; }, fmt: function (v) { return isNum(v) ? v + ' / 100' : '—'; }, best: 'max' },
   ];
   var html = '<div class="card"><table class="cmp"><tr><th></th>';
   ok.forEach(function (d) { html += '<th class="num"><span class="cmp-th">' + logoTile(d.ticker, 'sm') + esc(d.ticker) + '</span></th>'; });
@@ -9343,17 +9379,18 @@ function renderOverview(d, item) {
     html += '<div class="math-box banner-math" id="math-ovv" hidden>' + esc(ovScMath) + '</div>';
   }
   if (rk.score != null) {
-    var rClass = rk.score <= 25 ? 'risk-low' : rk.score <= 45 ? 'risk-mod' : rk.score <= 65 ? 'risk-elev' : 'risk-high';
-    html += '<div class="verdict ' + rClass + '"><div><div class="v-label">Risk score</div>' +
+    var ovSf = safetyOf(rk);
+    var rClass = safetyClass(ovSf);
+    html += '<div class="verdict ' + rClass + '"><div><div class="v-label">Safety score</div>' +
       '<div class="v-word">' + esc(rk.verdict) + '</div></div>' +
-      '<button type="button" class="v-score pts-btn" data-mathbtn data-mathtarget="math-ovr" aria-expanded="false">' + rk.score + '<small> / 100</small></button></div>';
-    html += '<div class="score-bar risk-bar"><div style="width:' + rk.score + '%;' + scoreBarBg(100 - rk.score) + '"></div></div>';
+      '<button type="button" class="v-score pts-btn" data-mathbtn data-mathtarget="math-ovr" aria-expanded="false">' + ovSf + '<small> / 100</small></button></div>';
+    html += '<div class="score-bar risk-bar"><div style="width:' + ovSf + '%;' + scoreBarBg(ovSf) + '"></div></div>';
     if (weightsAreCustom()) {
       var ovRkStd = riskScore(d, STD_W);
-      if (ovRkStd.score != null && ovRkStd.score !== rk.score) html += '<p class="fineprint">Your scoring weights \u00b7 standard weights put the risk at ' + ovRkStd.score + '.</p>';
+      if (ovRkStd.score != null && ovRkStd.score !== rk.score) html += '<p class="fineprint">Your scoring weights \u00b7 standard weights put the safety at ' + (100 - ovRkStd.score) + '.</p>';
     }
-    var ovRkMath = 'Base = ' + rk.got + ' pts \u00f7 ' + rk.maxAvailable + ' pts available \u00d7 100 = ' + rk.base + '.';
-    if (rk.cyc && rk.cyc.severity > 0) ovRkMath += ' Cyclical overlay: ' + rk.base + ' + (100 \u2212 ' + rk.base + ') \u00d7 ' + fmtNum(rk.cyc.severity, 2) + ' \u00d7 0.6 = ' + rk.score + '.';
+    var ovRkMath = 'Base safety = 100 \u2212 base risk ' + rk.base + ' (from ' + rk.got + ' risk pts \u00f7 ' + rk.maxAvailable + ' pts available \u00d7 100) = ' + (100 - rk.base) + '.';
+    if (rk.cyc && rk.cyc.severity > 0) ovRkMath += ' Cyclical overlay: ' + (100 - rk.base) + ' \u2212 (100 \u2212 ' + rk.base + ') \u00d7 ' + fmtNum(rk.cyc.severity, 2) + ' \u00d7 0.6 = ' + ovSf + '.';
     html += '<div class="math-box banner-math" id="math-ovr" hidden>' + esc(ovRkMath) + '</div>';
   }
   var ovAxes = radarAxes(d);
