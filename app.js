@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261121143318';
+var APP_BUILD = 'stock-research-20261121172929';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -4314,6 +4314,7 @@ function renderScorecard(d) {
     '<button class="sc-act" id="sc-journal" type="button"><span>Journal this stock</span><span class="sc-act-arrow">›</span></button>' +
     '<button class="sc-act" id="sc-project" type="button"><span>Project it</span><span class="sc-act-arrow">›</span></button>' +
     '<button class="sc-act" id="sc-charts" type="button"><span>Charts</span><span class="sc-act-arrow">›</span></button>' +
+    '<button class="sc-act" id="sc-holders" type="button"><span>Holders</span><span class="sc-act-arrow">›</span></button>' +
     '<button class="sc-act" id="sc-refresh" type="button"><span>Refresh data</span><span class="sc-act-arrow">›</span></button>' +
     '<a class="sc-act sc-ext" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=' + esc(d.ticker) + '&type=&dateb=&owner=include&count=10" target="_blank" rel="noopener"><span>SEC filings</span><span class="sc-act-arrow">↗</span></a></div>';
 
@@ -4383,6 +4384,95 @@ function renderScorecard(d) {
     loadQm();
   });
   $('sc-refresh').addEventListener('click', function () { runSearch(d.ticker, true); });
+  $('sc-holders').addEventListener('click', function () { openHolders(d); });
+}
+
+/* Holders screen (Justin's ask, 2026-11-21): the "Holders" action
+ * row on the scorecard and the watchlist overview opens a sheet of
+ * the top institutional holders -- Nasdaq's 13F data, the same
+ * filings behind the FinFab screen he shared. Per holder: % of the
+ * company (shares held / shares outstanding), the filing's report
+ * date, and how the position changed. Named insiders aren't in this
+ * source (Yahoo's insider list is crumb-walled), so the summary
+ * carries the insider ownership % from Finviz instead. Day-cached:
+ * 13F data only moves quarterly. */
+var HOLDERS_KEY = 'sr_holders_v1';
+function holdersNum(v) {
+  if (isNum(v)) return v;
+  if (v == null) return null;
+  var n = parseFloat(String(v).replace(/[^0-9.\-]/g, ''));
+  return isNum(n) ? n : null;
+}
+function holdersDate(s) {
+  var m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(s || '').trim());
+  if (!m) return s || '';
+  var MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return MN[+m[1] - 1] + ' ' + (+m[2]) + ', ' + m[3];
+}
+async function fetchHolders(T) {
+  var all = lsGet(HOLDERS_KEY, {});
+  var hit = all[T];
+  if (hit && hit.day === new Date().toDateString() && hit.list && hit.list.length) return hit;
+  try {
+    var j = await relayJSON('https://api.nasdaq.com/api/company/' + encodeURIComponent(T) + '/institutional-holdings?assetclass=stocks', 20000);
+    var data = j && j.data;
+    if (!data) return null;
+    var sum = data.ownershipSummary || {};
+    var sharesOutM = holdersNum((sum.ShareoutstandingTotal || {}).value); // millions
+    var rows = (((data.holdingsTransactions || {}).table || {}).rows) || [];
+    var list = rows.map(function (r) {
+      var shares = holdersNum(r.sharesHeld);
+      return { name: r.ownerName || '', date: r.date || '', shares: shares,
+        pct: (isNum(shares) && sharesOutM) ? shares / (sharesOutM * 1e6) * 100 : null,
+        chg: holdersNum(r.sharesChangePCT) };
+    }).filter(function (h) { return h.name && isNum(h.shares); });
+    list.sort(function (a, b) { return b.shares - a.shares; });
+    list = list.slice(0, 15);
+    if (!list.length) return null;
+    var out = { day: new Date().toDateString(), instPct: (sum.SharesOutstandingPCT || {}).value || '',
+      count: holdersNum((data.holdingsTransactions || {}).institutionalHolders), list: list };
+    all[T] = out;
+    lsSet(HOLDERS_KEY, all);
+    return out;
+  } catch (e) { return null; }
+}
+function holdersChgHtml(chg) {
+  if (!isNum(chg) || chg === 0) return '<div class="hld-chg mut">—</div>';
+  var up = chg > 0;
+  return '<div class="hld-chg ' + (up ? 'up' : 'down') + '">' + (up ? '▲ ' : '▼ ') + Math.abs(Math.round(chg)) + '%</div>';
+}
+function openHolders(d) {
+  var ov = $('holders-overlay'), body = $('holders-body');
+  if (!ov || !body) return;
+  var head = '<div class="hld-title">Holders</div><div class="hld-sub">' + esc(d.name || d.ticker) + ' · ' + esc(d.ticker) + '</div>';
+  ov.hidden = false;
+  setMainLock('holders', true);
+  body.innerHTML = head + '<div class="status">Loading holders…</div>';
+  fetchHolders(d.ticker).then(function (h) {
+    if (ov.hidden) return;
+    if (!h) {
+      body.innerHTML = head + '<div class="status">No institutional holdings data for ' + esc(d.ticker) + ' — some funds, ADRs and very small companies aren\'t covered.</div>';
+      return;
+    }
+    var html = head + '<div class="hld-sum">';
+    if (h.instPct) html += '<span class="hld-chip">Institutions own ' + esc(h.instPct) + '</span>';
+    if (isNum(d.insiderOwn)) html += '<span class="hld-chip">Insiders own ' + fmtNum(d.insiderOwn, 1) + '%</span>';
+    if (isNum(h.count)) html += '<span class="hld-chip">' + Math.round(h.count).toLocaleString('en-US') + ' institutional holders</span>';
+    html += '</div>';
+    h.list.forEach(function (x) {
+      html += '<div class="hld-row"><div class="hld-name-wrap"><div class="hld-name">' + esc(x.name) + '</div>' +
+        '<div class="hld-date">' + esc(holdersDate(x.date)) + '</div>' +
+        '<div class="hld-shares">' + fmtSharesShort(x.shares) + ' shares</div></div>' +
+        '<div class="hld-right"><div class="hld-pct">' + (isNum(x.pct) ? fmtNum(x.pct, 2) + '%' : '—') + '</div>' + holdersChgHtml(x.chg) + '</div></div>';
+    });
+    html += '<p class="fineprint">Top institutional holders from 13F filings (via Nasdaq). Dates are each filing\'s report date, so they can lag by up to a quarter. % of company = shares held ÷ shares outstanding.</p>';
+    body.innerHTML = html;
+  });
+}
+function closeHolders() {
+  var ov = $('holders-overlay');
+  if (ov) ov.hidden = true;
+  setMainLock('holders', false);
 }
 
 /* Skeleton loaders (2026-11-19): content-shaped shimmer blocks shown
@@ -6706,6 +6796,14 @@ function ensureQmWiring() {
   var qmOvEl = $('qm-overlay');
   if (qmOvEl) qmOvEl.addEventListener('click', function (e) {
     if (e.target === qmOvEl) { qmMode = 'grid'; renderQm(); }
+  });
+  var hBackEl = $('holders-back');
+  if (hBackEl) hBackEl.addEventListener('click', closeHolders);
+  var hCloseEl = $('holders-close');
+  if (hCloseEl) hCloseEl.addEventListener('click', closeHolders);
+  var hOvEl = $('holders-overlay');
+  if (hOvEl) hOvEl.addEventListener('click', function (e) {
+    if (e.target === hOvEl) closeHolders();
   });
 }
 
@@ -9440,6 +9538,7 @@ function renderOverview(d, item) {
     '<button type="button" class="sc-act" id="ov-scorecard"><span>Full scorecard</span><span class="sc-act-arrow">›</span></button>' +
     '<button type="button" class="sc-act" id="ov-project"><span>Projection</span><span class="sc-act-arrow">›</span></button>' +
     '<button type="button" class="sc-act" id="ov-charts"><span>Charts</span><span class="sc-act-arrow">›</span></button>' +
+    '<button type="button" class="sc-act" id="ov-holders"><span>Holders</span><span class="sc-act-arrow">›</span></button>' +
     '<button type="button" class="sc-act" id="ov-edit-target"><span>Edit target</span><span class="sc-act-arrow">›</span></button>' +
     '<button type="button" class="sc-act" id="ov-remove"><span>Remove</span><span class="sc-act-arrow">›</span></button>' +
     '<a class="sc-act sc-ext" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&ticker=' + encodeURIComponent(d.ticker) + '&type=10-Q&dateb=&owner=include&count=10" target="_blank" rel="noopener"><span>Earnings report</span><span class="sc-act-arrow">↗</span></a>' +
@@ -9493,6 +9592,8 @@ function wireOverviewActions(d) {
     $('qm-ticker').value = d.ticker;
     loadQm();
   });
+  var hd = $('ov-holders');
+  if (hd) hd.addEventListener('click', function () { openHolders(d); });
   var et = $('ov-edit-target');
   if (et) et.addEventListener('click', function () {
     var cur = getWatchlist().filter(function (x) { return x.ticker === d.ticker; })[0];
