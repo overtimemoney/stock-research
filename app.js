@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261122042235';
+var APP_BUILD = 'stock-research-20261122042922';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -4935,9 +4935,17 @@ function pjTrendGrowthAt(series, stepsAhead) {
    * toward the same 0.50 floor at the same 1.25 slope as the exit
    * P/E's slowdown factor, and it compounds: each added year
    * multiplies the rate by the fade again, so a fading grower keeps
-   * easing off instead of locking onto its last rate forever. */
+   * easing off instead of locking onto its last rate forever.
+   * The extreme-jump fade below runs alongside it (the smaller of
+   * the two wins): a path that ends ACCELERATING into a huge final
+   * jump -- INTC's +146.6% off a tiny base was the case Justin
+   * flagged, 2026-11-21 -- has no deceleration to read, so the
+   * deceleration fade alone repeated the jump verbatim into every
+   * invented year. Now any final pace above 50%/yr is trimmed
+   * toward 50 on its own, floored at the same 0.50. */
   var gLast = series[series.length - 1];
-  return gLast * Math.pow(pjExtrapFade(series), (stepsAhead || 0) + 1);
+  var fade = Math.min(pjExtrapFade(series), pjExtremeFade(gLast));
+  return gLast * Math.pow(fade, (stepsAhead || 0) + 1);
 }
 /* The exit P/E growth-slowing trim as a standalone factor:
  * trigger and curve identical to pjExitSlow inside pjComputeExitPe
@@ -4952,6 +4960,22 @@ function pjExtrapFade(series) {
   var ratio = Math.max(0, gLast / peak);
   if (ratio <= 0.1) return 0.5;
   return 0.5 + (ratio - 0.1) * 1.25;
+}
+
+/* Extreme-jump fade (Justin's ask, 2026-11-21): a final analyst
+ * pace above 50%/yr is a spike, not a run rate -- usually a
+ * recovery off a tiny or negative base. An invented year keeps
+ * only 50/pace of it (pace 100 -> half, pace 75 -> two thirds),
+ * never less than the family floor of 0.50, and pjTrendGrowthAt
+ * compounds it per added year like the deceleration fade. Paces
+ * at or under 50%/yr are untouched. Applies ONLY to extrapolated
+ * years (this function and wlProjectCagr/scanProjectCagr through
+ * it) -- the exit P/E's own slowdown trim is a separate, locked
+ * spec and does not use this. */
+function pjExtremeFade(g) {
+  if (!isNum(g) || g <= 50) return 1;
+  var f = 50 / g;
+  return f < 0.5 ? 0.5 : f;
 }
 /* Growth % of each path year vs the prior year's EPS (year 1 vs base). */
 function pjGrowths(base, path) {
