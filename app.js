@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261122051719';
+var APP_BUILD = 'stock-research-20261122061754';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -5649,6 +5649,23 @@ function qmNextQLabels(lastLabel, n) {
   return out;
 }
 
+/* Alpha Vantage fallback (2026-11-22): the relay Worker holds the AV
+ * key and caches hard (its free tier is 25 calls/day across everyone),
+ * so the app just asks the Worker. Returns the same shape
+ * parseSAQuarterly produces, or null. */
+var AV_STMT_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/av-stmt';
+async function fetchAvFallback(T, yearly) {
+  try {
+    var ctl = ('AbortController' in window) ? new AbortController() : null;
+    var to = ctl ? setTimeout(function () { ctl.abort(); }, 25000) : null;
+    var r = await fetch(AV_STMT_URL + '?t=' + encodeURIComponent(T) + '&p=' + (yearly ? 'y' : 'q'), ctl ? { signal: ctl.signal } : {});
+    if (to) clearTimeout(to);
+    if (!r.ok) return null;
+    var j = await r.json();
+    return (j && j.ok && j.data && j.data.revenue) ? j.data : null;
+  } catch (e) { return null; }
+}
+
 async function fetchQMetrics(T, freq) {
   var yearly = freq === 'y';
   var cache = lsGet(QM_KEY, {});
@@ -5670,7 +5687,12 @@ async function fetchQMetrics(T, freq) {
   /* The null check must come FIRST: when every page fails, data is
    * null and touching data.est threw the raw engine error Justin
    * screenshotted on 2026-11-15 instead of this plain message. */
-  if (!data || !data.revenue) throw new Error('No data found');
+  if (!data || !data.revenue) {
+    /* StockAnalysis came back empty -- try the Alpha Vantage fallback
+     * on the relay Worker before giving up (2026-11-22). */
+    data = await fetchAvFallback(T, yearly);
+    if (!data || !data.revenue) throw new Error('No data found');
+  }
   data.est = yearly ? parseSAForecastMetrics(pages[3]) : null;
   data.estEps = [];
   try {
