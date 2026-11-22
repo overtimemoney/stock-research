@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261122050514';
+var APP_BUILD = 'stock-research-20261122050716';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -11353,6 +11353,10 @@ function attachAutocomplete(input, onPick) {
     }).join('');
     place();
     list.style.display = 'block';
+    /* 150ms settle-in, same as every other dropdown (rule 5). */
+    if (typeof list.animate === 'function') {
+      try { list.animate([{ opacity: 0, transform: 'translateY(2px)' }, { opacity: 1, transform: 'translateY(0)' }], { duration: 150, easing: 'ease-out' }); } catch (e) {}
+    }
     list.querySelectorAll('.ac-item').forEach(function (b) {
       b._pick = function () {
         var sym = b.getAttribute('data-sym');
