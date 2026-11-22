@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261122051229';
+var APP_BUILD = 'stock-research-20261122051719';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -5670,7 +5670,7 @@ async function fetchQMetrics(T, freq) {
   /* The null check must come FIRST: when every page fails, data is
    * null and touching data.est threw the raw engine error Justin
    * screenshotted on 2026-11-15 instead of this plain message. */
-  if (!data || !data.revenue) throw new Error('No ' + (yearly ? 'annual' : 'quarterly') + ' statements came back for \u201c' + T + '\u201d \u2014 the data source didn\u2019t answer, or it doesn\u2019t cover this stock. Try again in a moment.');
+  if (!data || !data.revenue) throw new Error('No data found');
   data.est = yearly ? parseSAForecastMetrics(pages[3]) : null;
   data.estEps = [];
   try {
