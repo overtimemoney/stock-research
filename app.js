@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261122043522';
+var APP_BUILD = 'stock-research-20261122044831';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -773,13 +773,42 @@ async function fetchStock(ticker, opts) {
 
   // --- Yahoo chart: 1y weekly price history ---
   var srcYahoo = async function () { try {
+    /* Bar pairs from a Yahoo chart payload, with one guard: Yahoo
+     * pads the weeks before a new listing with the CURRENT price
+     * (ANT, listed Thu 2026-11-19, arrived with a phantom bar dated
+     * Mon 2026-11-16 at today's price), so a bar stamped before the
+     * first trade is not history and is dropped. */
+    var chartPairs = function (res) {
+      var rawCloses = (res.indicators && res.indicators.quote && res.indicators.quote[0].close) || [];
+      var rawTs = res.timestamp || [];
+      var ft = (res.meta && isNum(res.meta.firstTradeDate)) ? res.meta.firstTradeDate : null;
+      var closes = [], tsArr = [];
+      rawCloses.forEach(function (c, i) {
+        var t = rawTs[i];
+        if (!isNum(c) || !isNum(t)) return;
+        if (ft && t < ft - 86400) return;
+        closes.push(c); tsArr.push(t);
+      });
+      return { closes: closes, ts: tsArr };
+    };
     var ch = await relayJSON('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(T) + '?range=1y&interval=1wk');
     var res = ch && ch.chart && ch.chart.result && ch.chart.result[0];
     if (res) {
-      var rawCloses = (res.indicators && res.indicators.quote && res.indicators.quote[0].close) || [];
-      var rawTs = res.timestamp || [];
-      var closes = [], tsArr = [];
-      rawCloses.forEach(function (c, i) { if (isNum(c)) { closes.push(c); tsArr.push(rawTs[i] || null); } });
+      var wk = chartPairs(res);
+      var closes = wk.closes, tsArr = wk.ts;
+      if (closes.length < 2) {
+        /* Too new for two weekly bars (ANT had one real bar two days
+         * after its IPO): the daily bars are the history there is --
+         * use them instead of declaring the chart unavailable. */
+        try {
+          var chD = await relayJSON('https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(T) + '?range=1y&interval=1d');
+          var resD = chD && chD.chart && chD.chart.result && chD.chart.result[0];
+          if (resD) {
+            var dy = chartPairs(resD);
+            if (dy.closes.length > closes.length) { closes = dy.closes; tsArr = dy.ts; }
+          }
+        } catch (e) { /* keep whatever the weekly fetch gave */ }
+      }
       d.history = closes;
       d.historyTs = tsArr;
       var meta = res.meta || {};
@@ -3141,9 +3170,15 @@ function pxEnsureTier(d, tier) {
       if (!res) return false;
       var rawCloses = (res.indicators && res.indicators.quote && res.indicators.quote[0].close) || [];
       var rawTs = res.timestamp || [];
+      var ft = (res.meta && isNum(res.meta.firstTradeDate)) ? res.meta.firstTradeDate : null;
       var closes = [], tsArr = [];
-      rawCloses.forEach(function (c, i) { if (isNum(c)) { closes.push(c); tsArr.push(rawTs[i] || null); } });
-      if (closes.length < 2 || tsArr.some(function (t) { return !isNum(t); })) return false;
+      rawCloses.forEach(function (c, i) {
+        var t = rawTs[i];
+        if (!isNum(c) || !isNum(t)) return;
+        if (ft && t < ft - 86400) return; // pre-listing padded bar (see srcYahoo)
+        closes.push(c); tsArr.push(t);
+      });
+      if (closes.length < 2) return false;
       d[tier.key] = closes;
       d[tier.tsKey] = tsArr;
       try {
