@@ -1178,3 +1178,40 @@ table.factors .info-row .info-text.open { max-height: 900px; }
 h1, h2, h3, h4, .ob-q, .sc-name { text-wrap: balance; }
 .info-dot { position: relative; }
 .info-dot::after { content: ''; position: absolute; inset: -10px; border-radius: 50%; }
+
+/* ===== Dropdown kit (2026-11-21): Justin's five dropdown rules =====
+ * 1) Obvious triggers -- caret (already on the toggles), hover
+ *    feedback below, and 48px minimum touch targets.
+ * 2) Flip on edge -- the overlay dropdowns (autocomplete, index
+ *    bubbles) open upward near the screen edge; in-flow panels
+ *    can't be cut off, so they don't need it.
+ * 3) Keyboard -- native on buttons/selects; arrows/Enter/Escape
+ *    added in app.js for the autocomplete, metric picker, bubbles.
+ * 4) 10+ items get search -- the Charts metric picker (17 items)
+ *    has the filter box; no list in the app reaches 100 items, so
+ *    virtualization is N/A everywhere.
+ * 5) ~150ms open/close -- ddAnimBody and setInfoOpen in app.js. */
+.ceo-toggle { min-height: 48px; border-radius: 10px; }
+.ceo-chev { transition-duration: 150ms; }
+select { min-height: 48px; }
+.scan-ix-toggle { min-height: 48px; }
+.qm-picker-btn { min-height: 48px; }
+.qm-opt { min-height: 48px; }
+.ac-item.ac-on { background: var(--chip-bg); }
+.info-text { transition-duration: .15s; }
+.info-dot::after { inset: -15px; }
+#ix-pop.ix-pop-up .ix-pop-caret { top: auto; bottom: -5.5px; transform: rotate(225deg); }
+.scan-ixname { cursor: pointer; border-radius: 6px; }
+.scan-ixname:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+#qm-metric-filter { width: 100%; box-sizing: border-box; margin: 0 0 8px; padding: 10px 12px; min-height: 48px; border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font: inherit; font-size: 14px; }
+@media (hover: hover) {
+  .ceo-toggle:hover { background: var(--chip-bg); }
+  .ac-item:hover { background: var(--chip-bg); }
+  select:hover { border-color: var(--gold); }
+  .info-dot:hover { color: var(--gold); border-color: var(--gold); }
+  .scan-ixname:hover { text-decoration: underline; }
+  .comp-row:hover { border-color: var(--gold); }
+  .sim-tile:hover { border-color: var(--gold); }
+  .qm-picker-btn:hover { border-color: var(--gold); }
+  .qm-opt:hover { background: var(--chip-bg); }
+}

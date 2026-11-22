@@ -125,6 +125,7 @@ setTimeout(function () { var s = document.getElementById('splash'); if (s) { s.c
         <div class="qm-sheet-top"><button type="button" id="qm-back" class="btn-ghost">‹ All charts</button><button type="button" id="qm-close" class="qm-x" aria-label="Close chart"><svg class="ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
         <button type="button" id="qm-metric-btn" class="qm-picker-btn" aria-haspopup="true" aria-expanded="false"><span id="qm-metric-name">Revenue</span><span class="qm-chev">▾</span></button>
         <div id="qm-metric-list" class="qm-picker-list" hidden>
+          <input id="qm-metric-filter" type="text" placeholder="Filter metrics\u2026" autocomplete="off" aria-label="Filter metrics">
           <div class="qm-group">Money</div>
           <button type="button" data-qm="revenue" class="qm-opt on">Revenue</button>
           <button type="button" data-qm="netIncome" class="qm-opt">Net income</button>

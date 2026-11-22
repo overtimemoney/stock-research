@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261122044831';
+var APP_BUILD = 'stock-research-20261122050514';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -3592,6 +3592,39 @@ function infoText(key) {
  * the same duration and easing as the opacity transition, which the
  * compositor runs as one motion. After an open, the inline height is
  * handed back to the stylesheet so the explainer reflows on rotation. */
+/* Dropdown kit (2026-11-21, Justin's five dropdown rules): every
+ * collapsible panel in the app opens and closes through this one
+ * helper -- a ~150ms height animation, fast enough to feel instant,
+ * slow enough to feel smooth. (The \u24d8 explainers run the same
+ * 150ms through setInfoOpen just below.) Reduced-motion users get
+ * the instant flip instead. */
+function ddAnimBody(body, open) {
+  if (!body) return;
+  var reduced = false;
+  try { reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+  if (body._ddAnim) { try { body._ddAnim.cancel(); } catch (e) {} body._ddAnim = null; }
+  if (reduced || typeof body.animate !== 'function') { body.hidden = !open; body.style.overflow = ''; return; }
+  if (open) {
+    body.hidden = false;
+    var h = body.scrollHeight;
+    if (!h) return;
+    body.style.overflow = 'hidden';
+    var a = body.animate(
+      [{ height: '0px', opacity: 0.5 }, { height: h + 'px', opacity: 1 }],
+      { duration: 150, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' });
+    body._ddAnim = a;
+    a.onfinish = function () { if (body._ddAnim === a) { body._ddAnim = null; body.style.overflow = ''; } };
+  } else {
+    var h2 = body.scrollHeight;
+    if (!h2) { body.hidden = true; return; }
+    body.style.overflow = 'hidden';
+    var a2 = body.animate(
+      [{ height: h2 + 'px', opacity: 1 }, { height: '0px', opacity: 0.5 }],
+      { duration: 150, easing: 'ease-in' });
+    body._ddAnim = a2;
+    a2.onfinish = function () { if (body._ddAnim === a2) { body._ddAnim = null; body.style.overflow = ''; body.hidden = true; } };
+  }
+}
 function setInfoOpen(txt, open) {
   if (!txt) return;
   var reduced = false;
@@ -3603,13 +3636,13 @@ function setInfoOpen(txt, open) {
   if (reduced || !h || typeof txt.animate !== 'function') return;
   var anim = txt.animate(
     open ? [{ maxHeight: '0px' }, { maxHeight: h + 'px' }] : [{ maxHeight: h + 'px' }, { maxHeight: '0px' }],
-    { duration: 350, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' });
+    { duration: 150, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' });
   txt._infoAnim = anim;
   setTimeout(function () {
     if (txt._infoAnim !== anim) return;
     txt._infoAnim = null;
     if (txt.classList.contains('open')) txt.style.maxHeight = ''; // hand back to the stylesheet so it reflows on rotation
-  }, 420);
+  }, 220);
 }
 var glossReturn = 'portfolio';
 var glossReturnState = null; /* {tab, scroll, ov} captured at the 'See in Glossary' tap */
@@ -4475,8 +4508,9 @@ function renderScorecard(d) {
     b.addEventListener('click', function () {
       var body = document.querySelector('[data-sbody="' + b.getAttribute('data-stoggle') + '"]');
       if (!body) return;
-      body.hidden = !body.hidden;
-      b.classList.toggle('open', !body.hidden);
+      var open = body.hidden;
+      ddAnimBody(body, open);
+      b.classList.toggle('open', open);
     });
   });
   renderScChart(d);
@@ -9061,7 +9095,7 @@ var IX_POP_TEXT = {
   tot: 'Every US stock the app can score \u2014 thousands of companies, big and small. The other two lists both live inside this one.'
 };
 function ixNameHtml(ix) {
-  return '<span class="scan-ixname" data-ixpop="' + ix.key + '">' + esc(ix.label) + '</span>';
+  return '<span class="scan-ixname" data-ixpop="' + ix.key + '" tabindex="0" role="button" aria-haspopup="true">' + esc(ix.label) + '</span>';
 }
 var ixPopEl = null, ixPopKey = null, ixPopAnim = null, ixPopShownAt = 0;
 function ixPopEnsure() {
@@ -9081,7 +9115,7 @@ function ixPopHide() {
   ixPopAnim = el.animate([
     { opacity: 1, transform: 'translateY(0) scale(1)' },
     { opacity: 0, transform: 'translateY(2px) scale(.98)' }
-  ], { duration: 140, easing: 'ease-in', fill: 'forwards' });
+  ], { duration: 150, easing: 'ease-in', fill: 'forwards' });
   ixPopAnim.onfinish = function () { el.style.display = 'none'; };
 }
 function ixPopShow(key, anchor) {
@@ -9096,16 +9130,21 @@ function ixPopShow(key, anchor) {
   var r = anchor.getBoundingClientRect();
   var left = Math.max(12, Math.min(r.left, window.innerWidth - 12 - w));
   el.style.left = left + 'px';
-  el.style.top = (r.bottom + 9) + 'px';
+  /* Flip on edge (dropdown rule): if the bubble would run past the
+   * bottom of the screen, it opens upward instead, caret flipped. */
+  var bh = el.offsetHeight;
+  var flip = (r.bottom + 9 + bh > window.innerHeight - 8) && (r.top - 9 - bh >= 8);
+  el.style.top = (flip ? (r.top - 9 - bh) : (r.bottom + 9)) + 'px';
+  el.classList.toggle('ix-pop-up', flip);
   var cx = Math.max(18, Math.min(r.left + r.width / 2 - left, w - 18));
   el.querySelector('.ix-pop-caret').style.left = (cx - 5) + 'px';
-  el.style.transformOrigin = cx + 'px 0';
+  el.style.transformOrigin = cx + (flip ? 'px 100%' : 'px 0');
   ixPopKey = key;
   ixPopShownAt = Date.now();
   ixPopAnim = el.animate([
     { opacity: 0, transform: 'translateY(3px) scale(.97)' },
     { opacity: 1, transform: 'translateY(0) scale(1)' }
-  ], { duration: 170, easing: 'cubic-bezier(0.23, 1, 0.32, 1)', fill: 'forwards' });
+  ], { duration: 150, easing: 'cubic-bezier(0.23, 1, 0.32, 1)', fill: 'forwards' });
 }
 /* About clamp toggle (2026-11-18 redesign): the scorecard About text
  * shows 3 lines with a More/Less button when it's long. */
@@ -9121,6 +9160,22 @@ document.addEventListener('click', function (e) {
 document.addEventListener('click', function (e) {
   var t = e.target && e.target.closest ? e.target.closest('[data-ixpop]') : null;
   if (!t) return;
+  var key = t.getAttribute('data-ixpop');
+  if (ixPopKey === key) ixPopHide(); else ixPopShow(key, t);
+});
+/* Keyboard for the bubbles + Escape discipline (dropdown rule):
+ * Enter/Space on a focused index name toggles its bubble; Escape
+ * closes the bubble, or any open \u24d8 explainer. */
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') {
+    if (ixPopKey) { ixPopHide(); return; }
+    document.querySelectorAll('.info-text.open').forEach(function (txt) { setInfoOpen(txt, false); });
+    return;
+  }
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  var t = e.target && e.target.closest ? e.target.closest('[data-ixpop]') : null;
+  if (!t) return;
+  e.preventDefault();
   var key = t.getAttribute('data-ixpop');
   if (ixPopKey === key) ixPopHide(); else ixPopShow(key, t);
 });
@@ -10483,8 +10538,9 @@ async function renderPortfolio(doFetch) {
             var lst = popEl.querySelector('.pf-pop-list');
             var hint = popEl.querySelector('.pf-pop-hint');
             if (lst) {
-              lst.hidden = !lst.hidden;
-              if (hint) hint.textContent = lst.hidden ? 'Tap here to see the holdings inside \u25be' : 'Tap here to hide the holdings inside \u25b4';
+              var open = lst.hidden;
+              ddAnimBody(lst, open);
+              if (hint) hint.textContent = open ? 'Tap here to hide the holdings inside \u25b4' : 'Tap here to see the holdings inside \u25be';
             }
           };
         }
@@ -11249,10 +11305,11 @@ function attachAutocomplete(input, onPick) {
   if (!input) return;
   var list = document.createElement('div');
   list.className = 'ac-list';
+  list.setAttribute('role', 'listbox');
   list.style.display = 'none';
   document.body.appendChild(list);
-  var seq = 0, timer = null;
-  function hide() { list.style.display = 'none'; }
+  var seq = 0, timer = null, activeIdx = -1;
+  function hide() { list.style.display = 'none'; activeIdx = -1; }
   function place() {
     var r = input.getBoundingClientRect();
     var vv = window.visualViewport;
@@ -11289,7 +11346,7 @@ function attachAutocomplete(input, onPick) {
   function show(items) {
     if (!items.length) { hide(); return; }
     list.innerHTML = items.map(function (it) {
-      return '<button type="button" class="ac-item" data-sym="' + esc(it.symbol) + '">' +
+      return '<button type="button" class="ac-item" role="option" aria-selected="false" data-sym="' + esc(it.symbol) + '">' +
         '<span class="ac-top"><span class="ac-sym">' + esc(it.symbol) + '</span>' +
         (it.exch ? '<span class="ac-exch">' + esc(it.exch) + '</span>' : '') + '</span>' +
         '<span class="ac-name">' + esc(it.name) + '</span></button>';
@@ -11297,15 +11354,16 @@ function attachAutocomplete(input, onPick) {
     place();
     list.style.display = 'block';
     list.querySelectorAll('.ac-item').forEach(function (b) {
-      b.addEventListener('pointerdown', function (e) {
-        e.preventDefault();
+      b._pick = function () {
         var sym = b.getAttribute('data-sym');
         input.value = sym;
         hide();
         input.blur();
         if (onPick) onPick(sym);
-      });
+      };
+      b.addEventListener('pointerdown', function (e) { e.preventDefault(); b._pick(); });
     });
+    activeIdx = -1;
   }
   input.addEventListener('input', function () {
     var q = input.value;
@@ -11337,7 +11395,33 @@ function attachAutocomplete(input, onPick) {
     }, 350);
   });
   input.addEventListener('blur', function () { setTimeout(hide, 180); });
-  input.addEventListener('keydown', function (e) { if (e.key === 'Escape') hide(); });
+  function setActive(i) {
+    var items = list.querySelectorAll('.ac-item');
+    activeIdx = i;
+    items.forEach(function (b, j) {
+      b.classList.toggle('ac-on', j === i);
+      b.setAttribute('aria-selected', j === i ? 'true' : 'false');
+    });
+    if (i >= 0 && items[i]) items[i].scrollIntoView({ block: 'nearest' });
+  }
+  /* Full keyboard (dropdown rule): arrows walk the suggestions,
+   * Enter picks the highlighted one, Escape closes. */
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { hide(); return; }
+    if (list.style.display === 'none') return;
+    var items = list.querySelectorAll('.ac-item');
+    if (!items.length) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      var n = items.length;
+      var i = activeIdx < 0 ? (e.key === 'ArrowDown' ? 0 : n - 1)
+        : (activeIdx + (e.key === 'ArrowDown' ? 1 : -1) + n) % n;
+      setActive(i);
+    } else if (e.key === 'Enter' && activeIdx >= 0 && items[activeIdx]) {
+      e.preventDefault();
+      items[activeIdx]._pick();
+    }
+  });
   window.addEventListener('resize', function () { if (list.style.display !== 'none') place(); });
   var mainEl = document.querySelector('main');
   if (mainEl) mainEl.addEventListener('scroll', function () { if (list.style.display !== 'none') place(); }, { passive: true });
@@ -12161,8 +12245,9 @@ function initApp() {
     b.addEventListener('click', function () {
       qmMetric = b.getAttribute('data-qm');
       var list = $('qm-metric-list'), btn = $('qm-metric-btn');
-      if (list) list.hidden = true;
+      if (list) ddAnimBody(list, false);
       if (btn) btn.setAttribute('aria-expanded', 'false');
+      qmResetFilter();
       renderQm();
     });
   });
@@ -12170,8 +12255,54 @@ function initApp() {
   if (qmBtn) qmBtn.addEventListener('click', function () {
     var list = $('qm-metric-list');
     if (!list) return;
-    list.hidden = !list.hidden;
-    qmBtn.setAttribute('aria-expanded', list.hidden ? 'false' : 'true');
+    var open = list.hidden;
+    ddAnimBody(list, open);
+    qmBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (!open) qmResetFilter();
+  });
+  /* Metric filter (dropdown rule: 10+ items get search -- this list
+   * has 17): typing narrows the options and hides empty groups. */
+  var qmFilterEl = $('qm-metric-filter');
+  function qmResetFilter() {
+    if (qmFilterEl) qmFilterEl.value = '';
+    var list = $('qm-metric-list');
+    if (!list) return;
+    list.querySelectorAll('.qm-opt, .qm-group').forEach(function (el) { el.style.display = ''; });
+  }
+  if (qmFilterEl) qmFilterEl.addEventListener('input', function () {
+    var list = $('qm-metric-list');
+    if (!list) return;
+    var q = (qmFilterEl.value || '').trim().toLowerCase();
+    list.querySelectorAll('.qm-opt').forEach(function (b) {
+      b.style.display = (!q || b.textContent.toLowerCase().indexOf(q) !== -1) ? '' : 'none';
+    });
+    list.querySelectorAll('.qm-group').forEach(function (g) {
+      var n = g.nextElementSibling, any = false;
+      while (n && !n.classList.contains('qm-group')) {
+        if (n.classList.contains('qm-opt') && n.style.display !== 'none') any = true;
+        n = n.nextElementSibling;
+      }
+      g.style.display = any ? '' : 'none';
+    });
+  });
+  /* Picker keyboard: Escape closes and refocuses the trigger;
+   * arrows walk the visible options. */
+  var qmListEl = $('qm-metric-list');
+  if (qmListEl) qmListEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      ddAnimBody(qmListEl, false);
+      qmResetFilter();
+      if (qmBtn) { qmBtn.setAttribute('aria-expanded', 'false'); qmBtn.focus(); }
+      return;
+    }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    var opts = Array.prototype.filter.call(qmListEl.querySelectorAll('.qm-opt'), function (b) { return b.style.display !== 'none'; });
+    if (!opts.length) return;
+    e.preventDefault();
+    var i = opts.indexOf(document.activeElement);
+    var n = i === -1 ? (e.key === 'ArrowDown' ? 0 : opts.length - 1)
+      : (e.key === 'ArrowDown' ? Math.min(opts.length - 1, i + 1) : Math.max(0, i - 1));
+    opts[n].focus();
   });
   try { qmFreq = lsGet('sr_qmfreq', 'q') === 'y' ? 'y' : 'q'; } catch (e) {}
   try { var qw = parseInt(lsGet('sr_qmwin', 2), 10); if (QM_WIN_CHOICES.indexOf(qw) >= 0) qmWin = qw; } catch (e) {}
@@ -12343,32 +12474,36 @@ function initApp() {
     if (!mb) return;
     var mt = document.getElementById(mb.getAttribute('data-mathtarget'));
     if (!mt) return;
-    mt.hidden = !mt.hidden;
-    mb.setAttribute('aria-expanded', mt.hidden ? 'false' : 'true');
+    var open = mt.hidden;
+    ddAnimBody(mt, open);
+    mb.setAttribute('aria-expanded', open ? 'true' : 'false');
   });
   document.addEventListener('click', function (e) {
     var b = e.target && e.target.closest ? e.target.closest('[data-ceotoggle]') : null;
     if (!b) return;
     var body = b.nextElementSibling;
     if (!body || !body.classList.contains('ceo-body')) return;
-    body.hidden = !body.hidden;
-    b.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
+    var open = body.hidden;
+    ddAnimBody(body, open);
+    b.setAttribute('aria-expanded', open ? 'true' : 'false');
   });
   document.addEventListener('click', function (e) {
     var b = e.target && e.target.closest ? e.target.closest('[data-moretoggle]') : null;
     if (!b) return;
     var body = b.nextElementSibling;
     if (!body || !body.classList.contains('more-body')) return;
-    body.hidden = !body.hidden;
-    b.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
+    var open = body.hidden;
+    ddAnimBody(body, open);
+    b.setAttribute('aria-expanded', open ? 'true' : 'false');
   });
   document.addEventListener('click', function (e) {
     var b = e.target && e.target.closest ? e.target.closest('[data-biztoggle]') : null;
     if (!b) return;
     var body = b.nextElementSibling;
     if (!body || !body.classList.contains('biz-body')) return;
-    body.hidden = !body.hidden;
-    b.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
+    var open = body.hidden;
+    ddAnimBody(body, open);
+    b.setAttribute('aria-expanded', open ? 'true' : 'false');
   });
   /* Moat / Competitors / TAM dropdowns (2026-11-15): same toggle
    * mechanics as the CEO/More/Biz blocks. */
@@ -12378,8 +12513,9 @@ function initApp() {
       if (!b) return;
       var body = b.nextElementSibling;
       if (!body || !body.classList.contains(pair[1])) return;
-      body.hidden = !body.hidden;
-      b.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
+      var open = body.hidden;
+      ddAnimBody(body, open);
+      b.setAttribute('aria-expanded', open ? 'true' : 'false');
     });
   });
   /* Competitor rows jump to that stock's research page, with the
