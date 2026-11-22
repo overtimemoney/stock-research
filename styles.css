@@ -1220,3 +1220,14 @@ select { min-height: 48px; }
   .qm-picker-btn:hover { border-color: var(--gold); }
   .qm-opt:hover { background: var(--chip-bg); }
 }
+
+/* Scan list pager (2026-11-22): the three index lists as swipeable
+ * pages instead of a dropdown. Native scroll-snap paging; dots track
+ * the scroll position. */
+.scan-pager { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.scan-pager::-webkit-scrollbar { display: none; }
+.scan-page { flex: 0 0 100%; min-width: 100%; scroll-snap-align: start; }
+.scan-dots { display: flex; justify-content: center; gap: 2px; padding: 6px 0 0; }
+.scan-dot { width: 26px; height: 26px; padding: 0; border: 0; background: transparent; position: relative; cursor: pointer; }
+.scan-dot::after { content: ''; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--line); transition: background .15s ease; }
+.scan-dot.on::after { background: var(--gold); }

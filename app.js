@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261122170914';
+var APP_BUILD = 'stock-research-20261122172026';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -5520,14 +5520,16 @@ function qmExportCsv() {
     qmDownloadCsv(lines, '_segments_' + key + '.csv');
     return;
   }
-  if (qmMode === 'detail' && (qmMetric === 'peHist' || qmMetric === 'psHist')) {
-    var rd = qmStore.ratios;
+  if (qmMode === 'detail' && (qmMetric === 'peHist' || qmMetric === 'psHist' || qmMetric === 'peHistQ' || qmMetric === 'psHistQ')) {
+    var isQ = qmMetric === 'peHistQ' || qmMetric === 'psHistQ';
+    var isPe = qmMetric === 'peHist' || qmMetric === 'peHistQ';
+    var rd = isQ ? qmStore.ratiosQ : qmStore.ratios;
     if (!rd) return;
-    var series = qmMetric === 'peHist' ? rd.pe : rd.ps;
+    var series = isPe ? rd.pe : rd.ps;
     if (!series || !series.length) return;
-    var rl = ['Fiscal year,' + (qmMetric === 'peHist' ? 'P/E ratio' : 'P/S ratio')];
-    series.forEach(function (p) { rl.push(p.fy + ',' + p.v); });
-    qmDownloadCsv(rl, qmMetric === 'peHist' ? '_pe_by_year.csv' : '_ps_by_year.csv');
+    var rl = [(isQ ? 'Quarter' : 'Fiscal year') + ',' + (isPe ? 'P/E ratio' : 'P/S ratio')];
+    series.forEach(function (p) { rl.push((isQ ? p.q : p.fy) + ',' + p.v); });
+    qmDownloadCsv(rl, (isPe ? '_pe' : '_ps') + (isQ ? '_by_quarter.csv' : '_by_year.csv'));
     return;
   }
   if (qmMode === 'detail' && qmMetric === 'avEps') {
@@ -6350,7 +6352,9 @@ var QM_METRICS = {
   bsDebt: { name: 'Total debt', kind: 'money', fmt: fmtMoneyShort, get: function (d, i) { return d.bsDebt && d.bsDebt[i]; } },
   bsNet: { name: 'Net cash (debt)', kind: 'money', fmt: fmtMoneyShort, get: function (d, i) { return d.bsNet && d.bsNet[i]; } },
   peHist: { name: 'P/E by year', special: true, fmt: function (v) { return fmtNum(v, 1) + '\u00d7'; }, get: function () { return null; } },
+  peHistQ: { name: 'P/E by quarter', special: true, fmt: function (v) { return fmtNum(v, 1) + '\u00d7'; }, get: function () { return null; } },
   psHist: { name: 'P/S by year', special: true, fmt: function (v) { return fmtNum(v, 1) + '\u00d7'; }, get: function () { return null; } },
+  psHistQ: { name: 'P/S by quarter', special: true, fmt: function (v) { return fmtNum(v, 1) + '\u00d7'; }, get: function () { return null; } },
   segRev: { name: 'Segment revenue', special: true, fmt: fmtMoneyShort, get: function () { return null; } },
   segOp: { name: 'Segment operating profit', special: true, fmt: fmtMoneyShort, get: function () { return null; } },
   avEps: { name: 'EPS vs estimates', special: true, fmt: function (v) { return '$' + fmtNum(v, 2); }, get: function () { return null; } },
@@ -6375,7 +6379,9 @@ var QM_MEANS = {
   bsDebt: 'The money the company owes lenders.',
   bsNet: 'Cash minus debt. Above zero means it holds more cash than it owes; below zero means it owes more than it holds.',
   peHist: 'How many dollars investors pay for $1 of yearly earnings.',
+  peHistQ: 'How many dollars investors pay for $1 of earnings over the last 12 months.',
   psHist: 'How many dollars investors pay for $1 of yearly sales.',
+  psHistQ: 'How many dollars investors pay for $1 of sales over the last 12 months.',
   segRev: 'How the company\u2019s sales split across its lines of business.',
   segOp: 'How much operating profit each line of business makes.',
   avEps: 'What analysts expected the company to earn per share, against what it actually earned.',
@@ -6466,6 +6472,46 @@ async function fetchRatiosByYear(T) {
   }
   cache[T] = { day: day, data: data };
   lsSet('sr_ratios_v2', cache);
+  return data;
+}
+
+/* Quarterly P/E and P/S (Justin's ask, 2026-11-22: per quarter on
+ * top of per year). Same StockAnalysis ratios table with
+ * ?p=quarterly; its columns are fiscal quarters, newest first, and
+ * the multiples are trailing-twelve-month based. Points run
+ * oldest-first like every other Charts series. */
+function parseSARatioByQuarter(html, label) {
+  var out = [];
+  if (!html) return out;
+  saTables(html).forEach(function (rows) {
+    if (!rows.length || rows[0][0] !== 'Fiscal Quarter' || out.length) return;
+    var row = null;
+    rows.forEach(function (r) { if (r[0] === label) row = r; });
+    if (!row) return;
+    for (var i = 1; i < rows[0].length; i++) {
+      if (rows[0][i] === 'Current') continue;
+      var v = parseNum(row[i]);
+      if (isNum(v) && v > 0 && v < 1000) out.push({ q: rows[0][i], v: v });
+    }
+  });
+  out.reverse();
+  return out;
+}
+
+async function fetchRatiosByQuarter(T) {
+  var cache = lsGet('sr_ratios_q_v1', {});
+  var day = new Date().toDateString();
+  if (cache[T] && cache[T].day === day) return cache[T].data;
+  var data = null;
+  try {
+    var html = await relayFetch('https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/financials/ratios/?p=quarterly', {
+      timeout: 25000, validate: function (t) { return t.indexOf('PE Ratio') !== -1; }
+    });
+    var pe = parseSARatioByQuarter(html, 'PE Ratio'), ps = parseSARatioByQuarter(html, 'PS Ratio');
+    if (pe.length || ps.length) data = { pe: pe, ps: ps };
+  } catch (e) {}
+  cache[T] = { day: day, data: data };
+  lsSet('sr_ratios_q_v1', cache);
   return data;
 }
 
@@ -6746,21 +6792,26 @@ function renderQmAv() {
 
 function renderQmRatios(key) {
   var box = $('qm-chart'), note = $('qm-note');
-  var data = qmEnsure('ratios', fetchRatiosByYear);
+  var isQ = key === 'peQ' || key === 'psQ';
+  var base = isQ ? (key === 'peQ' ? 'pe' : 'ps') : key;
+  var mKey = key === 'pe' ? 'peHist' : key === 'ps' ? 'psHist' : key === 'peQ' ? 'peHistQ' : 'psHistQ';
+  var data = qmEnsure(isQ ? 'ratiosQ' : 'ratios', isQ ? fetchRatiosByQuarter : fetchRatiosByYear);
   if (data === 'loading') {
     box.innerHTML = sklChartHtml();
     note.textContent = '';
     return;
   }
-  var series = data ? (key === 'pe' ? data.pe : data.ps) : null;
+  var series = data ? data[base] : null;
   if (!series || !series.length) {
-    box.innerHTML = '<div class="status err">No ' + (key === 'pe' ? 'P/E' : 'P/S') + ' history for ' + esc(qmStore.ticker) + '.</div>';
-    note.textContent = 'Year-by-year multiples come from the StockAnalysis ratios table.';
+    box.innerHTML = '<div class="status err">No ' + (base === 'pe' ? 'P/E' : 'P/S') + ' history for ' + esc(qmStore.ticker) + '.</div>';
+    note.textContent = (isQ ? 'Quarter-by-quarter' : 'Year-by-year') + ' multiples come from the StockAnalysis ratios table.';
     return;
   }
-  var pts = qmTail(series.map(function (p) { return { label: 'FY ' + p.fy, value: p.v, kind: 'actual', axis: String(p.fy) }; }), qmWin);
-  box.innerHTML = '<div class="chart-wrap">' + qmBarsSVG(pts, QM_METRICS[key === 'pe' ? 'peHist' : 'psHist'].fmt, true) + '</div>';
-  note.textContent = QM_MEANS[key === 'pe' ? 'peHist' : 'psHist'];
+  var pts = isQ
+    ? qmTail(series.map(function (p) { return { label: p.q, value: p.v, kind: 'actual', axis: qmShortQ(p.q) }; }), qmWin * 4)
+    : qmTail(series.map(function (p) { return { label: 'FY ' + p.fy, value: p.v, kind: 'actual', axis: String(p.fy) }; }), qmWin);
+  box.innerHTML = '<div class="chart-wrap">' + qmBarsSVG(pts, QM_METRICS[mKey].fmt, true) + '</div>';
+  note.textContent = QM_MEANS[mKey];
 }
 
 /* ============ Income flow (Sankey) ============
@@ -7097,6 +7148,16 @@ function renderQmGrid() {
       valCards.push(qmCardHtml(cfg[0], cfg[2], QM_METRICS[cfg[0]].fmt(series[series.length - 1].v), qmMiniBarsSVG(qmTail(pts, qmWin)), false));
     });
   }
+  var ratiosQ = qmEnsure('ratiosQ', fetchRatiosByQuarter);
+  if (ratiosQ === 'loading') { valCards.push(qmLoadCardHtml('P/E by quarter')); }
+  else if (ratiosQ) {
+    [['peHistQ', 'pe', 'P/E by quarter'], ['psHistQ', 'ps', 'P/S by quarter']].forEach(function (cfg) {
+      var series = ratiosQ[cfg[1]] || [];
+      if (!series.length) return;
+      var pts = series.map(function (p) { return { label: p.q, value: p.v }; });
+      valCards.push(qmCardHtml(cfg[0], cfg[2], QM_METRICS[cfg[0]].fmt(series[series.length - 1].v), qmMiniBarsSVG(qmTail(pts, qmWin * 4)), false));
+    });
+  }
   groups.push(['Valuation', valCards]);
   var segCards = [];
   var seg = qmEnsure('seg', fetchSegmentsApp);
@@ -7295,6 +7356,8 @@ function renderQmDetail() {
   if (qmMetric === 'avEps') return renderQmAv();
   if (qmMetric === 'peHist') return renderQmRatios('pe');
   if (qmMetric === 'psHist') return renderQmRatios('ps');
+  if (qmMetric === 'peHistQ') return renderQmRatios('peQ');
+  if (qmMetric === 'psHistQ') return renderQmRatios('psQ');
   var d = qmData();
   if (!d) return;
   /* View transforms (Values / Growth / % of revenue) run on the raw
@@ -7833,6 +7896,38 @@ var scanRunning = false, scanActive = 0, scanCoolUntil = 0, scanTimer = null;
 
 function scanTodayKey() { return pfKeyToISO(pfDkey(new Date())); }
 
+/* US market holidays (NYSE full-day closures) for 2026-2027. Early
+ * closes still count as trading days. Keep in sync with the relay
+ * Worker's copy in relay/worker.js. */
+var MARKET_HOLIDAYS = {
+  '2026-01-01': 1, '2026-01-19': 1, '2026-02-16': 1, '2026-04-03': 1, '2026-05-25': 1,
+  '2026-06-19': 1, '2026-07-03': 1, '2026-09-07': 1, '2026-11-26': 1, '2026-12-25': 1,
+  '2027-01-01': 1, '2027-01-18': 1, '2027-02-15': 1, '2027-03-26': 1, '2027-05-31': 1,
+  '2027-06-18': 1, '2027-07-05': 1, '2027-09-06': 1, '2027-11-25': 1, '2027-12-24': 1
+};
+function scanIsTradingDay(key) {
+  var wd = new Date(key + 'T12:00:00').getDay();
+  return wd !== 0 && wd !== 6 && !MARKET_HOLIDAYS[key];
+}
+function scanShiftDay(key, n) {
+  var d = new Date(key + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  return pfKeyToISO(pfDkey(d));
+}
+/* The scan's effective day (Justin's rule, 2026-11-22): the most
+ * recent trading day. On weekends and market holidays the scan does
+ * not reload -- the last trading day's lists stay current. */
+function scanDayKey() {
+  var k = scanTodayKey();
+  for (var i = 0; i < 10 && !scanIsTradingDay(k); i++) k = scanShiftDay(k, -1);
+  return k;
+}
+function scanPrevTradingDay(key) {
+  var k = scanShiftDay(key, -1);
+  for (var i = 0; i < 10 && !scanIsTradingDay(k); i++) k = scanShiftDay(k, -1);
+  return k;
+}
+
 /* ---------- earnings calendar (2026-11-03, from the Fiscal.ai
  * comparison): the user's watchlist + portfolio stocks reporting in
  * the next 14 days, from the Nasdaq earnings calendar (rides the
@@ -7934,7 +8029,7 @@ function scanFreshIdx(started) {
   return ix;
 }
 function scanFreshState() {
-  var s = { date: scanTodayKey(), done: false, partial: false, results: null, idx: {}, rulesV: SCAN_RULES_V };
+  var s = { date: scanDayKey(), done: false, partial: false, results: null, idx: {}, rulesV: SCAN_RULES_V };
   SCAN_IDXS.forEach(function (ix) { s.idx[ix.key] = scanFreshIdx(ix.key === 'spx'); });
   return s;
 }
@@ -8302,7 +8397,7 @@ async function scanEnrichTop(fullByIx) {
         .sort(function (a, b) { return b.score - a.score; }).slice(0, 10)
         .map(function (e) { return scanDisplayEntry(e); });
       var sNow = getScan();
-      if (sNow && sNow.done && sNow.date === scanTodayKey() && sNow.results) {
+      if (sNow && sNow.done && sNow.date === scanDayKey() && sNow.results) {
         sNow.results[jxKey] = final10;
         setScan(sNow);
         changed = true;
@@ -8518,7 +8613,7 @@ function scanStep() {
 function scanPump() {
   if (scanRunning) return;
   var s = getScan();
-  if (!s || s.done || s.partial || s.date !== scanTodayKey()) return;
+  if (!s || s.done || s.partial || s.date !== scanDayKey()) return;
   scanRunning = true;
   scanStep(); scanStep();
 }
@@ -8590,7 +8685,16 @@ function scanGetChecked() {
  * Worker's per-finalist map stored at adoption. */
 function scanCheckedScoreMap() {
   var map = {};
-  function put(t, score, cagr) { if (t && isNum(score)) map[t] = { score: score, cagr: isNum(cagr) ? cagr : null }; }
+  function put(t, score, cagr) {
+    if (!t || !isNum(score)) return;
+    /* A fresher source's missing CAGR must not erase a checked one
+     * (2026-11-22: the phone's own list carried HAPN with no CAGR and
+     * wiped the server's checked 24.5 from the screener). The score
+     * still goes to the freshest source; the CAGR goes to the
+     * freshest source that actually has one. */
+    var prev = map[t];
+    map[t] = { score: score, cagr: isNum(cagr) ? cagr : (prev ? prev.cagr : null) };
+  }
   var stored = lsGet(SCAN_SCORES_KEY, null);
   if (stored && stored.map) Object.keys(stored.map).forEach(function (t) { var e = stored.map[t]; if (e) put(t, e.score, e.cagr); });
   var snap = scanGetChecked();
@@ -8758,7 +8862,7 @@ function scanRankFromData(ds) {
 }
 
 function scanShowDataResults(ds, refreshed) {
-  var today = scanTodayKey();
+  var today = scanDayKey();
   var s = getScan();
   if (!s || s.date !== today) s = scanFreshState();
   s.results = scanRankFromData(ds);
@@ -8790,7 +8894,7 @@ var scanRefreshing = false, scanRefreshStartedAt = 0, scanRekickAt = 0;
 async function scanRefreshReporters() {
   var ds = getScanData();
   if (!ds || scanRefreshing) return;
-  var today = scanTodayKey();
+  var today = scanDayKey();
   if (ds.lastRefreshDay === today) { scanShowDataResults(ds, ds.lastRefreshCount || 0); return; }
   scanRefreshing = true;
   scanRefreshStartedAt = Date.now();
@@ -8918,13 +9022,13 @@ async function scanAdoptShared() {
   try {
     if (scanRunning) return false;
     var cur = getScan();
-    if (cur && cur.date === scanTodayKey() && (cur.done || cur.partial || cur.fromData)) return false; // today's list already settled on-device
+    if (cur && cur.date === scanDayKey() && (cur.done || cur.partial || cur.fromData)) return false; // today's list already settled on-device
     var spx = await scanFetchShared('spx');
     if (!spx) return false;
     var rut = await scanFetchShared('rut');
     var tot = await scanFetchShared('tot');
     var asOfDay = pfKeyToISO(pfDkey(new Date(spx.asOf)));
-    if (asOfDay !== scanTodayKey()) {
+    if (asOfDay !== scanDayKey()) {
       // Yesterday's pass: refresh the stored dataset only (if newer),
       // then let the usual on-device day flow rank today from it.
       var ds0 = getScanData();
@@ -8992,6 +9096,19 @@ function scanRestart() {
 
 function maybeStartScan() {
   var existing = getScan();
+  /* Hold rule (Justin's call, 2026-11-22): until today's shared pass
+   * is adopted, the card shows the last checked lists -- the phone no
+   * longer rebuilds its own morning list over the top of them. The
+   * on-device rebuild below survives only as a fallback for when the
+   * snapshot is missing or older than the previous trading day (a
+   * shared pass that never came). Adoption still runs, so today's
+   * lists land the moment they're published. */
+  var snapHold = scanGetChecked();
+  if (snapHold && snapHold.date && snapHold.date >= scanPrevTradingDay(scanDayKey())) {
+    scanAdoptShared().then(function (a) { if (a === true) renderScanCard(); });
+    renderScanCard();
+    return;
+  }
   // Settled on-device (dataset) lists get two rescue checks before
   // they are simply re-shown: (1) a list computed under older ranking
   // rules (rules stamp mismatch) is recomputed from the dataset, and
@@ -9001,7 +9118,7 @@ function maybeStartScan() {
   // day. A refresh inside its first minutes counts as running; past
   // that it is treated as stuck and released. (2026-11-09: a pre-gates
   // list sat on Justin's phone all day with SNDK #1 at 98, unchecked.)
-  if (existing && existing.date === scanTodayKey() && existing.fromData) {
+  if (existing && existing.date === scanDayKey() && existing.fromData) {
     var dsFix = getScanData();
     if (dsFix && existing.rulesV !== SCAN_RULES_V) { scanRefreshReporters(); return; }
     if (dsFix && existing.refreshed === null && Date.now() - scanRekickAt > 10 * 60 * 1000) {
@@ -9021,7 +9138,7 @@ function maybeStartScan() {
       return;
     }
   }
-  if (!(existing && existing.date === scanTodayKey() && (existing.done || existing.partial || existing.fromData))) {
+  if (!(existing && existing.date === scanDayKey() && (existing.done || existing.partial || existing.fromData))) {
     scanAdoptShared().then(function (adopted) {
       if (adopted === true) { renderScanCard(); return; }
       if (adopted === 'data') { scanRefreshReporters(); return; }
@@ -9034,7 +9151,7 @@ function maybeStartScan() {
 
 function maybeStartScanCore() {
   var s = getScan();
-  var today = scanTodayKey();
+  var today = scanDayKey();
   if (s && s.date === today) {
     // No stored dataset yet but a hosted snapshot exists: it is at
     // least as current as any in-progress grind, so load it instead
@@ -9121,15 +9238,44 @@ function pfShareSheet(title, cap, initial) {
  * discreet dropdown, collapsed by default. scanIxOpen survives the
  * card's re-renders within the session. */
 var scanIxOpen = false;
-function scanIxDropdownHtml(inner) {
-  if (!inner) return '';
-  return '<button type="button" class="scan-ix-toggle' + (scanIxOpen ? ' open' : '') + '" data-scan-ixtoggle aria-expanded="' + (scanIxOpen ? 'true' : 'false') + '">' +
-    '<span>S&amp;P 500 &amp; Russell 2000</span><span class="scan-ix-chev">▾</span></button>' +
-    (scanIxOpen ? '<div class="scan-ix-body">' + inner + '</div>' : '');
+/* The three lists as swipeable pages (Justin's call, 2026-11-22:
+ * no dropdown -- swipe sideways to move between the lists). Native
+ * scroll-snap does the paging; the dots follow the scroll position
+ * and can be tapped to jump. Page order: Total Market first (the
+ * card's standing lead), then S&P 500, then Russell 2000. */
+var SCAN_PAGE_ORDER = ['tot', 'spx', 'rut'];
+function scanPagerHtml(secs) {
+  var any = SCAN_PAGE_ORDER.some(function (k) { return secs[k]; });
+  if (!any) return '';
+  var pages = SCAN_PAGE_ORDER.map(function (k) {
+    return '<div class="scan-page" data-scan-page="' + k + '">' + (secs[k] || '') + '</div>';
+  }).join('');
+  var dots = SCAN_PAGE_ORDER.map(function (k, i) {
+    var ix = SCAN_IDXS.filter(function (x) { return x.key === k; })[0];
+    return '<button type="button" class="scan-dot' + (i === 0 ? ' on' : '') + '" data-scan-dot="' + i + '" aria-label="' + esc(ix ? ix.label : k) + '"></button>';
+  }).join('');
+  return '<div class="scan-pager">' + pages + '</div><div class="scan-dots">' + dots + '</div>';
 }
-function wireScanIxToggle(box) {
-  var t = box.querySelector('[data-scan-ixtoggle]');
-  if (t) t.addEventListener('click', function () { scanIxOpen = !scanIxOpen; renderScanCard(); });
+function wireScanPager(box) {
+  var pager = box.querySelector('.scan-pager');
+  if (!pager) return;
+  var dots = box.querySelectorAll('[data-scan-dot]');
+  var raf = 0;
+  pager.addEventListener('scroll', function () {
+    if (raf) return;
+    raf = requestAnimationFrame(function () {
+      raf = 0;
+      var w = pager.clientWidth || 1;
+      var i = Math.max(0, Math.min(SCAN_PAGE_ORDER.length - 1, Math.round(pager.scrollLeft / w)));
+      dots.forEach(function (d, j) { d.classList.toggle('on', j === i); });
+    });
+  }, { passive: true });
+  dots.forEach(function (d) {
+    d.addEventListener('click', function () {
+      var i = parseInt(d.getAttribute('data-scan-dot'), 10) || 0;
+      pager.scrollTo({ left: i * pager.clientWidth, behavior: 'smooth' });
+    });
+  });
 }
 
 /* Index-name popovers (Justin's ask, 2026-11-14): tapping an index
@@ -9290,9 +9436,9 @@ function renderScanCardInner() {
       });
       secs[ix.key] = out; out = out0;
     });
-    return out + (secs.tot || '') + scanIxDropdownHtml((secs.spx || '') + (secs.rut || ''));
+    return out + scanPagerHtml(secs);
   };
-  if (!s || s.date !== scanTodayKey()) {
+  if (!s || s.date !== scanDayKey()) {
     var prev0 = prevListsHtml();
     box.innerHTML = '<div class="card scan-card"><div class="scan-h">Top value + low risk today' + infoDot('scanscore') + '</div>' + infoText('scanscore') +
       (prev0 || '<div class="status">Preparing today\'s scan\u2026</div>') + '</div>';
@@ -9305,7 +9451,7 @@ function renderScanCardInner() {
         runSearch(T);
       });
     });
-    wireScanIxToggle(box);
+    wireScanPager(box);
     return;
   }
   var snapC = scanGetChecked();
@@ -9347,7 +9493,7 @@ function renderScanCardInner() {
       });
       secs[ix.key] = out; out = out0;
     });
-    return (secs.tot || '') + scanIxDropdownHtml((secs.spx || '') + (secs.rut || ''));
+    return scanPagerHtml(secs);
   };
   if (pendingGate) {
     // Today's lists exist only as an unchecked preliminary ranking:
@@ -9434,7 +9580,7 @@ function renderScanCardInner() {
       runSearch(T);
     });
   });
-  wireScanIxToggle(box);
+  wireScanPager(box);
 }
 
 /* ---------- custom screener (over the stored scan dataset) ----------
