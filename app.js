@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261122172026';
+var APP_BUILD = 'stock-research-20261122225058';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -4493,6 +4493,9 @@ function renderScorecard(d) {
     '. Figures can differ slightly between sources and from your broker. Research tool, not financial advice.</p>';
   html += '</div>';
   $('score-result').innerHTML = html;
+  /* First-time walkthrough hook: a rendered scorecard retires the
+   * search tip and arms the scores/flags tips (see srWalkthrough). */
+  try { if (window.srWalkNote) window.srWalkNote('scorecard'); } catch (e) {}
   $('score-empty').style.display = 'none';
   projStripFill('sc-proj', d.ticker);
   overallFill('sc-overall-v', d);
@@ -14175,6 +14178,231 @@ if (typeof document !== 'undefined' && document.getElementById) {
       try {
         if (e && e.detail && e.detail.mode === 'auto') hit('quiz');
       } catch (err) {}
+    });
+  } catch (e) {}
+})();
+
+/* ==================== First-time walkthrough ====================
+ * Four coach-mark tips for genuinely new users (Justin's rules,
+ * 2026-11-22): SHORT (four tips, one sentence each — essentials
+ * only), in the NATURAL FLOW of first use (search -> scores ->
+ * flags -> daily Top 10), and a tip renders ONLY while the UI it
+ * describes is actually on screen. State is one LOCAL-ONLY key,
+ * sr_walk_v1 ({armed, seen:{search,scores,flags,top10}}) — never
+ * synced (kept out of SR_SYNC_DEFS).
+ *
+ * Arming is deliberately narrow: the state is created ONLY when a
+ * first-run quiz finishes in mode 'auto' after this build shipped.
+ * Profiles already onboarded before then never get armed by
+ * initApp, so existing users (incl. Justin) never see tips mid-use.
+ * Settings -> Learn -> "Walkthrough" re-arms manually as a preview:
+ * it resets the seen flags and restarts from Tip 1 (documented
+ * choice — the preview simply re-runs the real walkthrough).
+ *
+ * One tip at a time, in flow order. A tip never renders while the
+ * quiz overlay, a bottom sheet (account/install/sign-in), the
+ * holders/chart overlays or the stock overview panel is open — the
+ * poller just waits, then shows it if its trigger still holds. No
+ * scrim, no layout shift: the card is fixed-position, clamped to
+ * the viewport, placed above/below its anchor without covering it,
+ * and the anchor gets a subtle gold outline while its tip is up.
+ * Got it, the x, or tapping anywhere else dismisses (marks seen). */
+(function srWalkthrough() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  if (typeof localStorage === 'undefined') return;
+
+  var KEY = 'sr_walk_v1';
+  var COPIES = {
+    search: 'Start here \u2014 type any ticker or company name.',
+    scores: 'Every stock gets two scores \u2014 Value for cheapness, Safety for risk (higher = safer). Tap a score to see its math.',
+    flags: 'Flags are early warnings \u2014 earnings cliffs, cheap-P/E traps, cyclical peaks.',
+    top10: 'This card ranks the whole market every day \u2014 the Top 10 value-and-safety picks.'
+  };
+  var ORDER = ['search', 'scores', 'flags', 'top10'];
+  /* Latches set by render events (via window.srWalkNote); a latched
+   * tip still waits until its anchor is on screen right now. */
+  var latched = { scores: false, flags: false };
+  var cardEl = null, anchorEl = null, current = null;
+
+  function read() {
+    try { var r = localStorage.getItem(KEY); return r ? JSON.parse(r) : null; }
+    catch (e) { return null; }
+  }
+  function write(st) { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} }
+  function armFresh() {
+    write({ armed: true, seen: { search: 0, scores: 0, flags: 0, top10: 0 } });
+  }
+
+  /* Arm ONLY on a genuine first-run quiz finish. */
+  try {
+    window.addEventListener('sr-quiz-finished', function (e) {
+      try {
+        if (!e || !e.detail || e.detail.mode !== 'auto') return;
+        if (!read()) armFresh();
+      } catch (err) {}
+    });
+  } catch (e) {}
+
+  /* Called (guarded) at the end of renderScorecard: a completed
+   * lookup retires the search tip forever, and the render latches
+   * the scores tip — plus the flags tip when this scorecard
+   * actually rendered a Flags block. */
+  window.srWalkNote = function (what) {
+    try {
+      if (what !== 'scorecard') return;
+      latched.scores = true;
+      if (document.querySelector('#score-result .flag-list')) latched.flags = true;
+      var st = read();
+      if (st && st.armed && !st.seen.search) {
+        st.seen.search = 1;
+        write(st);
+        if (current === 'search') hide();
+      }
+      poke();
+    } catch (e) {}
+  };
+
+  function blocked() {
+    try {
+      if (document.hidden) return true;
+      var ob = document.getElementById('ob-overlay');
+      if (ob && !ob.hidden) return true;
+      if (document.querySelector('.pf-sheet-bg:not([hidden])')) return true;
+      var qm = document.getElementById('qm-overlay');
+      if (qm && !qm.hidden) return true;
+      var ho = document.getElementById('holders-overlay');
+      if (ho && !ho.hidden) return true;
+      if (document.querySelector('.ov-panel.open')) return true;
+      return false;
+    } catch (e) { return true; }
+  }
+
+  function activeTab() {
+    var t = document.querySelector('.tab.active');
+    return t ? t.id : '';
+  }
+
+  function anchorFor(key) {
+    try {
+      if (key === 'search') return document.getElementById('search-input');
+      if (key === 'scores') return document.querySelector('#score-result .verdict');
+      if (key === 'flags') return document.querySelector('#score-result .flag-list');
+      if (key === 'top10') return document.querySelector('#scan-card .scan-card');
+    } catch (e) {}
+    return null;
+  }
+
+  function onScreen(el) {
+    if (!el) return false;
+    try {
+      var r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight;
+    } catch (e) { return false; }
+  }
+
+  function eligible(key, st) {
+    if (!st || st.seen[key]) return false;
+    if (key === 'search') return activeTab() === 'tab-scorecard' && onScreen(anchorFor('search'));
+    if (key === 'scores') return latched.scores && activeTab() === 'tab-scorecard' && onScreen(anchorFor('scores'));
+    if (key === 'flags') return latched.flags && activeTab() === 'tab-scorecard' && onScreen(anchorFor('flags'));
+    if (key === 'top10') return activeTab() === 'tab-watchlist' && onScreen(anchorFor('top10'));
+    return false;
+  }
+
+  function place() {
+    if (!cardEl || !anchorEl) return;
+    var r = anchorEl.getBoundingClientRect();
+    var cw = Math.min(300, window.innerWidth - 16);
+    cardEl.style.width = cw + 'px';
+    var ch = cardEl.offsetHeight || 110;
+    var left = Math.max(8, Math.min(r.left, window.innerWidth - cw - 8));
+    var top = r.bottom + 8;
+    if (top + ch > window.innerHeight - 8) top = r.top - ch - 8;
+    if (top < 8) top = 8;
+    cardEl.style.left = left + 'px';
+    cardEl.style.top = top + 'px';
+  }
+
+  function hide() {
+    if (cardEl && cardEl.parentNode) cardEl.parentNode.removeChild(cardEl);
+    if (anchorEl) { try { anchorEl.classList.remove('walk-anchor'); } catch (e) {} }
+    cardEl = null; anchorEl = null; current = null;
+  }
+
+  function dismiss(key) {
+    var st = read();
+    if (st && st.armed) { st.seen[key] = 1; write(st); }
+    hide();
+    poke();
+  }
+
+  function show(key) {
+    var a = anchorFor(key);
+    if (!a) return;
+    hide();
+    current = key;
+    anchorEl = a;
+    cardEl = document.createElement('div');
+    cardEl.className = 'walk-tip';
+    cardEl.setAttribute('role', 'note');
+    cardEl.innerHTML = '<button type="button" class="walk-x" aria-label="Dismiss tip">\u00d7</button>' +
+      '<p class="walk-copy"></p>' +
+      '<div class="walk-row"><button type="button" class="walk-got">Got it</button></div>';
+    cardEl.querySelector('.walk-copy').textContent = COPIES[key];
+    document.body.appendChild(cardEl);
+    try { a.classList.add('walk-anchor'); } catch (e) {}
+    cardEl.querySelector('.walk-got').addEventListener('click', function () { dismiss(key); });
+    cardEl.querySelector('.walk-x').addEventListener('click', function () { dismiss(key); });
+    place();
+  }
+
+  function poke() {
+    var st = read();
+    if (!st || !st.armed) { if (cardEl) hide(); return; }
+    if (blocked()) { if (cardEl) hide(); return; }
+    if (current) {
+      /* The anchor may have been re-rendered (scorecard innerHTML)
+       * or scrolled away: re-anchor, reposition, or stand down —
+       * an unseen tip simply waits for its moment to come back. */
+      var a = anchorFor(current);
+      if (!a || !onScreen(a)) { hide(); return; }
+      if (a !== anchorEl) {
+        if (anchorEl) { try { anchorEl.classList.remove('walk-anchor'); } catch (e) {} }
+        anchorEl = a;
+        try { a.classList.add('walk-anchor'); } catch (e) {}
+      }
+      place();
+      return;
+    }
+    for (var i = 0; i < ORDER.length; i++) {
+      if (eligible(ORDER[i], st)) { show(ORDER[i]); return; }
+    }
+  }
+
+  /* Tapping anywhere outside the card dismisses the tip (and the
+   * tap still reaches the UI underneath — nothing is blocked). */
+  try {
+    document.addEventListener('pointerdown', function (e) {
+      try {
+        if (cardEl && current && !cardEl.contains(e.target)) dismiss(current);
+      } catch (err) {}
+    });
+  } catch (e) {}
+
+  try { setInterval(function () { try { poke(); } catch (e) {} }, 600); } catch (e) {}
+
+  /* Manual preview: Settings -> Learn -> Walkthrough. Re-arms and
+   * restarts from Tip 1 (seen flags reset — the preview re-runs the
+   * real walkthrough), landing on Research where Tip 1 lives. */
+  try {
+    var walkBtn = document.getElementById('menu-walk');
+    if (walkBtn) walkBtn.addEventListener('click', function () {
+      armFresh();
+      latched.scores = false;
+      latched.flags = false;
+      hide();
+      try { if (typeof switchTab === 'function') switchTab('scorecard'); } catch (e) {}
+      poke();
     });
   } catch (e) {}
 })();

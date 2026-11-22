@@ -1231,3 +1231,18 @@ select { min-height: 48px; }
 .scan-dot { width: 26px; height: 26px; padding: 0; border: 0; background: transparent; position: relative; cursor: pointer; }
 .scan-dot::after { content: ''; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--line); transition: background .15s ease; }
 .scan-dot.on::after { background: var(--gold); }
+
+/* First-time walkthrough tips (srWalkthrough): a small fixed card
+ * anchored near the element it describes — no scrim, no layout
+ * shift, clamped inside the viewport. The anchor gets a subtle
+ * gold outline (gentle pulse unless reduced motion). */
+.walk-tip { position: fixed; z-index: 70; background: var(--elev); border: 1.5px solid var(--gold); border-radius: 14px; padding: 12px 34px 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.35); box-sizing: border-box; }
+.walk-copy { margin: 0 0 10px; font-size: 14px; line-height: 1.45; font-weight: 600; color: var(--ink); }
+.walk-row { display: flex; justify-content: flex-end; }
+.walk-got { background: var(--gold); color: #141414; border: none; border-radius: 10px; font-weight: 800; font-size: 13px; padding: 7px 16px; cursor: pointer; }
+.walk-x { position: absolute; top: 4px; right: 6px; background: none; border: none; color: var(--muted); font-size: 19px; line-height: 1; padding: 5px; cursor: pointer; }
+.walk-anchor { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 8px; }
+@media (prefers-reduced-motion: no-preference) {
+  .walk-anchor { animation: walk-pulse 1.6s ease-in-out infinite; }
+  @keyframes walk-pulse { 0%, 100% { outline-color: var(--gold); } 50% { outline-color: rgba(248,199,61,.25); } }
+}
