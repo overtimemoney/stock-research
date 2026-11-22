@@ -498,12 +498,6 @@ table.factors.scen.micro td, table.factors.scen.micro th { padding: 7px 3px; }
 .tabbar.pill-on .tab-pill { opacity: 1; transition: transform .34s cubic-bezier(.30, 1.15, .36, 1), width .34s cubic-bezier(.30, 1.15, .36, 1), height .28s var(--ease-out), top .28s var(--ease-out), opacity .2s ease; }
 .tabbar.pill-on button { position: relative; z-index: 1; }
 .tabbar.pill-on button.active { background: transparent; }
-.spinner {
-  display: inline-block; width: 14px; height: 14px; border-radius: 50%;
-  border: 2.5px solid var(--gold-pale); border-top-color: var(--gold-deep);
-  animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 6px;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Projection Builder: year-by-year EPS path editor */
 .pj-path-head { font-size: 12.5px; font-weight: 700; color: var(--ink2); margin: 2px 0 8px; }
@@ -815,7 +809,6 @@ main.scroll-lock { overflow-y: hidden; }
 .qm-card-val { font-size: 17px; font-weight: 800; white-space: nowrap; }
 .qm-card svg { width: 100%; max-width: 100%; height: auto; display: block; }
 .qm-grid-group { min-width: 0; }
-.qm-card-load { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; font-weight: 700; padding: 18px 2px; }
 .qm-legend { margin-top: 10px; display: flex; flex-direction: column; gap: 5px; }
 .qm-flow-take { margin-top: 12px; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--field); font-size: 14.5px; line-height: 1.5; font-weight: 600; color: var(--ink); }
 .qm-leg-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
@@ -1012,7 +1005,7 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 /* Reduced motion (Emil review 2026-10-30 — the app had none): gentler,
  * not zero. Opacity/color fades that aid comprehension stay; slides,
  * travels and unfolds become effectively instant. Color-only effects
- * (the glossary gold flash, the spinner) are intentionally untouched. */
+ * (the glossary gold flash) is intentionally untouched. */
 @media (prefers-reduced-motion: reduce) {
   .ov-panel { transition: none; }
   .toolseg-pill, .tab-pill, .tabbar, .tabbar button, .tabbar button .tab-ico .ico,
@@ -1098,7 +1091,7 @@ table.factors .info-row .info-text.open { max-height: 900px; }
 
 /* ==== Vibe-code tells pass (2026-11-19, from the @lincolndevine reel) ====
  * Skeleton loaders: content-shaped shimmer blocks instead of a blank
- * screen under a spinner (scorecard cold research, Market first paint). */
+ * screen under a loader (scorecard cold research, Market first paint). */
 .skl-wrap { display: flex; flex-direction: column; gap: 14px; padding-top: 8px; }
 .skl { position: relative; overflow: hidden; background: var(--chip-bg); border-radius: 10px; flex: none; }
 .skl::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(100deg, transparent 30%, rgba(140,140,140,.28) 50%, transparent 70%); animation: skl-shimmer 1.4s ease-in-out infinite; }
@@ -1113,6 +1106,18 @@ table.factors .info-row .info-text.open { max-height: 900px; }
 .skl-mktname { width: 40%; height: 18px; }
 .skl-mktval { width: 26%; height: 34px; }
 .skl-mktchart { width: 100%; height: 120px; margin-bottom: 10px; }
+/* No-spinners pass (2026-11-22): shapes for the small and mid-size
+ * loading spots -- status lines, scan rows, news lines, SWOT boxes,
+ * holder rows, QM card charts, the scan footer bar. */
+.skl-status { width: 55%; height: 14px; }
+.skl-scanrow { width: 100%; height: 64px; }
+.skl-newsline { width: 92%; height: 15px; }
+.skl-newssub { width: 58%; height: 11px; margin-top: -8px; }
+.skl-swotwrap { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.skl-swotbox { height: 74px; }
+.skl-holdrow { width: 100%; height: 34px; }
+.skl-qmchart { width: 100%; height: 74px; margin: 2px 0 4px; }
+.skl-footbar { display: inline-block; width: 150px; height: 12px; vertical-align: -1px; }
 
 /* Tap feedback for the tappables that lacked it: the press should
  * register instantly, before anything loads. */

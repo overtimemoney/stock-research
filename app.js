@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261122050716';
+var APP_BUILD = 'stock-research-20261122051229';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -118,7 +118,7 @@ function fetchWithTimeout(url, ms) {
 }
 /* Race every route at once (direct + all relays); the first response that
  * validates wins. Sequential relay fallback could stack 4 timeouts per
- * source and look like a perpetual spinner, so everything runs parallel. */
+ * source and look like a perpetual loading state, so everything runs parallel. */
 /* Which route served the first successful fetch of a lookup: 'your relay'
  * (the user's Cloudflare Worker), 'public relay' (a backup) or 'direct'.
  * Shown on the scorecard so the user can see what actually carried data. */
@@ -835,7 +835,7 @@ async function fetchStock(ticker, opts) {
   // parallel — both are big HTML pages through the relays.
   // Settle caps (2026-11-19): the stage used to wait for EVERY source,
   // so one slow enrichment hunt (a thin-Wikipedia CEO, a cold AI
-  // dropdown) kept the "valuation details still coming" spinner up for
+  // dropdown) kept the "valuation details still coming" note up for
   // minutes after the page itself was complete. Each source now has a
   // budget and the stage itself caps at 60s. A cut-off source keeps
   // running in the background and still fills its own cache, so the
@@ -3914,7 +3914,7 @@ async function runAiSwot(d, refresh) {
     if (!suid0) { showSigninSheet(); return; }
   }
   var prevHtml = zone.innerHTML;
-  zone.innerHTML = '<p class="fineprint"><span class="spinner"></span>Writing the SWOT — reading the numbers, headlines, insider trades and 10-K risks…</p>';
+  zone.innerHTML = sklSwotHtml();
   try {
     var ctrl = ('AbortController' in window) ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 90000) : null;
@@ -4615,7 +4615,7 @@ function openHolders(d) {
   var head = '<div class="hld-title">Holders</div><div class="hld-sub">' + esc(d.name || d.ticker) + ' · ' + esc(d.ticker) + '</div>';
   ov.hidden = false;
   setMainLock('holders', true);
-  body.innerHTML = head + '<div class="status">Loading holders…</div>';
+  body.innerHTML = head + sklHoldersHtml();
   fetchHolders(d.ticker).then(function (h) {
     if (ov.hidden) return;
     if (!h) {
@@ -4645,7 +4645,7 @@ function closeHolders() {
 
 /* Skeleton loaders (2026-11-19): content-shaped shimmer blocks shown
  * while a cold load is in flight, instead of a blank screen under a
- * spinner. renderScorecard / renderMarket overwrite them wholesale
+ * loader. renderScorecard / renderMarket overwrite them wholesale
  * when the real content lands. */
 function scSkeletonHtml() {
   return '<div class="skl-wrap" aria-hidden="true">' +
@@ -4662,12 +4662,38 @@ function mktSkeletonHtml() {
   }
   return p + '</div>';
 }
+/* No-spinners pass (2026-11-22, Justin's rule): every loading state
+ * in the app is a skeleton shaped like what it stands in for -- the
+ * helpers below cover the small and mid-size spots; scSkeletonHtml
+ * and mktSkeletonHtml above cover the two full-page ones. */
+function sklStatusHtml() {
+  return '<div class="skl skl-status" aria-hidden="true"></div>';
+}
+function sklLinesHtml(n) {
+  var p = '<div class="skl-wrap" aria-hidden="true">';
+  for (var i = 0; i < (n || 3); i++) p += '<div class="skl skl-newsline"></div><div class="skl skl-newssub"></div>';
+  return p + '</div>';
+}
+function sklChartHtml() {
+  return '<div class="skl-wrap" aria-hidden="true"><div class="skl skl-chart"></div></div>';
+}
+function sklScanRowsHtml() {
+  return '<div class="skl-wrap" aria-hidden="true"><div class="skl skl-scanrow"></div><div class="skl skl-scanrow"></div><div class="skl skl-scanrow"></div></div>';
+}
+function sklSwotHtml() {
+  return '<div class="skl-swotwrap" aria-hidden="true"><div class="skl skl-swotbox"></div><div class="skl skl-swotbox"></div><div class="skl skl-swotbox"></div><div class="skl skl-swotbox"></div></div>';
+}
+function sklHoldersHtml() {
+  var p = '<div class="skl-wrap" aria-hidden="true">';
+  for (var i = 0; i < 5; i++) p += '<div class="skl skl-holdrow"></div>';
+  return p + '</div>';
+}
 
 async function runSearch(ticker, fresh) {
   var rawQ = String(ticker || '').trim();
   if (!rawQ) return;
   var stEl = $('score-status');
-  if (stEl) { stEl.className = 'status'; stEl.innerHTML = '<span class="spinner"></span>Finding that stock…'; }
+  if (stEl) { stEl.className = 'status'; stEl.innerHTML = sklStatusHtml(); }
   var T = await resolveTickerInput(rawQ);
   if (T === null) {
     if (stEl) { stEl.className = 'status err'; stEl.textContent = noMatchMsg(rawQ); }
@@ -4680,22 +4706,22 @@ async function runSearch(ticker, fresh) {
   scWinTicker = null;
   var status = $('score-status');
   status.className = 'status';
-  status.innerHTML = '<span class="spinner"></span>Pulling live data for ' + esc(T) + '…';
+  status.innerHTML = sklStatusHtml();
   // Instant paint: if this ticker was looked up before, show the saved
   // data right away (even if stale) and refresh over the top — repeat
-  // lookups feel instant instead of staring at a spinner in a relay wave.
+  // lookups feel instant instead of staring at a loading screen in a relay wave.
   var staleHit = lsGet(CACHE_KEY, {})[T];
   var showedStale = false;
   if (staleHit && staleHit.data) {
     staleHit.data.fromCache = true;
     try { renderScorecard(staleHit.data); showedStale = true; } catch (e) {}
     if (showedStale) {
-      status.innerHTML = '<span class="spinner"></span>Showing your last saved data for ' + esc(T) + ' — refreshing…';
+      status.innerHTML = sklStatusHtml();
     }
   }
   /* Cold lookup (nothing saved to paint): a skeleton shaped like the
    * scorecard fills the space while the fast stage loads, instead of
-   * a blank screen under the spinner. The first real render — interim
+   * a blank screen under a loader. The first real render — interim
    * or final — replaces it. */
   if (!showedStale) {
     try {
@@ -4713,7 +4739,7 @@ async function runSearch(ticker, fresh) {
   for (var attempt = 1; attempt <= 3; attempt++) {
     try {
       var d = await fetchStock(T, { fresh: !!fresh, onStage: function (interim) {
-        status.innerHTML = '<span class="spinner"></span>Fast data for ' + esc(T) + ' is in — valuation details still coming…';
+        status.innerHTML = sklStatusHtml();
         renderScorecard(interim);
       } });
       status.textContent = '';
@@ -4741,7 +4767,7 @@ async function runSearch(ticker, fresh) {
             : friendlyErr(e, 'Something went wrong fetching that ticker.') + ' (Tried 3 times — the data routes are having a bad stretch. Give it a minute and tap Research again.)');
         return;
       }
-      status.innerHTML = '<span class="spinner"></span>A data route hiccuped — retrying automatically (' + attempt + ' of 3)…';
+      status.innerHTML = sklStatusHtml();
       await new Promise(function (res) { setTimeout(res, attempt * 1500); });
     }
   }
@@ -4754,7 +4780,7 @@ async function runCompare() {
   var status = $('compare-status');
   if (tickers.length < 2) { status.className = 'status err'; status.textContent = 'Enter at least two tickers to compare.'; return; }
   status.className = 'status';
-  status.innerHTML = '<span class="spinner"></span>Fetching ' + tickers.join(', ') + '…';
+  status.innerHTML = sklLinesHtml(3);
   var results = [];
   for (var i = 0; i < tickers.length; i++) {
     try { results.push(await fetchStock(tickers[i])); }
@@ -5272,7 +5298,7 @@ async function loadProjectionTicker() {
   if (T === null) { status.className = 'status err'; status.textContent = noMatchMsg(rawQ); shakeEl($('pj-ticker')); return; }
   if (!T) { status.className = 'status err'; status.textContent = 'Type a ticker first.'; return; }
   status.className = 'status';
-  status.innerHTML = '<span class="spinner"></span>Loading live data for ' + esc(T) + '…';
+  status.innerHTML = sklStatusHtml();
   try {
     var peP = fetchPe5yAvg(T).catch(function () { return null; });
     var qmP = fetchQMetrics(T, 'y').catch(function () { return null; });
@@ -6354,7 +6380,7 @@ async function fetchSegmentsApp(T) {
   try {
     /* Bounded (2026-11-19): this was the one unbounded fetch in the
      * research load — a stalled segments call held the whole slow
-     * stage (and its spinner) hostage forever. 25s is generous: the
+     * stage (and its loading state) hostage forever. 25s is generous: the
      * endpoint answers in ~1s warm and the result is cached either
      * way, so a cut-off costs nothing but the wait. */
     var segCtrl = ('AbortController' in window) ? new AbortController() : null;
@@ -6617,7 +6643,7 @@ function renderQmSegments(key) {
   var box = $('qm-chart'), note = $('qm-note');
   var data = qmEnsure('seg', fetchSegmentsApp);
   if (data === 'loading') {
-    box.innerHTML = '<div class="status"><span class="spinner"></span>Loading segment data\u2026</div>';
+    box.innerHTML = sklChartHtml();
     note.textContent = '';
     return;
   }
@@ -6677,7 +6703,7 @@ function renderQmAv() {
   var box = $('qm-chart'), note = $('qm-note');
   var data = qmEnsure('mb', fetchMbPairs);
   if (data === 'loading') {
-    box.innerHTML = '<div class="status"><span class="spinner"></span>Loading earnings history\u2026</div>';
+    box.innerHTML = sklChartHtml();
     note.textContent = '';
     return;
   }
@@ -6700,7 +6726,7 @@ function renderQmRatios(key) {
   var box = $('qm-chart'), note = $('qm-note');
   var data = qmEnsure('ratios', fetchRatiosByYear);
   if (data === 'loading') {
-    box.innerHTML = '<div class="status"><span class="spinner"></span>Loading valuation history\u2026</div>';
+    box.innerHTML = sklChartHtml();
     note.textContent = '';
     return;
   }
@@ -6913,7 +6939,7 @@ function renderQmFlow() {
   var box = $('qm-chart'), note = $('qm-note');
   var data = qmEnsure('flow', fetchFlowAnnual);
   if (data === 'loading') {
-    box.innerHTML = '<div class="status"><span class="spinner"></span>Loading income statement\u2026</div>';
+    box.innerHTML = sklChartHtml();
     note.textContent = '';
     return;
   }
@@ -6960,7 +6986,7 @@ function qmCardHtml(id, name, val, svg, wide) {
     '<div class="qm-card-h"><span class="qm-card-name">' + esc(name) + '</span><span class="qm-card-val">' + esc(val) + '</span></div>' + svg + '</button>';
 }
 function qmLoadCardHtml(name) {
-  return '<div class="qm-card"><div class="qm-card-h"><span class="qm-card-name">' + esc(name) + '</span></div><div class="qm-card-load"><span class="spinner"></span>Loading</div></div>';
+  return '<div class="qm-card"><div class="qm-card-h"><span class="qm-card-name">' + esc(name) + '</span></div><div class="skl skl-qmchart" aria-hidden="true"></div></div>';
 }
 
 /* The Charts grid: every metric as a small-multiples card on one
@@ -7352,7 +7378,7 @@ async function loadQm() {
   var yearly = qmFreq === 'y';
   try {
     if (!qmStore[qmFreq]) {
-      st.innerHTML = '<span class="spinner"></span>Loading ' + (yearly ? 'annual' : 'quarterly') + ' statements for ' + esc(T) + '\u2026';
+      st.innerHTML = sklStatusHtml();
       qmStore[qmFreq] = await withTimeout(fetchQMetrics(T, qmFreq), 45000,
         'Loading timed out for ' + T + ' — check the name or ticker and try again.');
     }
@@ -9307,9 +9333,9 @@ function renderScanCardInner() {
     // deep-dive lands -- never the prelim scores (2026-11-12).
     html += prevListsHtml();
     if (snapC) {
-      html += '<div class="scan-foot">Checking today\u2019s stocks\u2026<button type="button" class="btn-mini" id="scan-rescan">Rescan</button></div>';
+      html += '<div class="scan-foot"><span class="skl skl-footbar" aria-hidden="true"></span><button type="button" class="btn-mini" id="scan-rescan">Rescan</button></div>';
     } else {
-      html += '<div class="status"><span class="spinner"></span>Running today\u2019s checks\u2026</div>';
+      html += sklScanRowsHtml();
     }
   } else if (s.done && s.results) {
     html += listsHtml();
@@ -9346,7 +9372,7 @@ function renderScanCardInner() {
       var pct = (pages + pending) > 0 ? Math.round(pages / (pages + pending) * 100) : 0;
       var cooling = scanCoolUntil > Date.now();
       var rutOn = s.idx.rut && s.idx.rut.started !== false;
-      html += '<div class="status"><span class="spinner"></span>' + (cooling ? 'Finviz throttling \u2014 cooling down\u2026' : ((rutOn ? 'Scanning S&P 500 + Russell 2000' : 'Scanning S&P 500') + ' \u00b7 ' + pages + ' pages in')) + '</div>' +
+      html += sklScanRowsHtml() +
         '<div class="scan-bar"><i style="width:' + pct + '%"></i></div>' +
         '<button type="button" class="btn-ghost" id="scan-use-snapshot" style="margin-top:8px">Stop scan \u2014 load the ready-made S&P 500 list</button>';
     }
@@ -9373,7 +9399,7 @@ function renderScanCardInner() {
     scanBootstrapping = false;
     scanDiag('manual snapshot load tapped');
     var card = $('scan-card');
-    if (card) card.innerHTML = '<div class="status"><span class="spinner"></span>Loading the ready-made S&P 500 list\u2026</div>';
+    if (card) card.innerHTML = sklScanRowsHtml();
     if (getScanData()) { scanRefreshReporters(); return; }
     scanBootstrapFromHosted();
   });
@@ -9857,7 +9883,7 @@ function openOverview(T) {
     body.innerHTML = renderOverview(hit.data, item);
     wireOverviewActions(hit.data);
   } else {
-    body.innerHTML = '<div class="card"><div class="status"><span class="spinner"></span>Loading ' + esc(T) + '\u2026</div></div>';
+    body.innerHTML = '<div class="card">' + scSkeletonHtml() + '</div>';
   }
   fetchStock(T).then(function (d) {
     if (ovTicker !== T) return;
@@ -9903,7 +9929,7 @@ async function renderWatchlist(refresh) {
     });
     return;
   }
-  if (refresh) $('wl-status').innerHTML = '<span class="spinner"></span>Refreshing\u2026';
+  if (refresh) $('wl-status').innerHTML = sklStatusHtml();
   // Gather prices first so the list can be sorted on real numbers.
   var rows = [];
   for (var i = 0; i < wl.length; i++) {
@@ -10211,7 +10237,7 @@ function renderPfNews() {
   } else {
     var c = getPfNews();
     if (pfNewsLoading) {
-      box.innerHTML = head + '<div class="status"><span class="spinner"></span>Fetching headlines for ' + tickers.length + ' holdings\u2026</div>';
+      box.innerHTML = head + sklLinesHtml(3);
     } else if (!c || !c.items) {
       box.innerHTML = head + '<div class="status">Tap Refresh to fetch today\'s headlines.</div>';
     } else if (!c.items.length) {
@@ -10299,7 +10325,7 @@ function saveStockNews(T, items) {
 }
 function stockNewsSectionHtml(scope, T) {
   return '<div class="section-h">Latest <span class="gold-text">news</span></div>' +
-    '<div data-stocknews="' + scope + '" data-ticker="' + esc(T) + '"><div class="status">Loading headlines\u2026</div></div>';
+    '<div data-stocknews="' + scope + '" data-ticker="' + esc(T) + '">' + sklLinesHtml(2) + '</div>';
 }
 function stockNewsRowsHtml(items) {
   var col = pfPaletteColors(1)[0];
@@ -10371,7 +10397,7 @@ async function renderPortfolio(doFetch) {
     return;
   }
   if (doFetch) {
-    if (status) status.innerHTML = '<span class="spinner"></span>Fetching live prices\u2026';
+    if (status) status.innerHTML = sklStatusHtml();
     var quotes = pfQuotes();
     await Promise.all(positions.map(async function (p) {
       if (!(p.shares > 0)) return;
@@ -10867,7 +10893,7 @@ async function renderBench(force) {
   }
   if ((force || stale) && !pfBenchBusy) {
     pfBenchBusy = true;
-    if (!hist['SPY']) box.innerHTML = '<div class="card"><span class="spinner"></span>Loading the S&P 500 comparison\u2026</div>';
+    if (!hist['SPY']) box.innerHTML = '<div class="card">' + sklChartHtml() + '</div>';
     var updated = {};
     Object.keys(hist).forEach(function (k) { updated[k] = hist[k]; });
     var fetchRange = five ? (Math.max(needYears, haveYears) <= 5 ? '5y' : '15y') : '1y';
