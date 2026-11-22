@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261121221133';
+var APP_BUILD = 'stock-research-20261122042235';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -1645,6 +1645,103 @@ function compBlockHtml(d) {
   return '<button type="button" class="ceo-toggle" data-comptoggle aria-expanded="false"><span class="earn-line ceo-line">Competitors</span><span class="ceo-chev">▾</span></button>' +
     '<div class="ceo-body comp-body" hidden>' + rows +
     '<p class="fineprint">Companies that sell competing products — suppliers and partners are left out. Biggest first; sizes as of the last scan.</p></div>';
+}
+/* Similar stocks (Justin's ask, 2026-11-21, modelled on Robinhood's
+ * "People also own" tiles): five tiles at the very bottom of the
+ * scorecard, one per rival from the same compPeers list the
+ * Competitors section uses. Each tile carries the stock's Overall
+ * score instead of a price move. Scores resolve in layers so the
+ * page never waits: the daily scan's checked map first (instant),
+ * then this feature's own day-cache, then a quiet background score
+ * (one stock at a time) that fills the tile when it lands and is
+ * kept for the rest of the day. */
+var SIM_SCORE_KEY = 'sr_simscore_v1';
+function simScoreCache() { return lsGet(SIM_SCORE_KEY, {}); }
+function simScoreKnown(T) {
+  var chk = null;
+  try { chk = scanCheckedScoreMap()[T]; } catch (e) {}
+  if (chk && isNum(chk.score)) return chk.score;
+  var c = simScoreCache()[T];
+  if (c && c.day === scanTodayKey() && isNum(c.score)) return c.score;
+  return null;
+}
+var simScorePending = {};
+function simScoreCompute(T) {
+  if (simScorePending[T]) return simScorePending[T];
+  var p = (async function () {
+    try {
+      var d2 = await fetchStock(T);
+      if (!d2) return null;
+      var cg = overallCachedCagr(T);
+      var cagr = (cg && isNum(cg.cagr)) ? cg.cagr : null;
+      /* No second fetch for the CAGR: d2 is already the full load,
+       * and wlProjectCagr is the same pure math fetchWlProjCagr
+       * runs after fetching the stock itself. */
+      if (cagr === null) { try { cagr = wlProjectCagr(d2); } catch (e) {} }
+      var sc = overallScore(d2, cagr);
+      if (isNum(sc)) {
+        var all = simScoreCache();
+        all[T] = { score: sc, day: scanTodayKey() };
+        lsSet(SIM_SCORE_KEY, all);
+      }
+      return sc;
+    } catch (e) { return null; }
+    finally { delete simScorePending[T]; }
+  })();
+  simScorePending[T] = p;
+  return p;
+}
+function simScoreHtml(T, score) {
+  if (isNum(score)) {
+    var c = scoreRgb(score);
+    return '<span class="sim-score" data-simscore="' + esc(T) + '"' + (c ? ' style="color:rgb(' + c.join(',') + ')"' : '') + '>' + score + '</span>';
+  }
+  return '<span class="sim-score sim-score-wait" data-simscore="' + esc(T) + '">\u2014</span>';
+}
+function similarTileHtml(p, score) {
+  return '<button type="button" class="sim-tile" data-comp="' + esc(p.t) + '">' +
+    '<span class="sim-name">' + esc(p.name) + '</span>' +
+    '<span class="sim-bot"><span class="sim-tick">' + esc(p.t) + '</span>' +
+    '<span class="sim-score-line">' + simScoreHtml(p.t, score) + '<span class="sim-score-lab">OVERALL</span></span></span></button>';
+}
+function similarSectionHtml(T) {
+  return '<div data-similar="' + esc(T) + '"><div class="section-h">Similar <span class="gold-text">stocks</span></div>' +
+    '<div class="status">Finding similar stocks\u2026</div></div>';
+}
+function paintSimScore(ownerT, T, score) {
+  var box = document.querySelector('[data-similar="' + ownerT + '"]');
+  if (!box || !lastStock || lastStock.ticker !== ownerT) return;
+  var el = box.querySelector('[data-simscore="' + T + '"]');
+  if (!el) return;
+  var wrap = document.createElement('span');
+  wrap.innerHTML = simScoreHtml(T, score);
+  el.replaceWith(wrap.firstChild);
+}
+function loadSimilarStocks(d) {
+  var box = document.querySelector('[data-similar="' + d.ticker + '"]');
+  if (!box) return;
+  /* compKeep is set by the fetch's slow stage; the fast-stage render
+   * leaves the placeholder and the slow re-render calls us again. */
+  if (!Array.isArray(d.compKeep)) return;
+  var peers = compPeers(d).slice(0, 5);
+  if (peers.length < 3) { box.style.display = 'none'; return; }
+  var missing = [];
+  var tiles = peers.map(function (p) {
+    var sc = simScoreKnown(p.t);
+    if (!isNum(sc)) missing.push(p.t);
+    return similarTileHtml(p, sc);
+  }).join('');
+  box.innerHTML = '<div class="section-h">Similar <span class="gold-text">stocks</span></div>' +
+    '<div class="sim-row">' + tiles + '</div>' +
+    '<p class="fineprint">Overall scores \u2014 the daily checked ones where available; the rest are scored in the background and kept for the day.</p>';
+  /* One at a time, so five unscored rivals never pile onto the
+   * relays at once; each tile fills as its score lands. */
+  var ownerT = d.ticker;
+  missing.reduce(function (chain, t) {
+    return chain.then(function () {
+      return simScoreCompute(t).then(function (sc) { if (isNum(sc)) paintSimScore(ownerT, t, sc); });
+    });
+  }, Promise.resolve());
 }
 /* TAM (2026-11-15): the Worker's AI market-size estimate paired
  * with the company's REAL revenue, so the headroom reads honestly.
@@ -4319,6 +4416,7 @@ function renderScorecard(d) {
     '<a class="sc-act sc-ext" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=' + esc(d.ticker) + '&type=&dateb=&owner=include&count=10" target="_blank" rel="noopener"><span>SEC filings</span><span class="sc-act-arrow">↗</span></a></div>';
 
   html += stockNewsSectionHtml('sc', d.ticker);
+  html += similarSectionHtml(d.ticker);
 
   var when = d.fetchedAt ? new Date(d.fetchedAt).toLocaleString() : '';
   if (d.partial) html += '<div class="alert warn">Fast data is in — still pulling valuation details (forward P/E, PEG, margins)… the score updates when they land.</div>';
@@ -4331,6 +4429,7 @@ function renderScorecard(d) {
   projStripFill('sc-proj', d.ticker);
   overallFill('sc-overall-v', d);
   loadStockNews('sc', d.ticker);
+  loadSimilarStocks(d);
 
   /* The zone's button is "Regenerate" when a saved SWOT is showing
    * (a deliberate fresh take -> refresh flag) and "Generate" when it
