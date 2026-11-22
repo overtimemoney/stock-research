@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261122061754';
+var APP_BUILD = 'stock-research-20261122170914';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -12740,14 +12740,31 @@ function initApp() {
   renderJournal();
   renderPjSaved();
   renderWatchlist(true);
-  /* Returning users land on the Watchlist (Justin's call,
-   * 2026-11-17). The first-ever launch keeps the default tab --
-   * the onboarding flag is only set once that first session's
-   * quiz is done, so the quiz still opens over the scorecard as
-   * designed, and every later open starts here. */
+  /* Landing tab (Justin's calls, 2026-11-17 + 2026-11-22): a new
+   * user's first TWO entries land on Research (the scorecard) --
+   * the quiz session itself (the onboarding flag is only set once
+   * that first session's quiz is done, so the quiz opens over the
+   * scorecard as designed) and their first return open, while the
+   * Watchlist is still empty. The Watchlist-open rule starts at
+   * the second return open. sr_entries_v1 counts post-onboarding
+   * opens (LOCAL-ONLY, never synced); finishQuiz() seeds it at 0
+   * when a first run completes. A device whose flag predates the
+   * counter (no key at all) is an established returning user:
+   * seed past the grace window so its opens stay exactly as they
+   * were before counting existed. */
   var onboarded = false;
   try { onboarded = !!localStorage.getItem('sr_onboard_v1'); } catch (e) {}
-  if (onboarded) switchTab('watchlist');
+  if (onboarded) {
+    var entries = null;
+    try {
+      var rawEntries = localStorage.getItem('sr_entries_v1');
+      if (rawEntries !== null) entries = parseInt(rawEntries, 10) || 0;
+    } catch (e) {}
+    if (entries === null) entries = 2; /* onboarded before counting existed */
+    entries += 1;
+    try { localStorage.setItem('sr_entries_v1', String(entries)); } catch (e) {}
+    if (entries >= 2) switchTab('watchlist');
+  }
   placeTabPill();
   hideSplash();
 }
@@ -13443,6 +13460,12 @@ if (typeof document !== 'undefined' && document.getElementById) {
     function finishQuiz() {
       overlay.hidden = true;
       try { localStorage.setItem(FLAG, '1'); } catch (e) {}
+      /* Seed the post-onboarding entry counter (see initApp's
+       * landing-tab block): 0 = the quiz session just finished, so
+       * the next open is the first return and still lands on
+       * Research. Only when absent -- a Settings replay must never
+       * reset an established user's count. */
+      try { if (localStorage.getItem('sr_entries_v1') === null) localStorage.setItem('sr_entries_v1', '0'); } catch (e) {}
       /* Broadcast the finish (with the mode) so other modules can
        * react — the install prompt keys off the FIRST-run finish,
        * mode 'auto'; replay finishes carry mode 'replay'. */
