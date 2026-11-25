@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261122225058';
+var APP_BUILD = 'stock-research-20261125004739';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -3553,7 +3553,7 @@ var INFO_TEXT = {
   size: 'Company size by market cap (price \u00d7 shares). Smaller companies tend to swing harder, get less analyst coverage, and can be harder to sell in a panic \u2014 so small size adds risk points here.',
   currentratio: 'Current ratio = short-term assets \u00f7 short-term bills. Above 1 means the company can cover what it owes within the year. Below 1 can mean cash stress if business dips.',
   boombust: 'Some businesses boom then bust in cycles (memory chips are the classic case). This flags it when the forecast shows a big earnings peak followed by a cliff, after revenue roughly doubled into the peak \u2014 peak earnings make a stock look deceptively cheap.',
-  scanscore: '<strong>Two scores</strong><br>Every stock in the index gets a Value score and a Safety score, both 0\u2013100. Value grades cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt. Safety grades how safe it is \u2014 debt, volatility, size, earnings trend, boom-bust pattern; higher is safer.<br><br><strong>How the Score is built</strong><br>It starts at 60% Value + 40% Safety.<br><br><strong>The deep check</strong><br>Before the list is final, each top stock is deep-checked, and its Score becomes 75% of that value-and-safety score plus 25% growth points from its projected 4-year CAGR \u2014 the yearly return its forecast earnings path works out to, the same number as the estimated return on the stock\u2019s page (\u221220%/yr earns 0 points, +40%/yr earns 100). A stock with no analyst forecast keeps its value-and-safety score.<br><br><strong>Who can appear</strong><br>Only stocks with enough data to score fairly \u2014 the Top 10 for each index.<br><br><strong>When it updates</strong><br>The list is computed once a day on the server, so every phone shows the same scores. Scores refresh when a company reports earnings, and the full index is rescanned about once a week. Tapping Rescan still runs a fresh scan on this phone.',
+  scanscore: '<strong>Two scores</strong><br>Every stock in the index gets a Value score and a Safety score, both 0\u2013100. Value grades cheapness \u2014 forward P/E, PEG, distance below its 52-week high, earnings growth, margins, low debt. Safety grades how safe it is \u2014 debt, volatility, size, earnings trend, boom-bust pattern; higher is safer.<br><br><strong>How the Score is built</strong><br>It starts at 60% Value + 40% Safety.<br><br><strong>The deep check</strong><br>Before the list is final, each top stock is deep-checked, and its Score becomes 75% of that value-and-safety score plus 25% growth points from its projected 4-year CAGR \u2014 the yearly return its forecast earnings path works out to, the same number as the estimated return on the stock\u2019s page (\u221220%/yr earns 0 points, +40%/yr earns 100). A stock with no analyst forecast keeps its value-and-safety score.<br><br><strong>Who can appear</strong><br>Only stocks with enough data to score fairly \u2014 the Top 10 for each index.<br><br><strong>When it updates</strong><br>The list is computed once a day on the server, so every phone shows the same scores. A fresh list lands on its own each trading day \u2014 there is nothing to tap.',
   radar: 'Five 0\u2013100 measures drawn as a snowflake: Value (the valuation score), Future (forecast EPS growth), Past (recent revenue growth), Health (debt, liquidity, margins) and Dividend (the yield). The further a point reaches, the stronger that measure \u2014 a big, even snowflake is strong all round. If the Future point is red, the cliff check fired \u2014 earnings are forecast to fall off a peak.',
 };
 var FACTOR_INFO = {
@@ -8643,7 +8643,7 @@ function scanResume() {
  * re-fetched (one Finviz quote page each -- earnings are when the
  * numbers actually change), and the lists re-rank from the stored
  * data. A full rescan still runs weekly (prices drift, companies
- * come and go) or whenever he taps Rescan. */
+ * come and go). */
 var SCAN_DATA_KEY = 'sr_scan_data_v1';
 function getScanData() {
   try {
@@ -9503,20 +9503,14 @@ function renderScanCardInner() {
     // show the last checked list (or a checking note) until the
     // deep-dive lands -- never the prelim scores (2026-11-12).
     html += prevListsHtml();
-    if (snapC) {
-      html += '<div class="scan-foot"><span class="skl skl-footbar" aria-hidden="true"></span><button type="button" class="btn-mini" id="scan-rescan">Rescan</button></div>';
-    } else {
+    if (!snapC) {
       html += sklScanRowsHtml();
     }
   } else if (s.done && s.results) {
     html += listsHtml();
-    html += '<div class="scan-foot">' +
-      (s.shared
-        ? 'Shared scan \u00b7 ' + esc(new Date(s.sharedAsOf).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })) + ' \u00b7 same for everyone'
-        : s.fromData
-        ? 'Data from ' + esc(s.dataAsOf || '') + (s.refreshed === null ? ' \u00b7 refreshing\u2026' : ' \u00b7 ' + (s.refreshed || 0) + ' refreshed today')
-        : 'Full scan \u00b7 today') +
-      '<button type="button" class="btn-mini" id="scan-rescan">Rescan</button></div>';
+    /* No footer line and no Rescan (Justin's call, 2026-11-24): the
+     * shared pass refreshes the list on its own once per trading
+     * day, and the card just shows it. */
   } else if (s.partial && s.results) {
     var scoredSum = 0, totalSum = 0, droppedSum = 0;
     SCAN_IDXS.forEach(function (ix) {
@@ -9529,7 +9523,6 @@ function renderScanCardInner() {
     html += '<div class="status err">Partial scan \u2014 Finviz throttled (' + scoredSum + ' of ' + totalSum + ' stocks in). Provisional lists.</div>' +
       '<button type="button" class="btn-ghost" id="scan-resume">Resume the scan</button>';
     html += listsHtml();
-    html += '<div class="scan-foot"><button type="button" class="btn-mini" id="scan-rescan">Start over</button></div>';
   } else {
     var pages = 0, stocks = 0, pending = 0;
     SCAN_IDXS.forEach(function (ix) {
@@ -9551,8 +9544,6 @@ function renderScanCardInner() {
   }
   html += '</div>';
   box.innerHTML = html;
-  var rs = $('scan-rescan');
-  if (rs) rs.addEventListener('click', function () { scanRestart(); });
   var rt = $('scan-retry');
   if (rt) rt.addEventListener('click', function () { scanRestart(); });
   var rm = $('scan-resume');
@@ -9719,10 +9710,10 @@ function runScreener() {
       logoTile(row.t, 'sm') + '<span class="scan-id"><b>' + esc(row.t) + '</b><span>' + esc(row.name || row.t) + (row.sector !== 'Other' ? ' \u00b7 ' + esc(row.sector) : '') + (isNum(row.cagr) ? ' \u00b7 CAGR ' + (row.cagr >= 0 ? '+' : '') + fmtNum(row.cagr, 0) + '%/yr' : '') + '</span></span>' +
       '<span class="scan-px">' + (isNum(row.price) ? fmtMoney(row.price) : '\u2014') + '</span></button>';
   });
-  if (!out.length && isNum(f.cagr) && !anyCagr) html += '<div class="status">Projected CAGR isn\'t in the stored data yet \u2014 it lands on the deep-checked stocks with the next scan, or tap Rescan on the Watchlist scan card to get it now. <button type="button" class="link-btn" data-scr-gocard="1">Open the scan card</button></div>';
+  if (!out.length && isNum(f.cagr) && !anyCagr) html += '<div class="status">Projected CAGR isn\'t in the stored data yet \u2014 it lands on the deep-checked stocks with the next daily scan. <button type="button" class="link-btn" data-scr-gocard="1">Open the scan card</button></div>';
   else if (!out.length && isNum(f.cagr) && anyCagr) html += '<div class="status">No matches \u2014 CAGR is stored for only ' + covN + ' deep-checked stocks so far, and none of them clears those filters. Coverage grows with each daily scan.</div>';
-  else if (!out.length && isNum(f.dy) && !anyYield) html += '<div class="status">Dividend yield isn\'t in the stored data yet \u2014 it arrives with the next scan, or tap Rescan on the Watchlist scan card to get it now. <button type="button" class="link-btn" data-scr-gocard="1">Open the scan card</button></div>';
-  else if (!out.length && f.sector && f.sector !== 'all' && !anyInd) html += '<div class="status">Sector data isn\'t in the stored data yet \u2014 it arrives with the next scan, or tap Rescan on the Watchlist scan card to get it now. <button type="button" class="link-btn" data-scr-gocard="1">Open the scan card</button></div>';
+  else if (!out.length && isNum(f.dy) && !anyYield) html += '<div class="status">Dividend yield isn\'t in the stored data yet \u2014 it arrives with the next daily scan. <button type="button" class="link-btn" data-scr-gocard="1">Open the scan card</button></div>';
+  else if (!out.length && f.sector && f.sector !== 'all' && !anyInd) html += '<div class="status">Sector data isn\'t in the stored data yet \u2014 it arrives with the next daily scan. <button type="button" class="link-btn" data-scr-gocard="1">Open the scan card</button></div>';
   else if (!out.length) html += '<div class="status">No stored stocks match those filters. <button type="button" class="link-btn" data-scr-clear="1">Clear the filters</button></div>';
   box.innerHTML = html;
   var scb = box.querySelector('[data-scr-clear]');
