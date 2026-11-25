@@ -119,17 +119,24 @@ h2, h3 { font-weight: 800; letter-spacing: -0.01em; }
 .splash-name { color: var(--gold); font-size: 13px; font-weight: 700; letter-spacing: .38em; margin-right: -.38em; }
 @keyframes splash-in { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: scale(1); } }
 .topbar {
-  /* Now just the status-bar zone + the gold line at its bottom edge;
-   * the settings gear floats (see .settings-wrap). Content scrolls
-   * right up to the line (Justin, 2026-10-29). */
-  flex: 0 0 auto; z-index: 20;
+  /* The status-bar zone + the gold line at its bottom edge; the
+   * settings gear floats (see .settings-wrap). Fixed since
+   * 2026-11-24 (Justin's ask): content now scrolls UNDER this
+   * strip and blurs behind it (backdrop-filter), while the gold
+   * line -- the strip's own border, not part of the backdrop --
+   * stays crisp. Main carries matching top padding so at rest
+   * the first content still sits below the line. */
+  position: fixed; top: 0; left: 0; right: 0; z-index: 20;
   height: calc(env(safe-area-inset-top) + 3px);
-  background: var(--bg);
+  background: rgba(10, 10, 12, .55);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.35);
+  backdrop-filter: blur(14px) saturate(1.35);
   border-bottom: 3px solid transparent; border-image: var(--gold-grad) 1;
 }
 
 /* ---------- layout ---------- */
-main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; width: 100%; max-width: 860px; margin: 0 auto; padding: 10px 14px calc(88px + env(safe-area-inset-bottom)); }
+main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; width: 100%; max-width: 860px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 13px) 14px calc(88px + env(safe-area-inset-bottom)); }
 .tab { display: none; }
 .tab.active { display: block; }
 .tab-title { font-size: 24px; margin: 6px 0 14px; text-transform: uppercase; letter-spacing: .02em; }
