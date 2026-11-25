@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261125011736';
+var APP_BUILD = 'stock-research-20261125012213';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -4977,6 +4977,7 @@ function pjRestore(T) {
   pjPath = JSON.parse(JSON.stringify(s.path || []));
   pjPathFromForecast = !!s.fromForecast;
   renderPjPath();
+  pjSyncGrowthField();
   runProjection();
   pjRefreshCurPe(T);
   var st = $('pj-status');
@@ -5144,15 +5145,33 @@ function pjCaseEps(base, path, factor) {
 }
 /* Grow the path to at least n years, extrapolating past the last known
  * year at that year's growth (or the flat fallback rate). */
-function pjEnsureYears(n) {
-  var base = pjBaseEps(), guard = 0;
-  // Fit the growth trend ONCE, on the real forecast years only --
-  // extrapolated rows never feed the fit.
-  var gAll = pjGrowths(base, pjPath), series = [], prevEps = base;
+/* The growth series the trend extrapolation fits: real forecast
+ * years only -- extrapolated rows never feed the fit. */
+function pjTrendSeries() {
+  var base = pjBaseEps(), gAll = pjGrowths(base, pjPath), series = [], prevEps = base;
   pjPath.forEach(function (r, i) {
     if (!r.ttm && !r.extrapolated && isNum(gAll[i]) && isNum(prevEps) && prevEps > 0 && isNum(r.eps) && r.eps > 0) series.push(gAll[i]);
     if (isNum(r.eps)) prevEps = r.eps;
   });
+  return series;
+}
+/* Flat growth only drives the path when there is no analyst
+ * forecast to run on (pjSynthPath), or when the forecast path has
+ * no usable trend step for the extension years (pjEnsureYears
+ * falls back to it). With a real forecast path and a usable trend
+ * loaded, the box cannot change any number -- grey it out so its
+ * (fallback) state is unmistakable (Justin's call, 2026-11-24). */
+function pjSyncGrowthField() {
+  var inp = $('pj-growth');
+  if (!inp) return;
+  var inert = !!pjPathFromForecast && pjTrendSeries().length > 0;
+  inp.disabled = inert;
+  var lab = inp.closest ? inp.closest('label') : null;
+  if (lab) lab.classList.toggle('pj-inert', inert);
+}
+function pjEnsureYears(n) {
+  var base = pjBaseEps(), guard = 0;
+  var series = pjTrendSeries();
   var added = 0;
   while (pjPath.length < n && guard++ < 5) {
     var prevEps = pjPath.length ? pjPath[pjPath.length - 1].eps : base;
@@ -5261,6 +5280,7 @@ function fillProjection(d) {
   // average P/E, then today's P/E). Always editable.
   pjApplyAuto(d);
   renderPjPath();
+  pjSyncGrowthField();
   pjSyncResearchRow();
 }
 /* Bottom-of-page link back to the stock's research (scorecard)
@@ -5356,6 +5376,7 @@ function pjScenClass(maxLen) {
   return 'factors scen' + (maxLen >= 11 ? ' micro' : maxLen >= 9 ? ' tight' : '');
 }
 function runProjection() {
+  pjSyncGrowthField();
   var price = parseFloat($('pj-price').value);
   var base = pjBaseEps();
   var years = pjYearsWanted();

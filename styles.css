@@ -1264,3 +1264,8 @@ select { min-height: 48px; }
 #tool-pj .grid2 .lbl-row { display: flex; flex-wrap: nowrap; align-items: flex-start; column-gap: 6px; }
 #tool-pj .grid2 .lbl-t { flex: 0 1 auto; min-width: 0; }
 #tool-pj .grid2 .info-dot { flex: none; }
+
+/* Flat growth greyed out while an analyst forecast path drives
+ * the builder (2026-11-24): visible, but unmistakably inactive. */
+#tool-pj label.pj-inert { opacity: .45; }
+#tool-pj label.pj-inert input { cursor: not-allowed; }
