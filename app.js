@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261125012213';
+var APP_BUILD = 'stock-research-20261125015406';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -1660,7 +1660,7 @@ function compPeers(d) {
   if (!Array.isArray(d.compKeep) || !d.compKeep.length) return [];
   var keep = {};
   d.compKeep.forEach(function (t) { keep[t] = 1; });
-  return compCandidates(d).filter(function (p) { return keep[p.t]; }).slice(0, 8);
+  return compCandidates(d).filter(function (p) { return keep[p.t]; }).slice(0, 10);
 }
 function compBlockHtml(d) {
   var peers = compPeers(d);
@@ -1752,7 +1752,7 @@ function loadSimilarStocks(d) {
   /* compKeep is set by the fetch's slow stage; the fast-stage render
    * leaves the placeholder and the slow re-render calls us again. */
   if (!Array.isArray(d.compKeep)) return;
-  var peers = compPeers(d).slice(0, 5);
+  var peers = compPeers(d).slice(0, 10);
   if (peers.length < 3) { box.style.display = 'none'; return; }
   var missing = [];
   var tiles = peers.map(function (p) {
@@ -1763,7 +1763,7 @@ function loadSimilarStocks(d) {
   box.innerHTML = '<div class="section-h">Similar <span class="gold-text">stocks</span></div>' +
     '<div class="sim-row">' + tiles + '</div>' +
     '<p class="fineprint">Overall scores \u2014 the daily checked ones where available; the rest are scored in the background and kept for the day.</p>';
-  /* One at a time, so five unscored rivals never pile onto the
+  /* One at a time, so ten unscored rivals never pile onto the
    * relays at once; each tile fills as its score lands. */
   var ownerT = d.ticker;
   missing.reduce(function (chain, t) {
@@ -3228,7 +3228,7 @@ function pxChartSVG(d, win, slice) {
     '<text class="px-lab-r" x="' + (W - padX) + '" y="' + (H - 5) + '" text-anchor="end" font-size="11" font-weight="700" fill="#77705f">' + pxRightLabel(d, win, slice) + '</text>';
   out += '<g class="px-scrub" style="display:none"><line class="px-scrub-line" y1="' + padT + '" y2="' + (H - padB) + '" stroke-width="1" stroke-dasharray="4 4" style="stroke:var(--muted)"/>' +
     '<circle class="px-scrub-halo" r="11" style="fill:var(--chart-line)" opacity=".18"/><circle class="px-scrub-dot" r="5.6" style="fill:var(--chart-line)" stroke="#0d0d0f" stroke-width="1.6"/></g>' +
-    '<rect class="px-scrub-zone" x="0" y="0" width="' + W + '" height="' + (H - padB + 4) + '" fill="transparent" style="touch-action:none"/>';
+    '<rect class="px-scrub-zone" x="0" y="0" width="' + W + '" height="' + (H - padB + 4) + '" fill="transparent" style="touch-action:pan-y"/>';
   out += '</svg>';
   return out;
 }
@@ -3321,7 +3321,9 @@ function bindPriceChart(d) {
   var slice = pxSlice(d, scWin);
   if (!slice) return;
   var pointers = new Map();
-  var mode = 'idle'; // 'scrub' | 'pinch'
+  var mode = 'idle'; // 'pending' (holding) | 'scrub' | 'pinch'
+  var holdTimer = null;
+  var HOLD_MS = 250; // hold a split second before scrubbing (Justin's ask, 2026-11-24)
   var pinch0 = null, downInfo = null, lastTap = 0, wheelTimer = null;
   var pinched = false; // a pinch happened during this touch sequence
   var lastScrubTs = null, lastScrubTick = 0; // haptic ratchet state
@@ -3414,11 +3416,24 @@ function bindPriceChart(d) {
     pointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
     try { zone.setPointerCapture(e.pointerId); } catch (err) {}
     if (pointers.size === 1) {
-      mode = 'scrub';
+      /* Hold-to-scrub: the first split second belongs to the page
+       * (a vertical drag scrolls, thanks to pan-y); if the finger
+       * is still down when the timer lands, scrubbing engages at
+       * wherever the finger is then. */
+      mode = 'pending';
       downInfo = { t: Date.now(), x: e.clientX, moved: false };
       lastScrubTs = null; // a fresh grab ticks on its first point
-      scrubTo(e.clientX);
+      if (holdTimer) clearTimeout(holdTimer);
+      holdTimer = setTimeout(function () {
+        holdTimer = null;
+        if (mode !== 'pending' || pointers.size !== 1) return;
+        mode = 'scrub';
+        hapticTick();
+        var p = Array.from(pointers.values())[0];
+        if (p) scrubTo(p.clientX);
+      }, HOLD_MS);
     } else if (pointers.size === 2) {
+      if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
       mode = 'pinch';
       pinched = true;
       grp.style.display = 'none';
@@ -3435,7 +3450,9 @@ function bindPriceChart(d) {
   zone.addEventListener('pointermove', function (e) {
     if (!pointers.has(e.pointerId)) return;
     pointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
-    if (mode === 'scrub' && pointers.size === 1) {
+    if (mode === 'pending' && pointers.size === 1) {
+      if (downInfo && Math.abs(e.clientX - downInfo.x) > 6) downInfo.moved = true;
+    } else if (mode === 'scrub' && pointers.size === 1) {
       if (downInfo && Math.abs(e.clientX - downInfo.x) > 6) downInfo.moved = true;
       scrubTo(e.clientX);
     } else if (mode === 'pinch' && pointers.size === 2 && pinch0) {
@@ -3451,7 +3468,14 @@ function bindPriceChart(d) {
   });
   function endPtr(e) {
     var wasPinch = mode === 'pinch';
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
     pointers.delete(e.pointerId);
+    if (e.type === 'pointercancel') {
+      /* The browser took the gesture (a page scroll): just clean
+       * up -- never read it as a tap or a finished scrub. */
+      if (pointers.size === 0) { mode = 'idle'; grp.style.display = 'none'; downInfo = null; pinch0 = null; }
+      return;
+    }
     if (pointers.size === 0) {
       mode = 'idle';
       grp.style.display = 'none';
@@ -5159,15 +5183,15 @@ function pjTrendSeries() {
  * forecast to run on (pjSynthPath), or when the forecast path has
  * no usable trend step for the extension years (pjEnsureYears
  * falls back to it). With a real forecast path and a usable trend
- * loaded, the box cannot change any number -- grey it out so its
- * (fallback) state is unmistakable (Justin's call, 2026-11-24). */
+ * loaded, the box cannot change any number -- hide it outright
+ * (Justin's call, 2026-11-24: gone, not greyed). */
 function pjSyncGrowthField() {
   var inp = $('pj-growth');
   if (!inp) return;
   var inert = !!pjPathFromForecast && pjTrendSeries().length > 0;
   inp.disabled = inert;
   var lab = inp.closest ? inp.closest('label') : null;
-  if (lab) lab.classList.toggle('pj-inert', inert);
+  if (lab) lab.classList.toggle('pj-gone', inert);
 }
 function pjEnsureYears(n) {
   var base = pjBaseEps(), guard = 0;
@@ -12913,18 +12937,21 @@ function initApp() {
   renderJournal();
   renderPjSaved();
   renderWatchlist(true);
-  /* Landing tab (Justin's calls, 2026-11-17 + 2026-11-22): a new
-   * user's first TWO entries land on Research (the scorecard) --
-   * the quiz session itself (the onboarding flag is only set once
-   * that first session's quiz is done, so the quiz opens over the
-   * scorecard as designed) and their first return open, while the
-   * Watchlist is still empty. The Watchlist-open rule starts at
-   * the second return open. sr_entries_v1 counts post-onboarding
-   * opens (LOCAL-ONLY, never synced); finishQuiz() seeds it at 0
-   * when a first run completes. A device whose flag predates the
-   * counter (no key at all) is an established returning user:
-   * seed past the grace window so its opens stay exactly as they
-   * were before counting existed. */
+  /* Landing tab (Justin's calls, 2026-11-17 + 2026-11-22; start
+   * choice added 2026-11-24): a new user's first TWO entries land
+   * where they chose to start -- the quiz session itself (the
+   * onboarding flag is only set once that first session's quiz is
+   * done, so the quiz opens over the scorecard as designed, and
+   * leaving via a start choice navigates there directly) and their
+   * first return open, which re-lands on the remembered choice in
+   * sr_start_v1 ('top10' -> Watchlist, 'market' -> Market tab;
+   * 'research'/absent -> Research, the default). The Watchlist-open
+   * rule starts at the second return open for everyone.
+   * sr_entries_v1 counts post-onboarding opens (LOCAL-ONLY, never
+   * synced); finishQuiz() seeds it at 0 when a first run completes.
+   * A device whose flag predates the counter (no key at all) is an
+   * established returning user: seed past the grace window so its
+   * opens stay exactly as they were before counting existed. */
   var onboarded = false;
   try { onboarded = !!localStorage.getItem('sr_onboard_v1'); } catch (e) {}
   if (onboarded) {
@@ -12936,7 +12963,15 @@ function initApp() {
     if (entries === null) entries = 2; /* onboarded before counting existed */
     entries += 1;
     try { localStorage.setItem('sr_entries_v1', String(entries)); } catch (e) {}
-    if (entries >= 2) switchTab('watchlist');
+    if (entries >= 2) {
+      switchTab('watchlist');
+    } else {
+      /* First return open: honor the remembered start choice. */
+      var startChoice = null;
+      try { startChoice = localStorage.getItem('sr_start_v1'); } catch (e) {}
+      if (startChoice === 'top10') switchTab('watchlist');
+      else if (startChoice === 'market') switchTab('market');
+    }
   }
   placeTabPill();
   hideSplash();
@@ -13470,8 +13505,9 @@ if (typeof document !== 'undefined' && document.getElementById) {
  * deliberately NOT one of the Supabase synced keys, so finishing the
  * quiz never touches sync. The automatic first-launch showing is
  * UNSKIPPABLE (mode 'auto': the Skip control is hidden and guarded, so
- * the only exit is completing the flow via the final "Enter the app"
- * CTA, which sets the flag). Settings -> "The 5% Quiz"
+ * the only exits are the final screen's entry controls — the "Enter
+ * the app" CTA or one of the two "start with" choices — which set the
+ * flag). Settings -> "The 5% Quiz"
  * replays it any time in mode 'replay', where Skip stays available and
  * leaving a replay never changes the flag.
  *
@@ -13487,6 +13523,12 @@ if (typeof document !== 'undefined' && document.getElementById) {
   if (typeof localStorage === 'undefined') return;
   try {
     var FLAG = 'sr_onboard_v1';
+    /* Where a first-run user chooses to enter from the final screen
+     * ('research' | 'top10' | 'market'), remembered LOCAL-ONLY in
+     * sr_start_v1 (Adi check 3: the choice must change something —
+     * it picks this session's landing tab AND the first return
+     * open's; see initApp's landing-tab block). */
+    var START_KEY = 'sr_start_v1';
     var overlay = document.getElementById('ob-overlay');
     if (!overlay) return;
     var scroller = document.getElementById('ob-scroll');
@@ -13620,17 +13662,41 @@ if (typeof document !== 'undefined' && document.getElementById) {
      *            Skip stays visible and closes the overlay without
      *            touching the flag (it is already set). */
     var quizMode = 'replay';
+    /* Onboarding-screen tallies (Adi exercise): broadcast each
+     * screen as it displays; the usage-stats module counts them in
+     * AUTO mode only, once per session. Fire-and-forget. */
+    function statScreen(screen) {
+      try {
+        var ev;
+        try { ev = new CustomEvent('sr-quiz-screen', { detail: { screen: screen, mode: quizMode } }); }
+        catch (e2) {
+          ev = document.createEvent('Event');
+          ev.initEvent('sr-quiz-screen', true, false);
+          ev.detail = { screen: screen, mode: quizMode };
+        }
+        window.dispatchEvent(ev);
+      } catch (e) {}
+    }
     function openQuiz(m) {
       quizMode = (m === 'auto') ? 'auto' : 'replay';
       overlay.classList.toggle('ob-locked', quizMode === 'auto');
       resetQuiz();
       overlay.hidden = false;
+      statScreen('q1');
     }
     function dismissQuiz() {
       if (quizMode === 'auto') return; /* unskippable on first launch */
       overlay.hidden = true;
     }
-    function finishQuiz() {
+    /* Leave the quiz into the app. choice: 'research' (the primary
+     * "Enter the app" CTA — today's behavior), 'top10' (Watchlist
+     * with the daily scan card) or 'market' (Market tab). A
+     * first-run (auto) choice is REMEMBERED in sr_start_v1 and also
+     * steers the first return open (initApp). A replay choice only
+     * navigates for this session — a preview must never overwrite
+     * a stored real choice. */
+    function enterApp(choice) {
+      var mode = quizMode;
       overlay.hidden = true;
       try { localStorage.setItem(FLAG, '1'); } catch (e) {}
       /* Seed the post-onboarding entry counter (see initApp's
@@ -13639,20 +13705,29 @@ if (typeof document !== 'undefined' && document.getElementById) {
        * Research. Only when absent -- a Settings replay must never
        * reset an established user's count. */
       try { if (localStorage.getItem('sr_entries_v1') === null) localStorage.setItem('sr_entries_v1', '0'); } catch (e) {}
+      if (mode === 'auto') {
+        try { localStorage.setItem(START_KEY, choice); } catch (e) {}
+      }
       /* Broadcast the finish (with the mode) so other modules can
        * react — the install prompt keys off the FIRST-run finish,
        * mode 'auto'; replay finishes carry mode 'replay'. */
       try {
         var ev;
-        try { ev = new CustomEvent('sr-quiz-finished', { detail: { mode: quizMode } }); }
+        try { ev = new CustomEvent('sr-quiz-finished', { detail: { mode: mode } }); }
         catch (e2) {
           ev = document.createEvent('Event');
           ev.initEvent('sr-quiz-finished', true, false);
-          ev.detail = { mode: quizMode };
+          ev.detail = { mode: mode };
         }
         window.dispatchEvent(ev);
       } catch (e) {}
+      if (choice === 'top10' || choice === 'market') {
+        try {
+          if (typeof switchTab === 'function') switchTab(choice === 'top10' ? 'watchlist' : 'market');
+        } catch (e) {}
+      }
     }
+    function finishQuiz() { enterApp('research'); }
     function reveal(id) {
       var el = document.getElementById(id);
       if (!el) return;
@@ -13691,6 +13766,7 @@ if (typeof document !== 'undefined' && document.getElementById) {
         overlay.classList.add('ob-final');
         renderChart('20');
         setProgress(4); /* final screen */
+        statScreen('final');
         reveal('ob-reveal-2');
       }
     }
@@ -13707,6 +13783,10 @@ if (typeof document !== 'undefined' && document.getElementById) {
     if (skipBtn) skipBtn.addEventListener('click', dismissQuiz);
     var ctaBtn = document.getElementById('ob-cta');
     if (ctaBtn) ctaBtn.addEventListener('click', finishQuiz);
+    var startTop10Btn = document.getElementById('ob-start-top10');
+    if (startTop10Btn) startTop10Btn.addEventListener('click', function () { enterApp('top10'); });
+    var startMarketBtn = document.getElementById('ob-start-market');
+    if (startMarketBtn) startMarketBtn.addEventListener('click', function () { enterApp('market'); });
     var nextBtn = document.getElementById('ob-next-1');
     if (nextBtn) nextBtn.addEventListener('click', function () {
       var intro = document.getElementById('ob-intro');
@@ -13716,6 +13796,7 @@ if (typeof document !== 'undefined' && document.getElementById) {
       if (p1) p1.hidden = true;
       if (p2) p2.hidden = false;
       setProgress(3);
+      statScreen('q2');
       if (scroller) { try { scroller.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { scroller.scrollTop = 0; } }
     });
     var replayBtn = document.getElementById('menu-quiz');
@@ -14166,8 +14247,8 @@ if (typeof document !== 'undefined' && document.getElementById) {
 })();
 
 /* ---- Usage counters (privacy-minimal) ------------------------------
- * Two of the three tallies live here ('landing' fires on the landing
- * page). This module POSTs to the relay Worker's /stats-hit, which
+ * Two of the tallies live on the landing page ('landing' fires
+ * there). This module POSTs to the relay Worker's /stats-hit, which
  * keeps ONE integer per event type per America/New_York day — no
  * identity, no device info, nothing per-user ever leaves the phone.
  *   'open' — the app opened, ONCE per browser session (a
@@ -14176,6 +14257,11 @@ if (typeof document !== 'undefined' && document.getElementById) {
  *   'quiz' — the 5% Quiz COMPLETED on a first run. The onboarding
  *            block broadcasts 'sr-quiz-finished' with its mode; only
  *            mode 'auto' counts — Settings replays never do.
+ *   'q1' / 'q2' / 'final' — the quiz's three screens SHOWN on a
+ *            first run (Adi onboarding-funnel audit, 2026-11-24).
+ *            The onboarding block broadcasts 'sr-quiz-screen' as
+ *            each displays; auto mode only, once per session each,
+ *            same sessionStorage-flag pattern as 'open'.
  * Every call is fire-and-forget and fails silently: counting must
  * never affect the app. */
 (function srUsageStats() {
@@ -14191,6 +14277,14 @@ if (typeof document !== 'undefined' && document.getElementById) {
       }).catch(function () {});
     } catch (e) {}
   }
+  function hitOnce(type) {
+    var key = 'sr_stat_' + type;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, '1');
+    } catch (e) {}
+    hit(type);
+  }
   try {
     if (!sessionStorage.getItem('sr_stat_open')) {
       sessionStorage.setItem('sr_stat_open', '1');
@@ -14203,6 +14297,24 @@ if (typeof document !== 'undefined' && document.getElementById) {
         if (e && e.detail && e.detail.mode === 'auto') hit('quiz');
       } catch (err) {}
     });
+  } catch (e) {}
+  try {
+    window.addEventListener('sr-quiz-screen', function (e) {
+      try {
+        if (!e || !e.detail || e.detail.mode !== 'auto') return;
+        var s = e.detail.screen;
+        if (s === 'q1' || s === 'q2' || s === 'final') hitOnce(s);
+      } catch (err) {}
+    });
+  } catch (e) {}
+  /* Boot case: on a first launch the quiz opens (Q1 on screen)
+   * BEFORE this module loads, so its 'sr-quiz-screen' broadcast
+   * was missed. The auto-mode overlay carries .ob-locked — if it's
+   * up right now, Q1 is displaying: count it (the session flag
+   * keeps this and the listener from ever double-counting). */
+  try {
+    var obEl = document.getElementById('ob-overlay');
+    if (obEl && !obEl.hidden && obEl.classList.contains('ob-locked')) hitOnce('q1');
   } catch (e) {}
 })();
 

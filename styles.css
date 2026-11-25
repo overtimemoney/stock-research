@@ -913,6 +913,14 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .ob-overlay.ob-final .ob-reveal { margin-top: 2px; }
 .ob-overlay.ob-final .ob-callout { margin-bottom: 6px; }
 .ob-overlay.ob-final .ob-punch { margin-bottom: 6px; }
+/* Start-choice row (Adi check 3, 2026-11-24): a quiet alternative
+ * under the primary CTA — where a first-run user chooses to enter
+ * is remembered and steers their first return open too. Kept small
+ * and muted so the final screen still fits one screen. */
+.ob-start { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.ob-start-label { font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.ob-start-btn { flex: 1; min-height: 36px; padding: 6px 8px; font-size: 13px; font-weight: 700; color: var(--ink2); background: transparent; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.ob-start-btn:active { transform: scale(.97); }
 /* Reveal-1 compaction: once Q1 is answered, the orientation line has
  * done its job (the progress header carries the signage from here)
  * and the intro shrinks so the callout + Next button fit the same
@@ -1265,7 +1273,6 @@ select { min-height: 48px; }
 #tool-pj .grid2 .lbl-t { flex: 0 1 auto; min-width: 0; }
 #tool-pj .grid2 .info-dot { flex: none; }
 
-/* Flat growth greyed out while an analyst forecast path drives
- * the builder (2026-11-24): visible, but unmistakably inactive. */
-#tool-pj label.pj-inert { opacity: .45; }
-#tool-pj label.pj-inert input { cursor: not-allowed; }
+/* Flat growth hidden outright while an analyst forecast path
+ * drives the builder (2026-11-24). */
+#tool-pj label.pj-gone { display: none !important; }
