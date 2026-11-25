@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261125031156';
+var APP_BUILD = 'stock-research-20261125032637';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -6313,7 +6313,7 @@ function qmShortQ(label) {
   return String(label || '').replace(/(\d{4})/, function (y) { return '\u2019' + y.slice(2); });
 }
 
-function qmBarsSVG(pts, fmt, big) {
+function qmBarsSVG(pts, fmt, big, gline) {
   /* Detail view renders BIG (Justin's ask, 2026-11-15): nearly
    * double the height and larger labels, since the popup is the
    * place you actually read values. */
@@ -6386,6 +6386,38 @@ function qmBarsSVG(pts, fmt, big) {
       out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="' + (big ? 15 : 12) + '" font-weight="' + (nowAxis ? '800' : '700') + '" fill="' + (nowAxis ? 'var(--ink)' : '#8a8271') + '">' + esc(p.axis) + '</text>';
     }
   });
+  /* Growth overlay (Justin's ask, 2026-11-24): a gold line on its
+   * own scale over the value bars, detail view only. Points sit at
+   * bar centers, the line breaks where a growth value is missing,
+   * and the last point carries its value as a tag. */
+  if (big && gline && gline.vals) {
+    var gv = gline.vals.filter(function (v) { return isNum(v); });
+    if (gv.length >= 2) {
+      var gmax = Math.max.apply(null, gv.concat([0]));
+      var gmin = Math.min.apply(null, gv.concat([0]));
+      var gspan = (gmax - gmin) || 1;
+      var gyOf = function (v) { return padT + (gmax - v) / gspan * (h - padT - padB); };
+      out += '<g class="qm-gline">';
+      if (gmin < 0) out += '<line x1="' + padX + '" y1="' + gyOf(0).toFixed(1) + '" x2="' + (w - padX) + '" y2="' + gyOf(0).toFixed(1) + '" stroke="#6b6455" stroke-width="1" stroke-dasharray="4 4"/>';
+      var runs = [], run = [], lastPt = null;
+      pts.forEach(function (p, i) {
+        if (isNum(gline.vals[i])) run.push({ x: padX + i * bw + bw / 2, y: gyOf(gline.vals[i]), v: gline.vals[i] });
+        else { if (run.length) runs.push(run); run = []; }
+      });
+      if (run.length) runs.push(run);
+      runs.forEach(function (r) {
+        if (r.length > 1) out += '<polyline points="' + r.map(function (q) { return q.x.toFixed(1) + ',' + q.y.toFixed(1); }).join(' ') + '" fill="none" stroke="var(--gold)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+        r.forEach(function (q) { out += '<circle cx="' + q.x.toFixed(1) + '" cy="' + q.y.toFixed(1) + '" r="3.2" fill="var(--gold)" stroke="var(--bg)" stroke-width="1.2"/>'; });
+        if (r.length) lastPt = r[r.length - 1];
+      });
+      if (lastPt) {
+        var gtxt = (lastPt.v >= 0 ? '+' : '') + fmtNum(lastPt.v, 1) + (gline.isPts ? ' pts' : '%');
+        var anchor = lastPt.x > w - 110 ? 'end' : 'middle';
+        out += '<text class="qm-gline-tag" x="' + lastPt.x.toFixed(1) + '" y="' + Math.max(14, lastPt.y - 10).toFixed(1) + '" text-anchor="' + anchor + '" font-size="13.5" font-weight="800" fill="var(--gold)">' + esc(gtxt) + '</text>';
+      }
+      out += '</g>';
+    }
+  }
   return out + '</svg>';
 }
 
@@ -6447,6 +6479,7 @@ var QM_MEANS = {
  * through their own paths; the freq toggle does not apply to them. */
 var SEGMENTS_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/segments';
 var qmView = 'values';
+var qmGLine = false;
 var qmMode = 'grid';
 var qmPrevMode = 'grid';
 
@@ -6860,7 +6893,14 @@ function renderQmRatios(key) {
   var pts = isQ
     ? qmTail(series.map(function (p) { return { label: p.q, value: p.v, kind: 'actual', axis: qmShortQ(p.q) }; }), qmWin * 4)
     : qmTail(series.map(function (p) { return { label: 'FY ' + p.fy, value: p.v, kind: 'actual', axis: String(p.fy) }; }), qmWin);
-  box.innerHTML = '<div class="chart-wrap">' + qmBarsSVG(pts, QM_METRICS[mKey].fmt, true) + '</div>';
+  /* Average over the shown period (Justin's ask, 2026-11-24): a
+   * little number above the chart, over exactly the bars on
+   * screen (the window trim already ran). */
+  var rVals = pts.map(function (p) { return p.value; }).filter(function (v) { return isNum(v); });
+  var avgHtml = rVals.length
+    ? '<div class="qm-avg">Average over this period: <b>' + fmtNum(rVals.reduce(function (s2, v) { return s2 + v; }, 0) / rVals.length, 1) + '\u00d7</b></div>'
+    : '';
+  box.innerHTML = avgHtml + '<div class="chart-wrap">' + qmBarsSVG(pts, QM_METRICS[mKey].fmt, true) + '</div>';
   note.textContent = QM_MEANS[mKey];
 }
 
@@ -7129,6 +7169,12 @@ function ensureQmWiring() {
       qmView = b.getAttribute('data-qmview');
       renderQm();
     });
+  });
+  var glEl = $('qm-gline');
+  if (glEl) glEl.addEventListener('click', function () {
+    qmGLine = !qmGLine;
+    try { lsSet('sr_qmgline', qmGLine ? '1' : '0'); } catch (e) {}
+    renderQm();
   });
   var qmGridEl = $('qm-grid');
   if (qmGridEl) qmGridEl.addEventListener('click', function (e) {
@@ -7400,6 +7446,12 @@ function renderQmDetail() {
     b.classList.toggle('active', v === view && !special);
     b.disabled = special || (v === 'csize' && !M.csize);
   });
+  var glBtn = $('qm-gline');
+  if (glBtn) {
+    glBtn.classList.toggle('active', qmGLine && !special && view === 'values');
+    glBtn.setAttribute('aria-pressed', qmGLine ? 'true' : 'false');
+    glBtn.disabled = special || view !== 'values';
+  }
   if (qmMetric === 'flow') return renderQmFlow();
   if (qmMetric === 'segRev') return renderQmSegments('rev');
   if (qmMetric === 'segOp') return renderQmSegments('op');
@@ -7435,7 +7487,7 @@ function renderQmDetail() {
   }
   var pts = [];
   d.periods.forEach(function (p, i) {
-    if (isNum(raw[i])) pts.push({ label: qmShortQ(p), value: raw[i], kind: 'actual' });
+    if (isNum(raw[i])) pts.push({ label: qmShortQ(p), value: raw[i], kind: 'actual', gi: i });
   });
   // History window: trim the reported points to the chosen span.
   // The view transforms above already ran on the full series, so a
@@ -7469,11 +7521,26 @@ function renderQmDetail() {
       pts.push(pt);
     });
   }
+  /* Growth overlay data (Justin's ask, 2026-11-24): the same
+   * year-over-year transform as the Growth view, computed on the
+   * full series and aligned to the shown bars by period index, so
+   * the window's first bar still gets its line point. Reported
+   * bars only -- estimates carry no growth point. */
+  var gline = null;
+  if (view === 'values' && qmGLine) {
+    var glb = qmFreq === 'y' ? 1 : 4;
+    gline = { isPts: M.kind === 'pct', vals: pts.map(function (p) {
+      if (p.kind !== 'actual' || !isNum(p.gi)) return null;
+      var v = raw[p.gi], pv = (p.gi - glb >= 0) ? raw[p.gi - glb] : null;
+      if (!isNum(v) || !isNum(pv) || pv === 0) return null;
+      return M.kind === 'pct' ? v - pv : (v - pv) / Math.abs(pv) * 100;
+    }) };
+  }
   var box = $('qm-chart');
   if (!pts.length) {
     box.innerHTML = '<div class="status err">No ' + esc(M.name) + ' data in the statements for ' + esc(d.ticker) + '.</div>';
   } else {
-    box.innerHTML = '<div class="chart-wrap">' + qmBarsSVG(pts, fmt, true) + '</div>';
+    box.innerHTML = '<div class="chart-wrap">' + qmBarsSVG(pts, fmt, true, gline) + '</div>';
   }
   var per = qmFreq === 'y' ? 'years' : 'quarters';
   var note = $('qm-note');
@@ -12557,6 +12624,7 @@ function initApp() {
   });
   try { qmFreq = lsGet('sr_qmfreq', 'q') === 'y' ? 'y' : 'q'; } catch (e) {}
   try { var qw = parseInt(lsGet('sr_qmwin', 2), 10); if (QM_WIN_CHOICES.indexOf(qw) >= 0) qmWin = qw; } catch (e) {}
+  try { qmGLine = lsGet('sr_qmgline', '') === '1'; } catch (e) {}
   document.querySelectorAll('[data-qmwin]').forEach(function (b) {
     b.addEventListener('click', function () {
       var v = parseInt(b.getAttribute('data-qmwin'), 10);
