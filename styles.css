@@ -1256,3 +1256,11 @@ select { min-height: 48px; }
   .sheet, .tabbar, .scan-dot, input, select, textarea { corner-shape: squircle; }
 }
 .scan-h { text-wrap: balance; }
+
+/* Projection form labels (2026-11-24): the info dot stays on the
+ * label's own line even when the text wraps -- Flat growth's dot
+ * was dropping to a line of its own. The input takes the full
+ * second row. */
+#tool-pj .grid2 .lbl-row { display: flex; flex-wrap: nowrap; align-items: flex-start; column-gap: 6px; }
+#tool-pj .grid2 .lbl-t { flex: 0 1 auto; min-width: 0; }
+#tool-pj .grid2 .info-dot { flex: none; }
