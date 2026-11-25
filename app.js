@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261125015406';
+var APP_BUILD = 'stock-research-20261125015432';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
