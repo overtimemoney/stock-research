@@ -1246,3 +1246,13 @@ select { min-height: 48px; }
   .walk-anchor { animation: walk-pulse 1.6s ease-in-out infinite; }
   @keyframes walk-pulse { 0%, 100% { outline-color: var(--gold); } 50% { outline-color: rgba(248,199,61,.25); } }
 }
+
+/* Polish pass (2026-11-24, from Caleb's 20-details list): smooth
+ * continuous corners (squircle) on the main surfaces where the
+ * browser supports them -- border-radius stays as the fallback --
+ * and balanced wrapping for the scan card's headline. */
+@supports (corner-shape: squircle) {
+  .card, .btn-gold, .btn-ghost, .btn-mini, .qm-card, .sim-tile, .logo-tile,
+  .sheet, .tabbar, .scan-dot, input, select, textarea { corner-shape: squircle; }
+}
+.scan-h { text-wrap: balance; }

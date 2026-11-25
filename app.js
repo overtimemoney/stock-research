@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261125004739';
+var APP_BUILD = 'stock-research-20261125011332';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -9364,6 +9364,18 @@ document.addEventListener('click', function (e) {
  * Enter/Space on a focused index name toggles its bubble; Escape
  * closes the bubble, or any open \u24d8 explainer. */
 document.addEventListener('keydown', function (e) {
+  /* Cmd/Ctrl+K jumps straight to the stock search (2026-11-24,
+   * from Caleb's polish list: the command-menu idea, sized for a
+   * single-purpose app -- search IS the command line here). */
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+    e.preventDefault();
+    try {
+      switchTab('scorecard');
+      var si = $('search-input');
+      if (si) { si.focus(); si.select(); }
+    } catch (err) {}
+    return;
+  }
   if (e.key === 'Escape') {
     if (ixPopKey) { ixPopHide(); return; }
     document.querySelectorAll('.info-text.open').forEach(function (txt) { setInfoOpen(txt, false); });
