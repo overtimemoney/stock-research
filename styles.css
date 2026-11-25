@@ -797,6 +797,14 @@ body.nav-back-on main { padding-top: 56px; }
 #qm-detail { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); left: 10px; background: var(--bg); border: 1.5px solid var(--line); border-radius: 20px; padding: 14px 10px calc(88px + env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; animation: dlg-in .25s var(--ease-drawer); }
 .qm-sheet-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 #holders-overlay { position: fixed; inset: 0; z-index: 150; background: rgba(0,0,0,.62); overscroll-behavior: contain; }
+#tx-overlay { position: fixed; inset: 0; z-index: 150; background: rgba(0,0,0,.62); overscroll-behavior: contain; }
+#tx-sheet { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); left: 10px; background: var(--bg); border: 1.5px solid var(--line); border-radius: 20px; padding: 14px 14px calc(88px + env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; animation: dlg-in .25s var(--ease-drawer); }
+.tx-meta { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+.tx-open { width: 100%; }
+.tx-turn { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.tx-turn:last-of-type { border-bottom: none; }
+.tx-spk { font-weight: 800; font-size: 13.5px; margin-bottom: 3px; }
+.tx-turn p { margin: 0; font-size: 14.5px; line-height: 1.55; }
 #holders-sheet { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); left: 10px; background: var(--bg); border: 1.5px solid var(--line); border-radius: 20px; padding: 14px 14px calc(88px + env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; animation: dlg-in .25s var(--ease-drawer); }
 .hld-title { font-size: 22px; font-weight: 800; }
 .hld-sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
@@ -1035,7 +1043,7 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
   .toast-bubble { transition: opacity .2s ease; }
   .tool-page.active { animation: none; }
   .radar-svg { animation: none; }
-  .pf-sheet, #qm-detail, #holders-sheet, .shake, .splash-mark { animation: none; }
+  .pf-sheet, #qm-detail, #holders-sheet, #tx-sheet, .shake, .splash-mark { animation: none; }
   #splash { transition-duration: .01s; }
 }
 

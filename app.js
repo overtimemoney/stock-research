@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261125223706';
+var APP_BUILD = 'stock-research-20261125225821';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -3835,6 +3835,7 @@ function swotBox(letter, title, items, cls) {
  * the four lists. Saved on-device per ticker so it persists. */
 var AI_SWOT_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/swot';
 var BIZ_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/bizmodel';
+var TX_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/av-transcript';
 var MOAT_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/moat';
 var TAM_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/tam';
 var COMP_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/comp';
@@ -4510,6 +4511,7 @@ function renderScorecard(d) {
     '<a class="sc-act sc-ext" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=' + esc(d.ticker) + '&type=&dateb=&owner=include&count=10" target="_blank" rel="noopener"><span>SEC filings</span><span class="sc-act-arrow">↗</span></a></div>';
 
   html += stockNewsSectionHtml('sc', d.ticker);
+  html += txSectionHtml(d.ticker);
   html += similarSectionHtml(d.ticker);
 
   var when = d.fetchedAt ? new Date(d.fetchedAt).toLocaleString() : '';
@@ -4526,6 +4528,7 @@ function renderScorecard(d) {
   projStripFill('sc-proj', d.ticker);
   overallFill('sc-overall-v', d);
   loadStockNews('sc', d.ticker);
+  loadTxSection(d);
   loadSimilarStocks(d);
 
   /* The zone's button is "Regenerate" when a saved SWOT is showing
@@ -7199,6 +7202,14 @@ function ensureQmWiring() {
   var hOvEl = $('holders-overlay');
   if (hOvEl) hOvEl.addEventListener('click', function (e) {
     if (e.target === hOvEl) closeHolders();
+  });
+  var txBackEl = $('tx-back');
+  if (txBackEl) txBackEl.addEventListener('click', closeTx);
+  var txCloseEl = $('tx-close');
+  if (txCloseEl) txCloseEl.addEventListener('click', closeTx);
+  var txOvEl = $('tx-overlay');
+  if (txOvEl) txOvEl.addEventListener('click', function (e) {
+    if (e.target === txOvEl) closeTx();
   });
 }
 
@@ -10658,6 +10669,81 @@ async function loadStockNews(scope, T) {
   }
   var items = await fetchStockNews(T);
   paintStockNews(scope, T, items);
+}
+
+/* ============ Earnings call transcript (2026-11-25) ============
+ * A "Latest earnings call" section under Latest news on the
+ * scorecard. The relay's /av-transcript serves Alpha Vantage
+ * transcripts on Justin's free AV key (hard-cached in the relay's
+ * KV, since a published call never changes); on-device we keep
+ * the last 3 opened, in sr_tx_v1. The section stays empty until a
+ * transcript is confirmed to exist -- no skeleton for a section
+ * that may never appear -- then offers the full call in a sheet,
+ * speaker by speaker. Scorecard only for now. */
+var TX_KEY = 'sr_tx_v1';
+function txSectionHtml(T) {
+  return '<div data-txsec="' + esc(T) + '"></div>';
+}
+function txEntry(T) {
+  var all = lsGet(TX_KEY, {});
+  var e = all && all[T];
+  return (e && e.data && Array.isArray(e.data.transcript)) ? e : null;
+}
+function txSave(T, payload) {
+  try {
+    var all = lsGet(TX_KEY, {});
+    all[T] = { at: Date.now(), quarter: payload.quarter, data: payload.data };
+    var keys = Object.keys(all).sort(function (x, y) { return (all[y].at || 0) - (all[x].at || 0); });
+    var out = {};
+    keys.slice(0, 3).forEach(function (k) { out[k] = all[k]; });
+    lsSet(TX_KEY, out);
+  } catch (e) {}
+}
+function txQuarterLabel(q) {
+  var m = /^(\d{4})Q([1-4])$/.exec(q || '');
+  return m ? 'Q' + m[2] + ' ' + m[1] : (q || '');
+}
+async function loadTxSection(d) {
+  var T = d && d.ticker;
+  if (!T) return;
+  var payload = null;
+  var e = txEntry(T);
+  if (e) payload = { ok: true, quarter: e.quarter, data: e.data };
+  else {
+    try {
+      var r = await fetch(TX_URL + '?t=' + encodeURIComponent(T));
+      var jj = await r.json();
+      if (jj && jj.ok) { payload = jj; txSave(T, jj); }
+    } catch (err) {}
+  }
+  if (!payload) return;
+  if (!lastStock || lastStock.ticker !== T) return;
+  var box = document.querySelector('[data-txsec="' + T + '"]');
+  if (!box) return;
+  box.innerHTML = '<div class="section-h">Latest earnings <span class="gold-text">call</span></div>' +
+    '<div class="card tx-card"><div class="tx-meta">' + esc(txQuarterLabel(payload.quarter)) + ' earnings call \u00b7 ' + payload.data.transcript.length + ' speaker turns</div>' +
+    '<button type="button" class="btn-ghost tx-open">Read the transcript</button></div>';
+  var btn = box.querySelector('.tx-open');
+  if (btn) btn.addEventListener('click', function () { openTx(d, payload); });
+}
+function openTx(d, payload) {
+  var ov = $('tx-overlay'), body = $('tx-body');
+  if (!ov || !body || !payload || !payload.data) return;
+  var html = '<div class="hld-title">Earnings call transcript</div><div class="hld-sub">' + esc(d.name || d.ticker) + ' \u00b7 ' + esc(txQuarterLabel(payload.quarter)) + '</div>';
+  payload.data.transcript.forEach(function (t) {
+    html += '<div class="tx-turn"><div class="tx-spk">' + esc(t.speaker || 'Speaker') + '</div><p>' + esc(t.content || '') + '</p></div>';
+  });
+  html += '<p class="fineprint">Transcript via Alpha Vantage. Machine-generated, so names and figures can contain errors.</p>';
+  body.innerHTML = html;
+  ov.hidden = false;
+  setMainLock('tx', true);
+  var sheet = $('tx-sheet');
+  if (sheet) sheet.scrollTop = 0;
+}
+function closeTx() {
+  var ov = $('tx-overlay');
+  if (ov) ov.hidden = true;
+  setMainLock('tx', false);
 }
 
 function pfView() { return localStorage.getItem('sr_pfview_v1') === 'news' ? 'news' : 'overview'; }

@@ -579,6 +579,12 @@ setTimeout(function () { var s = document.getElementById('splash'); if (s) { s.c
     <div id="holders-body"></div>
   </div>
 </div>
+<div id="tx-overlay" hidden>
+  <div id="tx-sheet">
+    <div class="qm-sheet-top"><button type="button" id="tx-back" class="btn-ghost">‹ Back</button><button type="button" id="tx-close" class="qm-x" aria-label="Close transcript"><svg class="ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <div id="tx-body"></div>
+  </div>
+</div>
 <div id="offline-bar" class="offline-bar" hidden>You&rsquo;re offline &mdash; your lists are saved on this device and will sync when you&rsquo;re back.</div>
 <button id="nav-back" class="nav-back" type="button" hidden aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
 <nav class="tabbar" role="navigation" aria-label="Sections">
