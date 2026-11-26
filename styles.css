@@ -119,8 +119,7 @@ h2, h3 { font-weight: 800; letter-spacing: -0.01em; }
 .splash-name { color: var(--gold); font-size: 13px; font-weight: 700; letter-spacing: .38em; margin-right: -.38em; }
 @keyframes splash-in { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: scale(1); } }
 .topbar {
-  /* The status-bar zone + the gold line at its bottom edge; the
-   * settings gear floats (see .settings-wrap). Fixed since
+  /* The status-bar zone + the gold line at its bottom edge. Fixed since
    * 2026-11-24 (Justin's ask): content now scrolls UNDER this
    * strip and blurs behind it (backdrop-filter), while the gold
    * line -- the strip's own border, not part of the backdrop --
@@ -231,15 +230,7 @@ table.factors td, table.factors th, table.cmp td, table.cmp th { padding: 7px 6p
 table.factors th, table.cmp th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 td.num, th.num { text-align: right !important; font-variant-numeric: tabular-nums; }
 .factor-note { color: var(--muted); font-size: 12px; }
-.screen-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0 4px; }
-.screen-chips[hidden] { display: none; }
-button.screen-toggle { display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px; width: 100%; background: none; border: 0; padding: 0; color: inherit; font-family: inherit; text-align: left; cursor: pointer; }
-.screen-sum { text-transform: none; letter-spacing: 0; font-size: 12.5px; font-weight: 600; color: var(--muted); }
-.screen-name, .screen-count { white-space: nowrap; }
-.screen-sum { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.screen-chev { margin-left: auto; color: var(--gold); font-size: 13px; transition: transform .25s var(--ease-out); }
-.screen-toggle.open .screen-chev { transform: rotate(180deg); }
-@media (max-width: 560px) { .screen-chips { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { }
 .chip {
   border-radius: 12px; padding: 10px 12px; font-size: 13px; font-weight: 700;
   border: 1.5px solid var(--line); background: var(--chip-bg); display: flex; justify-content: space-between; gap: 8px;
@@ -628,9 +619,6 @@ body.nav-back-on main { padding-top: 56px; }
 .pf-pill-dot { position: relative; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; color: #141414; font-size: 11px; font-weight: 900; }
 .pf-logo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #fff; padding: 2px; box-sizing: border-box; }
 .pf-c-v { font-size: 21px; font-weight: 900; fill: var(--ink); }
-.pf-c-big { font-size: 27px; font-weight: 900; }
-.pf-c-up { fill: var(--good); }
-.pf-c-dn { fill: var(--bad); }
 .pf-c-l { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; fill: var(--muted); }
 .pf-avatar { position: relative; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; color: #141414; font-size: 16px; font-weight: 900; flex: 0 0 auto; }
 .pf-avatar .pf-logo { padding: 4px; }
@@ -679,13 +667,9 @@ body.nav-back-on main { padding-top: 56px; }
 .pf-bench-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
 .pf-bench-seg { margin: 10px 0 6px; }
 .pf-bench-chart { width: 100%; height: auto; display: block; }
-.pf-bench-stats { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 14px; font-weight: 700; margin-top: 8px; }
+.pf-bench-stats { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 14px; font-weight: 700; margin-top: 8px; }/* ---------- purchases + Other dropdown ---------- */
 
-/* ---------- purchases + Other dropdown ---------- */
-.pf-buys { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
-.pf-buys-h { display: flex; justify-content: space-between; align-items: center; font-weight: 900; font-size: 13.5px; margin-bottom: 4px; }
 .pf-buy-row { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; padding: 2px 0; }
-.pf-buy-row .pf-buy-del { margin-left: auto; }
 .pf-pop.clickable { cursor: pointer; }
 .pf-pop-hint { display: block; margin-top: 5px; font-size: 11.5px; color: var(--gold); font-weight: 800; letter-spacing: .03em; }
 .pf-pop-list { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; display: flex; flex-direction: column; gap: 7px; text-align: left; }
@@ -693,7 +677,6 @@ body.nav-back-on main { padding-top: 56px; }
 .pf-pop-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
 .pf-pop-row-n { color: var(--muted); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pf-pop-row > span:last-child { margin-left: auto; white-space: nowrap; }
-.pf-buys-n { color: var(--muted); font-weight: 600; font-size: 11.5px; }
 
 /* ---------- vector icons (stroke style, inherit text color) ---------- */
 .ico { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: -4px; flex: 0 0 auto; }
@@ -704,29 +687,20 @@ body.nav-back-on main { padding-top: 56px; }
 .chip .mark .ico-sm { margin-right: 0; vertical-align: -3px; }
 .chip .mark .ico-sm + span { margin-left: 4px; }
 .ico-fill { fill: currentColor; stroke: none; }
-.ico-xxs { width: 13px; height: 13px; vertical-align: -2px; margin-right: 0; }
 .ico-xs { width: 11px; height: 11px; vertical-align: -1px; margin-right: 0; }
 
 .ico { stroke-width: 2.1; }
 .ico-f { fill: currentColor; stroke: none; }
-.pf-closed-h { margin: 20px 0 8px; font-size: 15px; letter-spacing: .01em; }
 .pf-buy-txt { display: flex; gap: 10px; align-items: baseline; background: none; border: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
 .pf-buy-txt span:first-child { color: var(--gold); font-weight: 800; }
 .pj-save-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
 .pf-bench-read { font-size: 12.5px; color: var(--muted); min-height: 18px; margin: 4px 0 0;  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pf-bench-read .pf-read-date { color: var(--text); }
-.wl-sub { display: none; gap: 4px 10px; }
-.wl-sub.open { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 10px; max-width: 100%; }
-.wl-more-btn { font-weight: 800; letter-spacing: 1px; }
-.wl-more-btn { margin-left: 18px; }
 .pf-pop-list[hidden] { display: none; }
 .scan-card { margin-bottom: 12px; }
 .scan-h { font-size: 17px; font-weight: 900; letter-spacing: .01em; margin-bottom: 6px; }
 .scan-date { color: var(--muted); font-size: 12px; font-weight: 700; margin-left: 6px; }
 .scan-group { font-size: 12px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); margin: 10px 0 4px; }
-.scan-ix-toggle { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none; border-top: 1px solid var(--line); margin-top: 12px; padding: 10px 2px 2px; color: var(--muted); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; text-align: left; }
-.scan-ix-chev { color: var(--gold); display: inline-block; transition: transform .25s var(--ease-out); }
-.scan-ix-toggle.open .scan-ix-chev { transform: rotate(180deg); }
 .scan-count { color: var(--muted); letter-spacing: 0; text-transform: none; font-weight: 700; }
 .scan-ixname { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 #ix-pop { position: fixed; z-index: 120; display: none; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.38); padding: 10px 12px; font-size: 13px; font-weight: 600; line-height: 1.45; color: var(--ink); }
@@ -757,7 +731,6 @@ body.nav-back-on main { padding-top: 56px; }
 .scan-row .scan-new, .scan-row .scan-cyc { flex: none; }
 .scan-px { font-weight: 800; font-size: 13px; }
 .scan-score { font-size: 15px; font-weight: 900; border: none; background: none; border-radius: 0; padding: 0; white-space: nowrap; }
-.scan-foot { margin-top: 10px; font-size: 12px; color: var(--muted); font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .scan-bar { height: 6px; border-radius: 3px; background: var(--chip-bg); overflow: hidden; margin-top: 8px; }
 .scan-bar i { display: block; height: 100%; background: var(--gold); border-radius: 3px; transition: width .3s; }
 #tab-portfolio.news-mode .pf-ov { display: none; }
@@ -839,10 +812,9 @@ main.scroll-lock { overflow-y: hidden; }
 .qm-leg-val { color: var(--muted); margin-left: auto; font-weight: 700; white-space: nowrap; }
 .qm-opt { display: flex; justify-content: space-between; align-items: center; width: 100%; background: none; border: 0; color: var(--ink); padding: 10px; font: inherit; font-size: 14.5px; font-weight: 700; cursor: pointer; border-radius: 8px; text-align: left; }
 .qm-opt.on { color: var(--gold); }
-.qm-opt.on::after { content: '\2713'; font-weight: 800; }
-/* Factor tables: fixed layout so the points column never wraps mid-number ("25 / 25" splitting across lines) — Justin flagged the right column 2026-10-26. */
+.qm-opt.on::after { content: '\2713'; font-weight: 800; }/* Factor tables: fixed layout so the points column never wraps mid-number ("25 / 25" splitting across lines) — Justin flagged the right column 2026-10-26. */
 /* Horizontal-scroll wrapper for genuinely wide tables (Compare). */
-.tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
 table.factors:not(.scen) { table-layout: fixed; }
 table.factors:not(.scen) th:nth-child(2), table.factors:not(.scen) td:nth-child(2) { width: 100px; }
 table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; white-space: nowrap; }
@@ -904,7 +876,6 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
 .ob-legend { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 6px 2px 0; }
 .ob-leg { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; color: var(--ink2); }
 .ob-leg i { display: inline-block; width: 18px; height: 3.5px; border-radius: 99px; flex: 0 0 auto; }
-.ob-chart-note { flex: 0 0 auto; font-size: 10.5px; color: var(--muted); margin: 3px 2px 0; font-weight: 600; }
 .ob-q { font-size: 15.5px; font-weight: 700; line-height: 1.38; margin: 0 0 8px; }
 .ob-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .ob-opt { font: inherit; font-size: 16px; font-weight: 800; text-align: center; display: flex; align-items: center; justify-content: center; min-height: 46px; padding: 8px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform .16s var(--ease-out), min-height .2s var(--ease-out); }
@@ -1147,7 +1118,6 @@ table.factors .info-row .info-text.open { max-height: 900px; }
 .skl-swotbox { height: 74px; }
 .skl-holdrow { width: 100%; height: 34px; }
 .skl-qmchart { width: 100%; height: 74px; margin: 2px 0 4px; }
-.skl-footbar { display: inline-block; width: 150px; height: 12px; vertical-align: -1px; }
 
 /* Tap feedback for the tappables that lacked it: the press should
  * register instantly, before anything loads. */
@@ -1229,7 +1199,6 @@ h1, h2, h3, h4, .ob-q, .sc-name { text-wrap: balance; }
 .ceo-toggle { min-height: 48px; border-radius: 10px; }
 .ceo-chev { transition-duration: 150ms; }
 select { min-height: 48px; }
-.scan-ix-toggle { min-height: 48px; }
 .qm-picker-btn { min-height: 48px; }
 .qm-opt { min-height: 48px; }
 .ac-item.ac-on { background: var(--chip-bg); }

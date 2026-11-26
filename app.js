@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261125225821';
+var APP_BUILD = 'stock-research-20261126060933';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -24,8 +24,6 @@ var ICO_SPARK = '<path d="M12 3l2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2
 var ICO_REGEN = '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>';
 var ICO_ALERT = '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/>';
 var ICO_OKCIRCLE = '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.2 2.4 2.4 4.6-5"/>';
-var ICO_CHECK = '<path d="M20 6 9 17l-5-5"/>';
-var ICO_X = '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>';
 var ICO_STAR = '<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>';
 /* Compact form for huge finite values (2026-11-07): toLocaleString
  * on something like 5.3e39 prints all 40 digits and blows out the
@@ -180,14 +178,6 @@ function parseFinviz(html) {
   }
   return pairs;
 }
-function finvizPctBelowHigh(pairs) {
-  var raw = pairs['52W High'] || ''; // e.g. "1255.00 -31.75%"
-  var m = raw.match(/(-?[\d.]+)%/);
-  if (m) return Math.abs(parseFloat(m[1]));
-  var hi = parseNum((raw.split(' ')[0] || ''));
-  return hi; // caller falls back to price math if this looks like a price
-}
-
 /* "$63.34B" / "$890M" style strings to plain numbers. */
 function parseRevStr(s) {
   if (!s) return null;
@@ -1575,12 +1565,6 @@ function bizInnerHtml(d) {
   }
   return inner;
 }
-function bizBlockHtml(d) {
-  var inner = bizInnerHtml(d);
-  if (!inner) return '';
-  return '<button type="button" class="ceo-toggle" data-biztoggle aria-expanded="false"><span class="earn-line ceo-line">How it makes money</span><span class="ceo-chev">\u25be</span></button>' +
-    '<div class="ceo-body biz-body" hidden>' + inner + '</div>';
-}
 /* Moat verdict from the app's own numbers (2026-11-15; floors made
  * ABSOLUTE 2026-11-16 at Justin's correction): the old rule measured
  * the worst year against the average, so NVDA (68% average, 57%
@@ -2472,30 +2456,6 @@ function epsProfitWarning(d) {
       label(fc[fc.length - 1]) + ', the last year forecast.';
   }
   return null;
-}
-
-/* Justin's boom-bust rule (2026-10-26): when the EPS cliff check fires
- * AND revenue doubled (actual or projected) within the 2 years leading
- * up to the revenue top, the name carries peak-cycle risk — the classic
- * value trap. Returns null when the pattern can't be tested. */
-function boomBust(d) {
-  var rp = d.revPath || [];
-  if (rp.length < 3) return null;
-  var top = 0;
-  for (var i = 1; i < rp.length; i++) { if (rp[i].rev > rp[top].rev) top = i; }
-  if (top < 2) return { testable: true, fires: false, ratio: null, topLabel: rp[top].label };
-  var ratio = rp[top].rev / rp[top - 2].rev;
-  var cliff = epsCliffInfo(d);
-  var possibleCliff = cliff ? null : epsPossibleCliff(d);
-  return {
-    testable: true,
-    fires: !!((cliff || possibleCliff) && ratio >= 2),
-    ratio: ratio,
-    topLabel: rp[top].label,
-    projected: rp[top].est,
-    cliff: cliff,
-    possibleCliff: possibleCliff
-  };
 }
 
 /* Yearly fundamentals on the record, from the Charts tool's annual
@@ -9085,10 +9045,6 @@ function scanDiag(msg) {
     lsSet('sr_scan_diag', a.slice(-6));
   } catch (e) {}
 }
-function scanDiagLast() {
-  var a = lsGet('sr_scan_diag', []);
-  return a.length ? a[a.length - 1] : '';
-}
 async function scanBootstrapFromHosted() {
   if (scanBootstrapping) { scanDiag('bootstrap skipped: already running'); return; }
   if (getScanData()) { scanDiag('bootstrap: dataset exists, fresh scan'); var s0 = scanFreshState(); setScan(s0); renderScanCard(); scanPump(); return; }
@@ -9297,7 +9253,6 @@ function maybeStartScanCore() {
   scanBootstrapFromHosted();
 }
 
-function scanScoreClass(score) { return score >= 70 ? 'up' : (score >= 45 ? '' : 'down'); }
 /* Pill color as a smooth ramp instead of the three hard buckets, so a
  * 44 and a 45 look nearly identical (Justin's call, 2026-10-31): red at
  * 30, the app's gold at 50 (Justin's middle tier, 2026-10-31: the
@@ -9323,42 +9278,6 @@ function scanScoreStyle(score) {
 function scoreBarBg(score) {
   var c = scoreRgb(score);
   return c ? 'background:rgb(' + c.join(',') + ');' : '';
-}
-
-/* Tappable share-amount sheet for purchases/sales (Justin's ask,
- * 2026-10-26): typing ALL into a phone prompt was too easy to miss,
- * so the amount step is now an in-app sheet with a real All button.
- * Resolves with a number (All -> cap), NaN for an empty/invalid
- * entry (callers show their usual alert), or null on cancel. */
-function pfShareSheet(title, cap, initial) {
-  return new Promise(function (resolve) {
-    var bg = document.createElement('div');
-    bg.className = 'pf-sheet-bg';
-    var allBtn = (isNum(cap) && cap > 0)
-      ? '<button type="button" class="btn-ghost" id="pf-sh-all">All \u00b7 ' + fmtShares(cap) + '</button>' : '';
-    bg.innerHTML = '<div class="pf-sheet"><h4>' + esc(title) + '</h4>' +
-      '<div class="pf-sheet-row"><input id="pf-sh-in" type="text" inputmode="decimal" autocomplete="off" placeholder="Shares" value="' + (isNum(initial) ? esc(String(initial)) : '') + '">' + allBtn + '</div>' +
-      '<div class="pf-sheet-row" style="margin-top:10px"><button type="button" class="btn-ghost" id="pf-sh-cancel" style="flex:1">Cancel</button><button type="button" class="pf-sh-save" id="pf-sh-ok" style="flex:1">Save</button></div></div>';
-    document.body.appendChild(bg);
-    var done = false;
-    function close(v) {
-      if (done) return; done = true;
-      if (bg.parentNode) bg.parentNode.removeChild(bg);
-      resolve(v);
-    }
-    bg.querySelector('#pf-sh-cancel').addEventListener('click', function () { close(null); });
-    bg.addEventListener('click', function (e) { if (e.target === bg) close(null); });
-    var all = bg.querySelector('#pf-sh-all');
-    if (all) all.addEventListener('click', function () { close(cap); });
-    bg.querySelector('#pf-sh-ok').addEventListener('click', function () {
-      close(parseFloat(bg.querySelector('#pf-sh-in').value));
-    });
-    var inp = bg.querySelector('#pf-sh-in');
-    inp.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); bg.querySelector('#pf-sh-ok').click(); }
-    });
-    setTimeout(function () { try { inp.focus(); inp.select(); } catch (e) {} }, 60);
-  });
 }
 
 /* Justin's layout call (2026-11-08): the Total Market list leads the
@@ -10416,10 +10335,6 @@ function pfRealized(p, hh) {
   }
   var gain = isNum(basisPer) ? proceeds - basisPer * soldSh : null;
   return { proceeds: proceeds, gain: gain, pct: (isNum(gain) && basisPer > 0) ? gain / (basisPer * soldSh) * 100 : null, sh: soldSh };
-}
-function pfFmtDate(key) {
-  var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return MON[(Math.floor(key / 100) % 100) - 1] + ' ' + (key % 100) + ', ' + Math.floor(key / 10000);
 }
 function pfKeyToISO(key) {
   return Math.floor(key / 10000) + '-' + String(Math.floor(key / 100) % 100).padStart(2, '0') + '-' + String(key % 100).padStart(2, '0');
@@ -12897,15 +12812,6 @@ function initApp() {
     if (!b) return;
     var body = b.nextElementSibling;
     if (!body || !body.classList.contains('more-body')) return;
-    var open = body.hidden;
-    ddAnimBody(body, open);
-    b.setAttribute('aria-expanded', open ? 'true' : 'false');
-  });
-  document.addEventListener('click', function (e) {
-    var b = e.target && e.target.closest ? e.target.closest('[data-biztoggle]') : null;
-    if (!b) return;
-    var body = b.nextElementSibling;
-    if (!body || !body.classList.contains('biz-body')) return;
     var open = body.hidden;
     ddAnimBody(body, open);
     b.setAttribute('aria-expanded', open ? 'true' : 'false');
