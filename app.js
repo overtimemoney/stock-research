@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261126214236';
+var APP_BUILD = 'stock-research-20261126214939';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -10747,13 +10747,15 @@ async function loadStockNews(scope, T) {
  * scorecard. The relay's /av-transcript serves Alpha Vantage
  * transcripts on Justin's free AV key (hard-cached in the relay's
  * KV, since a published call never changes); on-device we keep
- * the last 3 opened, in sr_tx_v1. The section stays empty until a
- * transcript is confirmed to exist -- no skeleton for a section
- * that may never appear -- then offers the full call in a sheet,
- * speaker by speaker. Scorecard only for now. */
+ * the last 3 opened, in sr_tx_v1. The section shows its header
+ * with a skeleton while the check runs and removes itself when
+ * no transcript exists (2026-11-26: an invisible-until-loaded
+ * section read as 'missing' to Justin) -- then offers the full
+ * call in a sheet, speaker by speaker. Scorecard only. */
 var TX_KEY = 'sr_tx_v1';
 function txSectionHtml(T) {
-  return '<div data-txsec="' + esc(T) + '"></div>';
+  return '<div data-txsec="' + esc(T) + '"><div class="section-h">Latest earnings <span class="gold-text">call</span></div>' +
+    '<div class="card tx-card">' + sklLinesHtml(2) + '</div></div>';
 }
 function txEntry(T) {
   var all = lsGet(TX_KEY, {});
@@ -10787,10 +10789,10 @@ async function loadTxSection(d) {
       if (jj && jj.ok) { payload = jj; txSave(T, jj); }
     } catch (err) {}
   }
-  if (!payload) return;
   if (!lastStock || lastStock.ticker !== T) return;
   var box = document.querySelector('[data-txsec="' + T + '"]');
   if (!box) return;
+  if (!payload) { box.remove(); return; }
   box.innerHTML = '<div class="section-h">Latest earnings <span class="gold-text">call</span></div>' +
     '<div class="card tx-card"><div class="tx-meta">' + esc(txQuarterLabel(payload.quarter)) + ' earnings call \u00b7 ' + payload.data.transcript.length + ' speaker turns</div>' +
     '<button type="button" class="btn-ghost tx-open">Read the transcript</button></div>';
