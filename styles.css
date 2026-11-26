@@ -1267,3 +1267,21 @@ select { min-height: 48px; }
 /* Flat growth hidden outright while an analyst forecast path
  * drives the builder (2026-11-24). */
 #tool-pj label.pj-gone { display: none !important; }
+
+.qm-combo-legend { display: flex; gap: 14px; flex-wrap: wrap; padding: 0 2px 8px; font-size: 12.5px; color: var(--muted); }
+.qm-combo-legend span { display: inline-flex; align-items: center; }
+.qm-sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; }
+.qm-sw-line { width: 14px; height: 3px; border-radius: 2px; }
+
+/* Settings stack nav (2026-11-26): root rows + drill-in panels. */
+#tab-settings [hidden] { display: none !important; }
+.set-list { display: flex; flex-direction: column; gap: 10px; }
+.set-row { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 52px; padding: 12px 14px; background: var(--card); border: 1.5px solid var(--line); border-radius: 14px; color: var(--ink); font-size: 15.5px; font-weight: 600; text-align: left; cursor: pointer; }
+.set-row:active { transform: scale(.99); }
+.set-row .set-val { margin-left: auto; color: var(--muted); font-size: 13.5px; font-weight: 500; }
+.set-row .set-chev { margin-left: auto; color: var(--muted); flex: none; }
+.set-row .set-val + .set-chev { margin-left: 0; }
+.set-panel-head { display: flex; align-items: center; gap: 12px; margin: 2px 0 14px; }
+.set-back { flex: none; width: 40px; height: 40px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+.set-crumb { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.set-panel-title { font-size: 21px; font-weight: 800; line-height: 1.15; }

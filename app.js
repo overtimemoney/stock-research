@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261126060933';
+var APP_BUILD = 'stock-research-20261126174944';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -6276,17 +6276,22 @@ function qmShortQ(label) {
   return String(label || '').replace(/(\d{4})/, function (y) { return '\u2019' + y.slice(2); });
 }
 
-function qmBarsSVG(pts, fmt, big, gline) {
+function qmBarsSVG(pts, fmt, big, gline, combo) {
   /* Detail view renders BIG (Justin's ask, 2026-11-15): nearly
    * double the height and larger labels, since the popup is the
    * place you actually read values. */
   var w = 640, h = big ? 400 : 224, padT = big ? 46 : 32, padX = 6;
-  var max = Math.max.apply(null, pts.map(function (p) { return p.value; }).concat([0]));
-  var min = Math.min.apply(null, pts.map(function (p) { return p.value; }).concat([0]));
+  var pair = combo && combo.pair ? combo.pair : null;
+  var mline = combo && combo.line ? combo.line : null;
+  var padR = mline ? 46 : 6;
+  var allVals = pts.map(function (p) { return p.value; });
+  if (pair) pair.forEach(function (v) { if (isNum(v)) allVals.push(v); });
+  var max = Math.max.apply(null, allVals.concat([0]));
+  var min = Math.min.apply(null, allVals.concat([0]));
   var span = (max - min) || 1;
   var vfsEarly = pts.length <= 8 ? 16.5 : pts.length <= 13 ? 14.5 : 12.5;
   if (big) vfsEarly = Math.round(vfsEarly * 1.35 * 2) / 2;
-  var bw = (w - padX * 2) / pts.length;
+  var bw = (w - padX - padR) / pts.length;
   /* Legibility fitting (Justin's screenshots, 2026-11-01: 12 bars of
    * "$794.1M" / "108.0M" ran together into one unreadable string).
    * Measure the widest label against its bar slot; if it cannot fit,
@@ -6313,6 +6318,13 @@ function qmBarsSVG(pts, fmt, big, gline) {
   var labStride = 1;
   var estW = widest(labs) * vfs * 0.64;
   if (estW > bw * 0.98) labStride = Math.max(2, Math.ceil(estW / (bw * 0.98)));
+  var labs2 = null, pairStride = 1;
+  if (pair) {
+    labs2 = pair.map(function (v) { return isNum(v) ? String(combo.pairFmt(v)) : ''; }).map(qmCompact);
+    var estW2 = widest(labs2) * vfs * 0.64;
+    pairStride = estW2 > bw * 0.94 ? Math.max(2, Math.ceil(estW2 / (bw * 0.94))) : 1;
+    if (pairStride < labStride) pairStride = labStride;
+  }
   // Negative bars carry their value label BELOW the bar; reserve enough
   // bottom room that it can never land on the axis labels (TSLA FCF
   // screenshot, 2026-10-31).
@@ -6327,26 +6339,49 @@ function qmBarsSVG(pts, fmt, big, gline) {
   pts.forEach(function (p, i) { if (nowI < 0 && p.kind === 'est') nowI = i; });
   if (nowI < 0) nowI = pts.length - 1;
   var out = '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Metric chart">';
-  out += '<line x1="' + padX + '" y1="' + zeroY + '" x2="' + (w - padX) + '" y2="' + zeroY + '" stroke="#3a372d" stroke-width="1"/>';
+  out += '<line x1="' + padX + '" y1="' + zeroY + '" x2="' + (w - padR) + '" y2="' + zeroY + '" stroke="#3a372d" stroke-width="1"/>';
   pts.forEach(function (p, i) {
-    var x = padX + i * bw + bw * 0.03, bwid = bw * 0.94;
+    var gx = padX + i * bw + bw * 0.03, gw = bw * 0.94;
+    var paired = pair && isNum(pair[i]);
+    var x = gx, bwid = paired ? gw * 0.47 : gw;
     var y = zeroY - (p.value / span) * (h - padT - padB);
     var top = Math.min(y, zeroY), bot = Math.max(y, zeroY);
-    // Positive = green, negative = red, both with a soft glow
-    // (Justin's ask, 2026-10-26); estimates keep their faded look.
-    var col = p.value >= 0 ? 'var(--neon-up)' : 'var(--neon-dn)';
-    var fill = p.kind === 'est'
-      ? 'fill:' + col + ';opacity:.45;filter:drop-shadow(0 0 4px ' + col + ')'
-      : 'fill:' + col + ';filter:drop-shadow(0 0 6px ' + col + ')';
+    var col, fill;
+    if (combo) {
+      /* Combo mode (Fiscal-style, 2026-11-26): the primary series
+       * goes matte gold so the pair bars and the line can each own
+       * a color; negatives stay red, estimates stay faded. */
+      col = p.value >= 0 ? 'var(--gold)' : 'var(--neon-dn)';
+      fill = 'fill:' + col + (p.kind === 'est' ? ';opacity:.45' : '');
+    } else {
+      // Positive = green, negative = red, both with a soft glow
+      // (Justin's ask, 2026-10-26); estimates keep their faded look.
+      col = p.value >= 0 ? 'var(--neon-up)' : 'var(--neon-dn)';
+      fill = p.kind === 'est'
+        ? 'fill:' + col + ';opacity:.45;filter:drop-shadow(0 0 4px ' + col + ')'
+        : 'fill:' + col + ';filter:drop-shadow(0 0 6px ' + col + ')';
+    }
     if (i === nowI) fill += ';stroke:var(--ink);stroke-width:2.5';
     out += '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bwid.toFixed(1) + '" height="' + Math.max(1.5, bot - top).toFixed(1) + '" rx="1.5" style="' + fill + '"/>';
     if ((pts.length - 1 - i) % labStride === 0) {
       var ly = p.value >= 0 ? top - 8 : bot + vfs + 3;
       out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="middle" font-size="' + vfs + '" font-weight="800" style="fill:var(--chart-val)">' + esc(labs[i]) + '</text>';
     }
+    if (paired) {
+      var pv = pair[i];
+      var px = gx + gw * 0.53, pw = gw * 0.47;
+      var py = zeroY - (pv / span) * (h - padT - padB);
+      var ptop = Math.min(py, zeroY), pbot = Math.max(py, zeroY);
+      var pfill = 'fill:' + (pv >= 0 ? '#6e9bf5' : '#46649e') + (p.kind === 'est' ? ';opacity:.45' : '');
+      out += '<rect x="' + px.toFixed(1) + '" y="' + ptop.toFixed(1) + '" width="' + pw.toFixed(1) + '" height="' + Math.max(1.5, pbot - ptop).toFixed(1) + '" rx="1.5" style="' + pfill + '"/>';
+      if ((pts.length - 1 - i) % pairStride === 0 && labs2[i]) {
+        var ply = pv >= 0 ? ptop - 8 : pbot + vfs + 3;
+        out += '<text x="' + (px + pw / 2).toFixed(1) + '" y="' + ply.toFixed(1) + '" text-anchor="middle" font-size="' + vfs + '" font-weight="700" fill="#b9cff9">' + esc(labs2[i]) + '</text>';
+      }
+    }
     if (p.axis) {
       var nowAxis = i === nowI;
-      out += '<text x="' + (x + bwid / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="' + (big ? 15 : 12) + '" font-weight="' + (nowAxis ? '800' : '700') + '" fill="' + (nowAxis ? 'var(--ink)' : '#8a8271') + '">' + esc(p.axis) + '</text>';
+      out += '<text x="' + (gx + gw / 2).toFixed(1) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="' + (big ? 15 : 12) + '" font-weight="' + (nowAxis ? '800' : '700') + '" fill="' + (nowAxis ? 'var(--ink)' : '#8a8271') + '">' + esc(p.axis) + '</text>';
     }
   });
   /* Growth overlay (Justin's ask, 2026-11-24): a gold line on its
@@ -6378,6 +6413,46 @@ function qmBarsSVG(pts, fmt, big, gline) {
         var anchor = lastPt.x > w - 110 ? 'end' : 'middle';
         out += '<text class="qm-gline-tag" x="' + lastPt.x.toFixed(1) + '" y="' + Math.max(14, lastPt.y - 10).toFixed(1) + '" text-anchor="' + anchor + '" font-size="13.5" font-weight="800" fill="var(--gold)">' + esc(gtxt) + '</text>';
       }
+      out += '</g>';
+    }
+  }
+  /* Margin line (2026-11-26, Fiscal-style combo): a second series
+   * as a line on its own scale, the scale printed as ticks on the
+   * right edge, point labels thinned like the bar labels. The
+   * line's range is the data's own (padded), not zero-based --
+   * margins live in a narrow band and a zero axis would flatten
+   * them into a straight line. */
+  if (big && mline && mline.vals) {
+    var mv = mline.vals.filter(function (v) { return isNum(v); });
+    if (mv.length >= 2) {
+      var mmax = Math.max.apply(null, mv), mmin = Math.min.apply(null, mv);
+      var mpad = ((mmax - mmin) || 1) * 0.12;
+      mmax += mpad; mmin -= mpad;
+      var mspan = (mmax - mmin) || 1;
+      var mTop = padT + 16;
+      var myOf = function (v) { return mTop + (mmax - v) / mspan * (h - mTop - padB); };
+      out += '<g class="qm-mline">';
+      [mmax, (mmax + mmin) / 2, mmin].forEach(function (tv) {
+        var ty = myOf(tv);
+        out += '<line x1="' + padX + '" y1="' + ty.toFixed(1) + '" x2="' + (w - padR) + '" y2="' + ty.toFixed(1) + '" stroke="#2c2a24" stroke-width="1"/>';
+        out += '<text x="' + (w - 3) + '" y="' + (ty + 4).toFixed(1) + '" text-anchor="end" font-size="11.5" font-weight="700" fill="' + mline.color + '">' + esc(mline.fmt(tv)) + '</text>';
+      });
+      var mruns = [], mrun = [];
+      pts.forEach(function (p, i) {
+        if (isNum(mline.vals[i])) mrun.push({ x: padX + i * bw + bw / 2, y: myOf(mline.vals[i]), v: mline.vals[i], i: i });
+        else { if (mrun.length) mruns.push(mrun); mrun = []; }
+      });
+      if (mrun.length) mruns.push(mrun);
+      mruns.forEach(function (r) {
+        if (r.length > 1) out += '<polyline points="' + r.map(function (q) { return q.x.toFixed(1) + ',' + q.y.toFixed(1); }).join(' ') + '" fill="none" stroke="' + mline.color + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+        r.forEach(function (q) {
+          out += '<circle cx="' + q.x.toFixed(1) + '" cy="' + q.y.toFixed(1) + '" r="3.2" fill="' + mline.color + '" stroke="var(--bg)" stroke-width="1.2"/>';
+          if ((pts.length - 1 - q.i) % labStride === 0) {
+            var anchor = q.x > w - padR - 60 ? 'end' : 'middle';
+            out += '<text x="' + q.x.toFixed(1) + '" y="' + Math.max(12, q.y - 9).toFixed(1) + '" text-anchor="' + anchor + '" font-size="12.5" font-weight="700" fill="' + mline.color + '">' + esc(mline.fmt(q.v)) + '</text>';
+          }
+        });
+      });
       out += '</g>';
     }
   }
@@ -6443,6 +6518,8 @@ var QM_MEANS = {
 var SEGMENTS_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/segments';
 var qmView = 'values';
 var qmGLine = false;
+var qmPair = true;
+var qmMLine = true;
 var qmMode = 'grid';
 var qmPrevMode = 'grid';
 
@@ -7136,7 +7213,21 @@ function ensureQmWiring() {
   var glEl = $('qm-gline');
   if (glEl) glEl.addEventListener('click', function () {
     qmGLine = !qmGLine;
+    if (qmGLine && qmMLine) { qmMLine = false; try { lsSet('sr_qmmargin', '0'); } catch (e) {} }
     try { lsSet('sr_qmgline', qmGLine ? '1' : '0'); } catch (e) {}
+    renderQm();
+  });
+  var pairEl = $('qm-pair');
+  if (pairEl) pairEl.addEventListener('click', function () {
+    qmPair = !qmPair;
+    try { lsSet('sr_qmpair', qmPair ? '1' : '0'); } catch (e) {}
+    renderQm();
+  });
+  var mlEl = $('qm-mline');
+  if (mlEl) mlEl.addEventListener('click', function () {
+    qmMLine = !qmMLine;
+    if (qmMLine && qmGLine) { qmGLine = false; try { lsSet('sr_qmgline', '0'); } catch (e) {} }
+    try { lsSet('sr_qmmargin', qmMLine ? '1' : '0'); } catch (e) {}
     renderQm();
   });
   var qmGridEl = $('qm-grid');
@@ -7423,6 +7514,20 @@ function renderQmDetail() {
     glBtn.setAttribute('aria-pressed', qmGLine ? 'true' : 'false');
     glBtn.disabled = special || view !== 'values';
   }
+  var pairBtn = $('qm-pair');
+  if (pairBtn) {
+    var showPair = !special && view === 'values' && qmMetric === 'revenue';
+    pairBtn.style.display = showPair ? '' : 'none';
+    pairBtn.classList.toggle('active', qmPair && showPair);
+    pairBtn.setAttribute('aria-pressed', qmPair ? 'true' : 'false');
+  }
+  var mlBtn = $('qm-mline');
+  if (mlBtn) {
+    var showMl = !special && view === 'values' && (qmMetric === 'revenue' || qmMetric === 'netIncome');
+    mlBtn.style.display = showMl ? '' : 'none';
+    mlBtn.classList.toggle('active', qmMLine && showMl);
+    mlBtn.setAttribute('aria-pressed', qmMLine ? 'true' : 'false');
+  }
   if (qmMetric === 'flow') return renderQmFlow();
   if (qmMetric === 'segRev') return renderQmSegments('rev');
   if (qmMetric === 'segOp') return renderQmSegments('op');
@@ -7507,11 +7612,38 @@ function renderQmDetail() {
       return M.kind === 'pct' ? v - pv : (v - pv) / Math.abs(pv) * 100;
     }) };
   }
+  /* Fiscal-style combo (Justin's ask, 2026-11-26): on the money
+   * charts, pair the bars with the metric's natural companion and
+   * run its margin as a line on a second axis -- Revenue gets Net
+   * income bars + the Net margin line; Net income gets the line.
+   * Values view only; the Growth line, when on, takes the line
+   * slot instead. */
+  var combo = null;
+  if (view === 'values' && !special) {
+    var pairVals = null, mLineObj = null;
+    if (qmMetric === 'revenue' && qmPair) {
+      pairVals = pts.map(function (p) { return (p.kind === 'actual' && isNum(p.gi)) ? QM_METRICS.netIncome.get(d, p.gi) : null; });
+      if (!pairVals.some(function (v) { return isNum(v); })) pairVals = null;
+    }
+    if ((qmMetric === 'revenue' || qmMetric === 'netIncome') && qmMLine && !qmGLine) {
+      var mvals = pts.map(function (p) { return (p.kind === 'actual' && isNum(p.gi)) ? QM_METRICS.netMargin.get(d, p.gi) : null; });
+      if (mvals.filter(function (v) { return isNum(v); }).length >= 2) {
+        mLineObj = { color: '#4cc38a', fmt: function (v) { return fmtNum(v, 1) + '%'; }, vals: mvals };
+      }
+    }
+    if (pairVals || mLineObj) combo = { pair: pairVals, pairFmt: QM_METRICS.netIncome.fmt, line: mLineObj };
+  }
   var box = $('qm-chart');
   if (!pts.length) {
     box.innerHTML = '<div class="status err">No ' + esc(M.name) + ' data in the statements for ' + esc(d.ticker) + '.</div>';
   } else {
-    box.innerHTML = '<div class="chart-wrap">' + qmBarsSVG(pts, fmt, true, gline) + '</div>';
+    var legend = '';
+    if (combo) {
+      legend = '<div class="qm-combo-legend"><span><i class="qm-sw" style="background:var(--gold)"></i>' + esc(M.name) + '</span>' +
+        (combo.pair ? '<span><i class="qm-sw" style="background:#6e9bf5"></i>Net income</span>' : '') +
+        (combo.line ? '<span><i class="qm-sw qm-sw-line" style="background:#4cc38a"></i>Net margin</span>' : '') + '</div>';
+    }
+    box.innerHTML = legend + '<div class="chart-wrap">' + qmBarsSVG(pts, fmt, true, gline, combo) + '</div>';
   }
   var per = qmFreq === 'y' ? 'years' : 'quarters';
   var note = $('qm-note');
@@ -12351,6 +12483,7 @@ function switchTab(name) {
   /* The glossary renders at init while its tab is hidden (getBBox is 0
    * there), so re-run the label fit once the tab is actually visible. */
   if (name === 'glossary' && typeof fitGlossText === 'function') fitGlossText();
+  if (name === 'settings' && typeof window.setOpenPanel === 'function') window.setOpenPanel(null);
   if (name === 'market') loadMarket();
   syncNavBack();
 }
@@ -12626,6 +12759,7 @@ function initApp() {
   try { qmFreq = lsGet('sr_qmfreq', 'q') === 'y' ? 'y' : 'q'; } catch (e) {}
   try { var qw = parseInt(lsGet('sr_qmwin', 2), 10); if (QM_WIN_CHOICES.indexOf(qw) >= 0) qmWin = qw; } catch (e) {}
   try { qmGLine = lsGet('sr_qmgline', '') === '1'; } catch (e) {}
+  try { qmPair = lsGet('sr_qmpair', '') !== '0'; qmMLine = lsGet('sr_qmmargin', '') !== '0'; } catch (e) {}
   document.querySelectorAll('[data-qmwin]').forEach(function (b) {
     b.addEventListener('click', function () {
       var v = parseInt(b.getAttribute('data-qmwin'), 10);
@@ -12696,6 +12830,33 @@ function initApp() {
   $('menu-journal').addEventListener('click', function () {
     jrReturnTab = 'settings';
     switchTab('journal');
+  });
+  /* Settings stack nav (2026-11-26): the settings tab opens on a
+   * root list of rows; a row goes a level deeper into its own
+   * panel, and the panel's back button steps back to the list.
+   * Entering the tab always lands on the root list. */
+  function setOpenPanel(id) {
+    var menu = $('settings-menu');
+    if (menu) menu.hidden = !!id;
+    document.querySelectorAll('.set-panel').forEach(function (p) { p.hidden = p.id !== id; });
+    var syncRow = $('menu-sync'), syncSec = $('sync-section');
+    if (syncRow && syncSec) syncRow.hidden = syncSec.hidden;
+    var tv = $('set-val-theme');
+    if (tv) { try { tv.textContent = localStorage.getItem('sr_theme') === 'light' ? 'Light' : 'Dark'; } catch (e) {} }
+    var sv = $('set-val-sync');
+    if (sv) {
+      var si = $('sync-signed-in'), un = $('sync-user');
+      sv.textContent = (si && !si.hidden && un && un.textContent) ? un.textContent : '';
+    }
+    var mn = document.querySelector('main');
+    if (mn) mn.scrollTop = 0;
+  }
+  window.setOpenPanel = setOpenPanel;
+  document.querySelectorAll('[data-setpanel]').forEach(function (b) {
+    b.addEventListener('click', function () { setOpenPanel(b.getAttribute('data-setpanel')); });
+  });
+  document.querySelectorAll('[data-setback]').forEach(function (b) {
+    b.addEventListener('click', function () { setOpenPanel(null); });
   });
   $('menu-privacy').addEventListener('click', function () {
     switchTab('privacy');
@@ -12863,6 +13024,11 @@ function initApp() {
   function renderWeightsPanel() {
     var w = getScoreWeights();
     var pk = weightsPresetKey(w);
+    var wv = $('set-val-weights');
+    if (wv) {
+      var chip = document.querySelector('#weights-presets [data-preset="' + pk + '"]');
+      wv.textContent = pk === 'custom' ? 'Custom' : (chip ? chip.textContent : '');
+    }
     document.querySelectorAll('[data-preset]').forEach(function (b) {
       b.classList.toggle('on', b.getAttribute('data-preset') === pk);
     });
