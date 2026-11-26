@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261126202649';
+var APP_BUILD = 'stock-research-20261126203809';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -4431,8 +4431,13 @@ function renderScorecard(d) {
   /* Action list (Justin's ask, 2026-11-15): the pill buttons became
    * a clean row list -- one action per line, arrow at the right,
    * tap takes you there. Reads like a settings/brokerage list. */
+  var wlItem = null;
+  getWatchlist().forEach(function (x) { if (x.ticker === d.ticker) wlItem = x; });
   html += '<div class="sc-actions">' +
-    '<button class="sc-act" id="sc-watch" type="button"><span>Add to watchlist</span><span class="sc-act-arrow">›</span></button>' +
+    (wlItem
+      ? '<button class="sc-act" id="sc-edit-target" type="button"><span>Edit target' + (isNum(wlItem.target) ? ' \u00b7 ' + fmtMoney(wlItem.target) : '') + '</span><span class="sc-act-arrow">›</span></button>' +
+        '<button class="sc-act" id="sc-remove-watch" type="button"><span>Remove from watchlist</span><span class="sc-act-arrow">›</span></button>'
+      : '<button class="sc-act" id="sc-watch" type="button"><span>Add to watchlist</span><span class="sc-act-arrow">›</span></button>') +
     '<button class="sc-act" id="sc-journal" type="button"><span>Journal this stock</span><span class="sc-act-arrow">›</span></button>' +
     '<button class="sc-act" id="sc-project" type="button"><span>Project it</span><span class="sc-act-arrow">›</span></button>' +
     '<button class="sc-act" id="sc-charts" type="button"><span>Charts</span><span class="sc-act-arrow">›</span></button>' +
@@ -4472,10 +4477,44 @@ function renderScorecard(d) {
     });
   });
   renderScChart(d);
-  $('sc-watch').addEventListener('click', function () {
+  var scWatchBtn = $('sc-watch');
+  if (scWatchBtn) scWatchBtn.addEventListener('click', function () {
     navPush();
     addToWatchlist(d.ticker, isNum(d.price) ? d.price : null);
     switchTab('watchlist');
+  });
+  /* Edit target + Remove moved here from the old watchlist
+   * overview (2026-11-26, when the watchlist tap started landing
+   * on this card instead). Same behavior as there: prompt for the
+   * target; removal offers Undo. Both re-render this card so the
+   * action rows reflect the new state. */
+  var scEditT = $('sc-edit-target');
+  if (scEditT) scEditT.addEventListener('click', function () {
+    var cur = getWatchlist().filter(function (x) { return x.ticker === d.ticker; })[0];
+    var v = window.prompt('Target buy price for ' + d.ticker + ' ($):', cur && isNum(cur.target) ? cur.target : '');
+    if (v === null) return;
+    var n = parseFloat(v);
+    var wl2 = getWatchlist();
+    wl2.forEach(function (x) { if (x.ticker === d.ticker) x.target = isNum(n) ? n : null; });
+    setWatchlist(wl2);
+    renderWatchlist(false);
+    renderScorecard(d);
+  });
+  var scRmW = $('sc-remove-watch');
+  if (scRmW) scRmW.addEventListener('click', function () {
+    var wlNow = getWatchlist();
+    var rmIdx = -1, rmItem = null;
+    wlNow.forEach(function (x, i) { if (x.ticker === d.ticker) { rmIdx = i; rmItem = x; } });
+    setWatchlist(wlNow.filter(function (x) { return x.ticker !== d.ticker; }));
+    renderWatchlist(false);
+    renderScorecard(d);
+    if (rmItem) showUndoToast(d.ticker + ' removed from your watchlist.', function () {
+      var wl3 = getWatchlist();
+      wl3.splice(Math.min(rmIdx, wl3.length), 0, rmItem);
+      setWatchlist(wl3);
+      renderWatchlist(false);
+      renderScorecard(d);
+    });
   });
   $('sc-journal').addEventListener('click', function () {
     navPush();
@@ -11920,7 +11959,7 @@ function attachAutocomplete(input, onPick) {
 var MKT_KEY = 'sr_market_v1';
 var MKT_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/market';
 var mktBundle = null, mktLoading = false;
-var mktRanges = {};
+var mktWin = {};   // defId -> window in months, set by the range slider (absent = the def's default pill)
 var MKT_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function mktFmt2(v) { return isNum(v) ? (Math.round(v * 100) / 100).toFixed(2) : '—'; }
@@ -11951,6 +11990,56 @@ function mktSlice(pts, months) {
   var out = pts.filter(function (p) { return p[0] >= cut; });
   return out.length >= 2 ? out : pts.slice(-2);
 }
+/* The range slider (Justin's ask, 2026-11-26) replaced the range
+ * pills: one logarithmic slider per panel sets the window in
+ * months -- log so the short end gets real travel on series that
+ * run back to 1871. The window's right edge is always the latest
+ * point. */
+function mktSpanMonths(pts) {
+  if (!pts || pts.length < 2) return 1;
+  var ms = Date.parse(pts[pts.length - 1][0]) - Date.parse(pts[0][0]);
+  return Math.max(1, Math.round(ms / (30.4375 * 86400000)));
+}
+function mktFullPts(def, b) {
+  if (def.kind === 'curve') return mktCurvePts(b);
+  if (def.kind === 'dual') return (b.series.ey || {}).points || [];
+  var s = mktDefData(def, b);
+  return (s && s.points) || [];
+}
+function mktMinMonths(def) {
+  var m = null;
+  /* The 'All' pill carries 0 months -- it is not a window and
+   * must not poison the minimum. */
+  (def.ranges || []).forEach(function (r) { if (r[1] > 0 && (m === null || r[1] < m)) m = r[1]; });
+  return m || 12;
+}
+function mktWinMonths(def, b) {
+  if (mktWin[def.id] !== undefined) return mktWin[def.id];
+  var months = 0;
+  (def.ranges || []).forEach(function (r) { if (r[0] === def.def) months = r[1]; });
+  return months;
+}
+function mktWinT(def, b, months) {
+  var minM = mktMinMonths(def), maxM = mktSpanMonths(mktFullPts(def, b));
+  if (maxM <= minM) return 1;
+  var eff = !months ? maxM : Math.max(minM, Math.min(maxM, months));
+  var t = Math.log(eff / minM) / Math.log(maxM / minM);
+  return Math.max(0, Math.min(1, t));
+}
+function mktMonthsFromT(def, b, t) {
+  var minM = mktMinMonths(def), maxM = mktSpanMonths(mktFullPts(def, b));
+  if (maxM <= minM) return maxM;
+  if (t >= 0.995) return maxM;   // the far right IS All, exactly
+  var m = Math.round(minM * Math.pow(maxM / minM, Math.max(0, Math.min(1, t))));
+  return Math.max(minM, Math.min(maxM, m));
+}
+function mktWinLabel(def, b, months) {
+  var maxM = mktSpanMonths(mktFullPts(def, b));
+  if (!months || months >= maxM - 1) return 'All';
+  if (months < 12) return months + 'M';
+  if (months % 12 === 0) return (months / 12) + 'Y';
+  return (Math.round(months / 12 * 10) / 10) + 'Y';
+}
 function mktRank(pts, v) {
   var above = 0, peak = null;
   (pts || []).forEach(function (p) {
@@ -11963,18 +12052,25 @@ function mktRank(pts, v) {
  * full history (Justin's call, 2026-11-15): switch the timeline
  * and "higher than X%" answers for the years on screen. `win` is
  * the range key ('All', '25Y', '10Y', ...). */
-function mktWinPhrase(pts, win) {
-  if (!win || win === 'All' || !pts || !pts.length) return 'since ' + String((pts && pts[0] ? pts[0][0] : '')).slice(0, 4);
-  var m = /^(\d+)([YM])$/.exec(win);
-  if (!m) return 'since ' + String(pts[0][0]).slice(0, 4);
-  if (m[2] === 'Y') return parseInt(m[1], 10) === 1 ? 'in the last year' : 'in the last ' + m[1] + ' years';
-  return parseInt(m[1], 10) === 1 ? 'in the last month' : 'in the last ' + m[1] + ' months';
+function mktWinPhrase(pts, months) {
+  /* Callers pass months = 0 for a window that cuts nothing (All),
+   * so the phrase can use the view's own first year then. */
+  if (!months || !pts || !pts.length) return 'since ' + String((pts && pts[0] ? pts[0][0] : '')).slice(0, 4);
+  if (months < 18) return months === 1 ? 'in the last month' : 'in the last ' + months + ' months';
+  var yrs = Math.round(months / 12);
+  return yrs === 1 ? 'in the last year' : 'in the last ' + yrs + ' years';
+}
+/* The win value handed to the read lines: 0 when the window
+ * covers the whole series, so ranks phrase against full history. */
+function mktReadWin(def, b, months) {
+  if (!months) return 0;
+  return months < mktSpanMonths(mktFullPts(def, b)) ? months : 0;
 }
 function mktRankText(pts, v, noun, win) {
   var r = mktRank(pts, v);
   if (!r.n || !r.peak) return '';
   var since = mktWinPhrase(pts, win);
-  var span = win && win !== 'All' ? 'in the window' : 'in the data';
+  var span = win ? 'in the window' : 'in the data';
   if (r.above === 0) return 'The highest reading ' + since + ' — above every single ' + noun + ' ' + span + '.';
   if (r.above <= 3) return 'Only ' + r.above + (r.above === 1 ? ' ' + noun : ' ' + noun + 's') + ' ' + since + ' ranked higher — the highest was ' + mktMonLabel(r.peak[0]) + ' at ' + mktFmt2(r.peak[1]) + '.';
   var pct = Math.round(100 * (r.n - r.above) / r.n);
@@ -12009,7 +12105,56 @@ function mktYearAgo(pts) {
  * a finger position back to a date and value. */
 var mktCharts = {};
 var MKT_SCRUB_HTML = '<span class="mkt-scrub-line" hidden></span><span class="mkt-scrub-dot" hidden></span><span class="mkt-scrub-dot d2" hidden></span>';
-function mktScrubBar(uid) { return '<div class="mkt-scrubbar" data-mktscrub="' + uid + '"><div class="mkt-scrub-track"></div><div class="mkt-scrub-thumb"></div></div>'; }
+function mktChartInner(def, b, months) {
+  var s = mktDefData(def, b);
+  if (def.kind === 'dual') {
+    var al = mktAlignDual(b, months);
+    return mktLineSVG([{ pts: al.ey, color: '#E7AC18', label: 'Earnings yield' }, { pts: al.tn, color: '#4C8DFF', label: '10-year' }], { id: 'mktc-eyx', scrubFmt: function (v) { return mktFmt2(v) + '%'; }, fmtY: function (v) { return mktFmt1(v) + '%'; } });
+  }
+  var view = mktSlice(s.points, months);
+  if (def.kind === 'curve') return mktLineSVG([{ pts: view, color: '#E7AC18' }], { id: 'mktc-curve', scrubFmt: def.fmtVal, zero: true, fmtY: function (v) { return mktFmt1(v) + '%'; } });
+  return mktLineSVG([{ pts: view, color: '#E7AC18' }], { id: 'mktc-' + def.id, scrubFmt: def.fmtVal || null, fmtY: def.pct ? function (v) { return mktFmt1(v) + '%'; } : null });
+}
+function mktRangeBar(def, b, months) {
+  if (!def.ranges) return '';
+  var uid = def.kind === 'dual' ? 'mktc-eyx' : def.kind === 'curve' ? 'mktc-curve' : 'mktc-' + def.id;
+  var t = mktWinT(def, b, months);
+  return '<div class="mkt-rangebar" data-mktrangebar="' + uid + '" data-mktdef="' + def.id + '"><div class="mkt-range-trackwrap"><div class="mkt-scrub-track"></div><div class="mkt-range-thumb" style="left:' + (t * 100).toFixed(1) + '%"></div></div><span class="mkt-range-lab">' + esc(mktWinLabel(def, b, months)) + '</span></div>';
+}
+/* Slider moves update the panel IN PLACE (chart, read line, thumb,
+ * label) -- a full panel re-render would drop the pointer capture
+ * mid-drag. */
+function mktSetWindow(defId, months) {
+  var def = null;
+  MKT_DEFS.forEach(function (d) { if (d.id === defId) def = d; });
+  if (!def || !mktBundle) return;
+  mktWin[defId] = months;
+  var panel = mktScrubPanel(defId);
+  if (!panel) return;
+  mktScrubClear(panel);
+  var wrap = panel.querySelector('[data-mktchart]');
+  if (wrap) wrap.innerHTML = mktChartInner(def, mktBundle, months) + MKT_SCRUB_HTML;
+  var s = mktDefData(def, mktBundle);
+  if (s && def.read) {
+    var read = def.read(s, mktBundle, mktSlice(s.points, months), mktReadWin(def, mktBundle, months));
+    var readEl = panel.querySelector('.mkt-read');
+    if (readEl) readEl.textContent = read || '';
+    else if (read) {
+      var nd = document.createElement('div');
+      nd.className = 'mkt-read';
+      nd.textContent = read;
+      var big = panel.querySelector('.mkt-big');
+      if (big && big.nextSibling) panel.insertBefore(nd, big.nextSibling); else panel.appendChild(nd);
+    }
+  }
+  var bar = panel.querySelector('[data-mktrangebar]');
+  if (bar) {
+    var thumb = bar.querySelector('.mkt-range-thumb');
+    if (thumb) thumb.style.left = (mktWinT(def, mktBundle, months) * 100) + '%';
+    var lab = bar.querySelector('.mkt-range-lab');
+    if (lab) lab.textContent = mktWinLabel(def, mktBundle, months);
+  }
+}
 function mktLineSVG(series, opts) {
   opts = opts || {};
   var W = 640, H = 200, padT = 16, padB = 22, padX = 4;
@@ -12197,16 +12342,14 @@ function mktPanelHTML(def, b) {
   var s = mktDefData(def, b);
   if (!s || (!s.points || !s.points.length) && def.kind !== 'aaii') return '';
   if (def.kind === 'aaii' && !(s.extra && isNum(s.extra.bull))) return '';
-  var rangeKey = mktRanges[def.id] || def.def;
-  var months = 0;
-  (def.ranges || []).forEach(function (r) { if (r[0] === rangeKey) months = r[1]; });
+  var months = mktWinMonths(def, b);
   var view = mktSlice(s.points, months);
   var h = ['<div class="mkt-panel" data-mkt-panel="' + def.id + '">'];
   h.push('<div class="mkt-head"><span class="mkt-name">' + esc(def.name) + infoDot('mkt' + def.id) + '</span><span class="mkt-asof">' + esc(mktAsOfLabel(s)) + '</span></div>');
   h.push(infoText('mkt' + def.id));
   var big = def.big(s, b);
   h.push('<div class="mkt-big">' + esc(big) + (def.bigSub ? '<span class="mkt-big-sub">' + esc(def.bigSub(s, b)) + '</span>' : '') + '</div>');
-  var read = def.read ? def.read(s, b, view, rangeKey) : '';
+  var read = def.read ? def.read(s, b, view, mktReadWin(def, b, months)) : '';
   if (read) h.push('<div class="mkt-read">' + esc(read) + '</div>');
   if (def.kind === 'fg') {
     var sc = Math.max(0, Math.min(100, s.extra.score));
@@ -12219,18 +12362,12 @@ function mktPanelHTML(def, b) {
       h.push('<div class="mkt-aaii-row"><span class="mkt-aaii-lab">' + r[0] + '</span><span class="mkt-aaii-track"><span class="mkt-aaii-fill" style="width:' + r[1] + '%;background:' + r[3] + '"></span>' + (isNum(r[2]) ? '<span class="mkt-aaii-avg" style="left:' + r[2] + '%"></span>' : '') + '</span><span class="mkt-aaii-val">' + mktFmt1(r[1]) + '%' + (isNum(r[2]) ? ' · avg ' + mktFmt1(r[2]) + '%' : '') + '</span></div>');
     });
   } else if (def.kind === 'dual') {
-    var al = mktAlignDual(b, months);
-    h.push('<div class="mkt-chart" data-mktchart="mktc-eyx">' + mktLineSVG([{ pts: al.ey, color: '#E7AC18', label: 'Earnings yield' }, { pts: al.tn, color: '#4C8DFF', label: '10-year' }], { id: 'mktc-eyx', scrubFmt: function (v) { return mktFmt2(v) + '%'; }, fmtY: function (v) { return mktFmt1(v) + '%'; } }) + MKT_SCRUB_HTML + '</div>' + mktScrubBar('mktc-eyx'));
+    h.push('<div class="mkt-chart" data-mktchart="mktc-eyx">' + mktChartInner(def, b, months) + MKT_SCRUB_HTML + '</div>' + mktRangeBar(def, b, months));
     h.push('<div class="mkt-legend"><span><span class="sw" style="background:#E7AC18"></span>Earnings yield</span><span><span class="sw" style="background:#4C8DFF"></span>10-year Treasury</span></div>');
   } else if (def.kind === 'curve') {
-    h.push('<div class="mkt-chart" data-mktchart="mktc-curve">' + mktLineSVG([{ pts: view, color: '#E7AC18' }], { id: 'mktc-curve', scrubFmt: def.fmtVal, zero: true, fmtY: function (v) { return mktFmt1(v) + '%'; } }) + MKT_SCRUB_HTML + '</div>' + mktScrubBar('mktc-curve'));
+    h.push('<div class="mkt-chart" data-mktchart="mktc-curve">' + mktChartInner(def, b, months) + MKT_SCRUB_HTML + '</div>' + mktRangeBar(def, b, months));
   } else {
-    h.push('<div class="mkt-chart" data-mktchart="mktc-' + def.id + '">' + mktLineSVG([{ pts: view, color: '#E7AC18' }], { id: 'mktc-' + def.id, scrubFmt: def.fmtVal || null, fmtY: def.pct ? function (v) { return mktFmt1(v) + '%'; } : null }) + MKT_SCRUB_HTML + '</div>' + mktScrubBar('mktc-' + def.id));
-  }
-  if (def.ranges) {
-    h.push('<div class="mkt-chips">' + def.ranges.map(function (r) {
-      return '<button type="button" data-mktrange="' + def.id + ':' + r[0] + '"' + (r[0] === rangeKey ? ' class="active"' : '') + '>' + r[0] + '</button>';
-    }).join('') + '</div>');
+    h.push('<div class="mkt-chart" data-mktchart="mktc-' + def.id + '">' + mktChartInner(def, b, months) + MKT_SCRUB_HTML + '</div>' + mktRangeBar(def, b, months));
   }
   h.push('<p class="mkt-note">' + esc(def.note) + '</p>');
   h.push('</div>');
@@ -12275,29 +12412,18 @@ async function loadMarket() {
   } finally { mktLoading = false; }
 }
 
-document.addEventListener('click', function (ev) {
-  var t = ev.target && ev.target.closest ? ev.target.closest('[data-mktrange]') : null;
-  if (!t) return;
-  var parts = String(t.getAttribute('data-mktrange')).split(':');
-  if (parts.length !== 2) return;
-  mktRanges[parts[0]] = parts[1];
-  if (!mktBundle) return;
-  var def = null;
-  MKT_DEFS.forEach(function (d) { if (d.id === parts[0]) def = d; });
-  var panel = document.querySelector('[data-mkt-panel="' + parts[0] + '"]');
-  if (def && panel) panel.outerHTML = mktPanelHTML(def, mktBundle);
-});
-
-/* Chart scrubber (Justin's asks, 2026-11-15): like the scorecard
- * price chart, but the finger must not cover the chart — so the
- * drag happens on a strip BELOW the chart. Drag the strip to
- * scrub (line + dot on the chart above, the panel's big number
- * swaps to the value + date, release reverts). TAP the chart
- * itself to pin the marker at that spot; tap again to clear.
- * Deliberately NO pinch zoom here. */
-var mktScrub = null;   // active strip drag
-var mktPin = {};       // defId -> true while a tap-pinned reading shows
-var mktTap = null;     // pending chart tap {x, t, defId}
+/* Range slider + chart scrubber (Justin's asks, 2026-11-26).
+ * The slider under each chart sets the time window (log scale,
+ * above); scrubbing moved ONTO the chart and works like the
+ * Research price chart: hold ~250ms and scrubbing engages (line
+ * + dot, the panel's big number swaps to the value + date),
+ * drag to move along the line, release reverts to the latest
+ * reading. A quick touch just scrolls (pan-y) or does nothing --
+ * the old strip drag and tap-to-pin are gone. NO pinch zoom. */
+var mktRangeDrag = null;  // active slider drag {defId, bar}
+var mktHold = null;       // chart touch inside the hold window {panel, reg, wrap, x, pointerId, timer}
+var mktChartDrag = null;  // engaged chart scrub {panel, reg, wrap, pointerId}
+var mktScrubLastDate = null, mktScrubLastTick = 0;  // haptic ratchet
 function mktScrubDateLabel(iso, daily) {
   var p = String(iso || '').split('-');
   if (p.length !== 3) return String(iso || '');
@@ -12330,8 +12456,11 @@ function mktScrubShow(panel, reg, clientX, srcEl) {
   var xPct = X(p0[0]) / reg.W * 100;
   if (line) { line.hidden = false; line.style.left = xPct + '%'; }
   if (dot) { dot.hidden = false; dot.style.left = xPct + '%'; dot.style.top = (Y(p0[1]) / reg.H * 100) + '%'; dot.style.background = reg.series[0].color; }
-  var thumb = panel.querySelector('.mkt-scrub-thumb');
-  if (thumb) thumb.style.left = xPct + '%';
+  if (p0[0] !== mktScrubLastDate) {
+    mktScrubLastDate = p0[0];
+    var tickNow = Date.now();
+    if (tickNow - mktScrubLastTick >= 45) { mktScrubLastTick = tickNow; hapticTick(); }
+  }
   var fmt = reg.fmt || function (v) { return mktFmt2(v); };
   var big = panel.querySelector('.mkt-big');
   if (big) {
@@ -12350,49 +12479,59 @@ function mktScrubClear(panel) {
   var big = panel.querySelector('.mkt-big');
   if (big && big.getAttribute('data-mkt-orig') !== null) { big.innerHTML = big.getAttribute('data-mkt-orig'); big.removeAttribute('data-mkt-orig'); }
   panel.querySelectorAll('.mkt-scrub-line, .mkt-scrub-dot').forEach(function (el) { el.hidden = true; });
-  var thumb = panel.querySelector('.mkt-scrub-thumb');
-  if (thumb) thumb.style.left = '100%';
-  delete mktPin[panel.getAttribute('data-mkt-panel')];
+  mktScrubLastDate = null;
+}
+function mktRangeApply(ev) {
+  if (!mktRangeDrag || !mktBundle) return;
+  var tw = mktRangeDrag.bar.querySelector('.mkt-range-trackwrap') || mktRangeDrag.bar;
+  var rect = tw.getBoundingClientRect();
+  if (!rect.width) return;
+  var t = (ev.clientX - rect.left) / rect.width;
+  t = Math.max(0, Math.min(1, t));
+  var def = null;
+  MKT_DEFS.forEach(function (d) { if (d.id === mktRangeDrag.defId) def = d; });
+  if (def) mktSetWindow(mktRangeDrag.defId, mktMonthsFromT(def, mktBundle, t));
 }
 document.addEventListener('pointerdown', function (ev) {
-  var bar = ev.target && ev.target.closest ? ev.target.closest('[data-mktscrub]') : null;
+  var bar = ev.target && ev.target.closest ? ev.target.closest('[data-mktrangebar]') : null;
   if (bar) {
-    var panelB = bar.closest('[data-mkt-panel]');
-    var regB = mktCharts[bar.getAttribute('data-mktscrub')];
-    if (!panelB || !regB) return;
-    mktScrubClear(panelB);
-    mktScrub = { bar: bar, reg: regB, panel: panelB };
+    mktRangeDrag = { defId: bar.getAttribute('data-mktdef'), bar: bar };
     if (bar.setPointerCapture && ev.pointerId !== undefined) { try { bar.setPointerCapture(ev.pointerId); } catch (e) {} }
-    mktScrubShow(panelB, regB, ev.clientX, bar);
+    mktRangeApply(ev);
     ev.preventDefault();
     return;
   }
   var wrap = ev.target && ev.target.closest ? ev.target.closest('[data-mktchart]') : null;
   if (wrap) {
+    if (mktChartDrag || mktHold) return;  // a second finger cancels via pointercancel; never hijack
     var panelW = wrap.closest('[data-mkt-panel]');
-    if (panelW) mktTap = { x: ev.clientX, t: Date.now(), defId: panelW.getAttribute('data-mkt-panel'), uid: wrap.getAttribute('data-mktchart') };
+    var regW = mktCharts[wrap.getAttribute('data-mktchart')];
+    if (!panelW || !regW) return;
+    var hold = { panel: panelW, reg: regW, wrap: wrap, x: ev.clientX, pointerId: ev.pointerId, timer: null };
+    hold.timer = setTimeout(function () {
+      if (mktHold !== hold) return;
+      mktHold = null;
+      mktChartDrag = { panel: hold.panel, reg: hold.reg, wrap: hold.wrap, pointerId: hold.pointerId };
+      hapticTick();
+      mktScrubShow(hold.panel, hold.reg, hold.x, hold.wrap);
+    }, 250);
+    mktHold = hold;
+    if (wrap.setPointerCapture && ev.pointerId !== undefined) { try { wrap.setPointerCapture(ev.pointerId); } catch (e) {} }
+    ev.preventDefault();
   }
 });
 document.addEventListener('pointermove', function (ev) {
-  if (mktScrub) mktScrubShow(mktScrub.panel, mktScrub.reg, ev.clientX, mktScrub.bar);
-  if (mktTap && Math.abs(ev.clientX - mktTap.x) > 8) mktTap = null;
+  if (mktRangeDrag) { mktRangeApply(ev); return; }
+  if (mktHold && ev.pointerId === mktHold.pointerId) mktHold.x = ev.clientX;
+  if (mktChartDrag && ev.pointerId === mktChartDrag.pointerId) mktScrubShow(mktChartDrag.panel, mktChartDrag.reg, ev.clientX, mktChartDrag.wrap);
 });
-function mktScrubRelease() {
-  if (mktScrub) { var p = mktScrub.panel; mktScrub = null; mktScrubClear(p); }
-  if (mktTap) {
-    var tap = mktTap; mktTap = null;
-    if (Date.now() - tap.t > 400) return;
-    var panel = mktScrubPanel(tap.defId);
-    var reg = mktCharts[tap.uid];
-    if (!panel || !reg) return;
-    if (mktPin[tap.defId]) { mktScrubClear(panel); return; }
-    var wrap = panel.querySelector('[data-mktchart]');
-    mktScrubShow(panel, reg, tap.x, wrap);
-    mktPin[tap.defId] = true;
-  }
+function mktPointerEnd() {
+  mktRangeDrag = null;
+  if (mktHold) { clearTimeout(mktHold.timer); mktHold = null; }
+  if (mktChartDrag) { var p = mktChartDrag.panel; mktChartDrag = null; mktScrubClear(p); }
 }
-document.addEventListener('pointerup', mktScrubRelease);
-document.addEventListener('pointercancel', function () { mktTap = null; if (mktScrub) { var p = mktScrub.panel; mktScrub = null; mktScrubClear(p); } });
+document.addEventListener('pointerup', mktPointerEnd);
+document.addEventListener('pointercancel', mktPointerEnd);
 
 /* Cross-tab back button (Justin's ask, 2026-11-15): any in-context
  * jump to another tab (Project it, Charts, Research rows, Journal

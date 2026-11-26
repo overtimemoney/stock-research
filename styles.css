@@ -1101,9 +1101,6 @@ table.factors .info-row .info-text.open { max-height: 900px; }
 .mkt-chart { margin: 4px 0 2px; }
 .mkt-chart svg { display: block; width: 100%; height: auto; }
 .mkt-ax { font-size: 10px; fill: var(--muted); font-variant-numeric: tabular-nums; }
-.mkt-chips { display: flex; gap: 6px; margin: 8px 0 2px; }
-.mkt-chips button { border: 1px solid var(--line); background: var(--field); color: var(--muted); border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 700; cursor: pointer; }
-.mkt-chips button.active { background: var(--gold); border-color: var(--gold); color: #141414; }
 .mkt-note { color: var(--muted); font-size: 12.5px; line-height: 1.55; margin: 10px 0 0; }
 .mkt-legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin: 2px 0 0; }
 .mkt-legend .sw { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
@@ -1120,10 +1117,15 @@ table.factors .info-row .info-text.open { max-height: 900px; }
 .mkt-chart, .mkt-chart * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .mkt-scrub-line { position: absolute; top: 0; bottom: 0; width: 1.5px; margin-left: -0.75px; background: var(--muted); opacity: .55; pointer-events: none; }
 .mkt-scrub-dot { position: absolute; width: 11px; height: 11px; border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 0 2.5px var(--card); pointer-events: none; }
-.mkt-scrubbar { position: relative; height: 34px; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .mkt-scrub-track { position: absolute; left: 0; right: 0; top: 50%; height: 4px; margin-top: -2px; border-radius: 2px; background: var(--line); }
-.mkt-scrub-thumb { position: absolute; top: 50%; left: 100%; transform: translate(-50%, -50%); width: 30px; height: 22px; border-radius: 11px; background: var(--card); border: 1.5px solid var(--gold); pointer-events: none; }
-.mkt-scrub-thumb::after { content: ''; position: absolute; top: 5px; bottom: 5px; left: 10px; right: 10px; background: repeating-linear-gradient(90deg, var(--muted) 0 2px, transparent 2px 5px); opacity: .75; }
+/* Range slider (2026-11-26): the log time-window control that
+ * replaced the pills and the scrub strip. Same track + grip thumb
+ * language, plus the current window at the right. */
+.mkt-rangebar { display: flex; align-items: center; gap: 10px; height: 34px; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.mkt-range-trackwrap { position: relative; flex: 1; height: 34px; }
+.mkt-range-thumb { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 30px; height: 22px; border-radius: 11px; background: var(--card); border: 1.5px solid var(--gold); pointer-events: none; }
+.mkt-range-thumb::after { content: ''; position: absolute; top: 5px; bottom: 5px; left: 10px; right: 10px; background: repeating-linear-gradient(90deg, var(--muted) 0 2px, transparent 2px 5px); opacity: .75; }
+.mkt-range-lab { flex: none; min-width: 32px; text-align: right; font-size: 12px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* ==== Vibe-code tells pass (2026-11-19, from the @lincolndevine reel) ====
  * Skeleton loaders: content-shaped shimmer blocks instead of a blank
