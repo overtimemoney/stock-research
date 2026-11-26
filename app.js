@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261126203809';
+var APP_BUILD = 'stock-research-20261126211912';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -10794,8 +10794,8 @@ function openTx(d, payload) {
   var ov = $('tx-overlay'), body = $('tx-body');
   if (!ov || !body || !payload || !payload.data) return;
   var html = '<div class="hld-title">Earnings call transcript</div><div class="hld-sub">' + esc(d.name || d.ticker) + ' \u00b7 ' + esc(txQuarterLabel(payload.quarter)) + '</div><div id="tx-sum-zone"></div>';
-  payload.data.transcript.forEach(function (t) {
-    html += '<div class="tx-turn"><div class="tx-spk">' + esc(t.speaker || 'Speaker') + '</div><p>' + esc(t.content || '') + '</p></div>';
+  payload.data.transcript.forEach(function (t, i) {
+    html += '<div class="tx-turn" data-txturn="' + i + '"><div class="tx-spk">' + esc(t.speaker || 'Speaker') + '</div><p>' + esc(t.content || '') + '</p></div>';
   });
   html += '<p class="fineprint">Transcript via Alpha Vantage. Machine-generated, so names and figures can contain errors.</p>';
   body.innerHTML = html;
@@ -10815,10 +10815,25 @@ function txSumLockHtml() {
     '<button type="button" class="btn-ghost pro-unlock">Unlock with Pro</button></div>';
 }
 function txSumHtml(s) {
+  var turnCount = document.querySelectorAll('#tx-body .tx-turn').length;
   var sec = function (title, arr) {
     if (!arr || !arr.length) return '';
     return '<div class="tx-sum-sec">' + esc(title) + '</div><ul class="tx-sum-list">' +
-      arr.map(function (b) { return '<li>' + esc(b) + '</li>'; }).join('') + '</ul>';
+      arr.map(function (b) {
+        /* A bullet with a turn citation renders as its own
+         * link: the text itself, underlined. Tapping scrolls
+         * the transcript to the turn it came from. A citation
+         * past the end of this transcript (or none at all)
+         * renders as plain text -- no direct source, no link. */
+        if (b && typeof b === 'object' && b.t) {
+          var n = parseInt(b.turn, 10);
+          if (isNum(n) && n >= 1 && n <= turnCount) {
+            return '<li><button type="button" class="tx-sum-link" data-txturn="' + (n - 1) + '">' + esc(b.t) + '</button></li>';
+          }
+          return '<li>' + esc(b.t) + '</li>';
+        }
+        return '<li>' + esc(b) + '</li>';
+      }).join('') + '</ul>';
   };
   return '<div class="tx-sum"><div class="tx-sum-h">Call summary</div>' +
     '<p class="tx-sum-head">' + esc(s.headline) + '</p>' +
@@ -10847,7 +10862,7 @@ async function loadTxSummary(T, Q) {
     var j = await r.json();
     var z = $('tx-sum-zone');
     if (!z) return;
-    if (j && j.ok && j.summary) { z.innerHTML = txSumHtml(j.summary); return; }
+    if (j && j.ok && j.summary) { z.innerHTML = txSumHtml(j.summary); wireTxSumLinks(z); return; }
     if (j && j.locked) {
       lsSet(PRO_KEY, { pro: false, ts: Date.now() });
       z.innerHTML = txSumLockHtml();
@@ -10859,6 +10874,22 @@ async function loadTxSummary(T, Q) {
     var z2 = $('tx-sum-zone');
     if (z2) z2.innerHTML = '';
   }
+}
+
+function wireTxSumLinks(zone) {
+  if (!zone) return;
+  zone.querySelectorAll('.tx-sum-link').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var idx = parseInt(btn.getAttribute('data-txturn'), 10);
+      var el = document.querySelector('#tx-body .tx-turn[data-txturn="' + idx + '"]');
+      if (!el) return;
+      try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { el.scrollIntoView(); }
+      el.classList.remove('tx-flash');
+      void el.offsetWidth;
+      el.classList.add('tx-flash');
+      setTimeout(function () { el.classList.remove('tx-flash'); }, 2000);
+    });
+  });
 }
 
 function pfView() { return localStorage.getItem('sr_pfview_v1') === 'news' ? 'news' : 'overview'; }
@@ -13016,6 +13047,12 @@ function initApp() {
       var si = $('sync-signed-in'), un = $('sync-user');
       sv.textContent = (si && !si.hidden && un && un.textContent) ? un.textContent : '';
     }
+    var av = $('set-val-account');
+    if (av) {
+      var asi = $('sync-signed-in'), aun = $('sync-user');
+      av.textContent = (asi && !asi.hidden && aun && aun.textContent) ? aun.textContent : (srPro() ? 'Pro' : '');
+    }
+    if (id === 'panel-account') renderAccountPanel();
     var mn = document.querySelector('main');
     if (mn) mn.scrollTop = 0;
   }
@@ -13023,6 +13060,41 @@ function initApp() {
   document.querySelectorAll('[data-setpanel]').forEach(function (b) {
     b.addEventListener('click', function () { setOpenPanel(b.getAttribute('data-setpanel')); });
   });
+  /* Account panel (Justin's ask, 2026-11-26): identity + plan in
+   * one place -- email, Pro status, sign in/out, and the Pro
+   * sheet. Reads the same DOM state the sync panel maintains, so
+   * it never disagrees with Cloud sync; showAuthState re-renders
+   * it on every sign-in/out. */
+  function renderAccountPanel() {
+    var em = $('acct-email');
+    if (!em) return;
+    var uid = null;
+    try { uid = window.srSyncUserId ? window.srSyncUserId() : null; } catch (e) {}
+    var un = $('sync-user');
+    var email = uid && un ? String(un.textContent || '').trim() : '';
+    var pro = false;
+    try { pro = srPro(); } catch (e) {}
+    em.textContent = email ? 'Signed in as ' + email : 'Not signed in';
+    var plan = $('acct-plan');
+    if (plan) plan.innerHTML = pro ? '<span class="pro-pill">PRO</span> Mispriced Pro' : 'Free';
+    var authBtn = $('acct-auth-btn');
+    if (authBtn) {
+      authBtn.textContent = email ? 'Sign out' : 'Sign in';
+      authBtn.className = email ? 'btn-ghost' : 'btn-gold';
+    }
+    var hint = $('set-val-account');
+    if (hint) hint.textContent = email || (pro ? 'Pro' : '');
+  }
+  window.renderAccountPanel = renderAccountPanel;
+  var acctAuthBtn = $('acct-auth-btn');
+  if (acctAuthBtn) acctAuthBtn.addEventListener('click', function () {
+    var uid = null;
+    try { uid = window.srSyncUserId ? window.srSyncUserId() : null; } catch (e) {}
+    if (uid) { var so = $('sync-signout'); if (so) so.click(); }
+    else showSigninSheet();
+  });
+  var acctProBtn = $('acct-pro-btn');
+  if (acctProBtn) acctProBtn.addEventListener('click', function () { openProSheet(); });
   document.querySelectorAll('[data-setback]').forEach(function (b) {
     b.addEventListener('click', function () { setOpenPanel(null); });
   });
@@ -13758,6 +13830,7 @@ if (typeof document !== 'undefined' && document.getElementById) {
          * (throttled inside betaFetchStatus; fails silently). */
         try { betaFetchStatus(); } catch (e) {}
       }
+      try { if (window.renderAccountPanel) window.renderAccountPanel(); } catch (e) {}
     } catch (e) {}
   }
 
@@ -14719,11 +14792,20 @@ if (typeof document !== 'undefined' && document.getElementById) {
  * One tip at a time, in flow order. A tip never renders while the
  * quiz overlay, a bottom sheet (account/install/sign-in), the
  * holders/chart overlays or the stock overview panel is open — the
- * poller just waits, then shows it if its trigger still holds. No
- * scrim, no layout shift: the card is fixed-position, clamped to
- * the viewport, placed above/below its anchor without covering it,
- * and the anchor gets a subtle gold outline while its tip is up.
- * Got it, the x, or tapping anywhere else dismisses (marks seen). */
+ * poller just waits, then shows it if its trigger still holds.
+ *
+ * Interaction model (Justin's rules, 2026-11-26, superseding the
+ * original no-scrim design): while a tip is up, a scrim greys out
+ * EVERYTHING except the element the tip points at — four dim
+ * rects leave a hole over the anchor (for the search tip the hole
+ * covers the whole search form plus the suggestions list). Taps
+ * on the dim are swallowed. There is no Got it, no x, no
+ * tap-away dismiss: a tip clears ONLY by doing what it points at
+ * — running a search (retires via srWalkNote), tapping a score,
+ * tapping the flags block, or tapping a stock in the Top 10 card.
+ * The card is fixed-position, clamped to the viewport, placed
+ * above/below its anchor without covering it, and the anchor
+ * gets a subtle gold outline while its tip is up. */
 (function srWalkthrough() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   if (typeof localStorage === 'undefined') return;
@@ -14739,7 +14821,60 @@ if (typeof document !== 'undefined' && document.getElementById) {
   /* Latches set by render events (via window.srWalkNote); a latched
    * tip still waits until its anchor is on screen right now. */
   var latched = { scores: false, flags: false };
-  var cardEl = null, anchorEl = null, current = null;
+  var cardEl = null, anchorEl = null, current = null, scrimEl = null;
+
+  function buildScrim() {
+    if (scrimEl) return;
+    scrimEl = document.createElement('div');
+    scrimEl.className = 'walk-scrim';
+    scrimEl.setAttribute('aria-hidden', 'true');
+    scrimEl.innerHTML = '<div class="walk-dim"></div><div class="walk-dim"></div><div class="walk-dim"></div><div class="walk-dim"></div>';
+    /* Taps on the grey are swallowed whole: the only live area
+     * on screen is the hole over the anchor. */
+    var swallow = function (e) { e.preventDefault(); e.stopPropagation(); };
+    scrimEl.addEventListener('pointerdown', swallow, true);
+    scrimEl.addEventListener('click', swallow, true);
+    document.body.appendChild(scrimEl);
+  }
+
+  function holeRect() {
+    if (!anchorEl) return null;
+    var r = anchorEl.getBoundingClientRect();
+    var out = { top: r.top, left: r.left, right: r.right, bottom: r.bottom };
+    if (current === 'search') {
+      var f = document.getElementById('search-form');
+      if (f) {
+        var fr = f.getBoundingClientRect();
+        out.top = Math.min(out.top, fr.top); out.left = Math.min(out.left, fr.left);
+        out.right = Math.max(out.right, fr.right); out.bottom = Math.max(out.bottom, fr.bottom);
+      }
+      var ac = document.querySelector('.ac-list');
+      if (ac) {
+        var ar = ac.getBoundingClientRect();
+        if (ar.height > 0 && ar.width > 0) {
+          out.left = Math.min(out.left, ar.left); out.right = Math.max(out.right, ar.right);
+          out.bottom = Math.max(out.bottom, ar.bottom);
+        }
+      }
+    }
+    var pad = 6;
+    out.top = Math.max(0, out.top - pad); out.left = Math.max(0, out.left - pad);
+    out.right = Math.min(window.innerWidth, out.right + pad);
+    out.bottom = Math.min(window.innerHeight, out.bottom + pad);
+    return out;
+  }
+
+  function placeScrim() {
+    if (!scrimEl) return;
+    var h = holeRect();
+    if (!h) { scrimEl.style.display = 'none'; return; }
+    scrimEl.style.display = '';
+    var W = window.innerWidth, H = window.innerHeight, d = scrimEl.children;
+    d[0].style.cssText = 'top:0;left:0;width:' + W + 'px;height:' + h.top + 'px';
+    d[1].style.cssText = 'top:' + h.bottom + 'px;left:0;width:' + W + 'px;height:' + Math.max(0, H - h.bottom) + 'px';
+    d[2].style.cssText = 'top:' + h.top + 'px;left:0;width:' + h.left + 'px;height:' + Math.max(0, h.bottom - h.top) + 'px';
+    d[3].style.cssText = 'top:' + h.top + 'px;left:' + h.right + 'px;width:' + Math.max(0, W - h.right) + 'px;height:' + Math.max(0, h.bottom - h.top) + 'px';
+  }
 
   function read() {
     try { var r = localStorage.getItem(KEY); return r ? JSON.parse(r) : null; }
@@ -14834,14 +14969,21 @@ if (typeof document !== 'undefined' && document.getElementById) {
     var ch = cardEl.offsetHeight || 110;
     var left = Math.max(8, Math.min(r.left, window.innerWidth - cw - 8));
     var top = r.bottom + 8;
+    if (current === 'search') {
+      var ac = document.querySelector('.ac-list');
+      if (ac) { var ar = ac.getBoundingClientRect(); if (ar.height > 0) top = Math.max(top, ar.bottom + 8); }
+    }
     if (top + ch > window.innerHeight - 8) top = r.top - ch - 8;
     if (top < 8) top = 8;
     cardEl.style.left = left + 'px';
     cardEl.style.top = top + 'px';
+    placeScrim();
   }
 
   function hide() {
     if (cardEl && cardEl.parentNode) cardEl.parentNode.removeChild(cardEl);
+    if (scrimEl && scrimEl.parentNode) scrimEl.parentNode.removeChild(scrimEl);
+    scrimEl = null;
     if (anchorEl) { try { anchorEl.classList.remove('walk-anchor'); } catch (e) {} }
     cardEl = null; anchorEl = null; current = null;
   }
@@ -14859,17 +15001,15 @@ if (typeof document !== 'undefined' && document.getElementById) {
     hide();
     current = key;
     anchorEl = a;
+    buildScrim();
     cardEl = document.createElement('div');
     cardEl.className = 'walk-tip';
     cardEl.setAttribute('role', 'note');
-    cardEl.innerHTML = '<button type="button" class="walk-x" aria-label="Dismiss tip">\u00d7</button>' +
-      '<p class="walk-copy"></p>' +
-      '<div class="walk-row"><button type="button" class="walk-got">Got it</button></div>';
+    cardEl.innerHTML = '<p class="walk-copy"></p>' +
+      '<p class="walk-hint">This clears when you try it.</p>';
     cardEl.querySelector('.walk-copy').textContent = COPIES[key];
     document.body.appendChild(cardEl);
     try { a.classList.add('walk-anchor'); } catch (e) {}
-    cardEl.querySelector('.walk-got').addEventListener('click', function () { dismiss(key); });
-    cardEl.querySelector('.walk-x').addEventListener('click', function () { dismiss(key); });
     place();
   }
 
@@ -14896,12 +15036,24 @@ if (typeof document !== 'undefined' && document.getElementById) {
     }
   }
 
-  /* Tapping anywhere outside the card dismisses the tip (and the
-   * tap still reaches the UI underneath — nothing is blocked). */
+  /* Completion: a tip clears ONLY by doing what it points at.
+   * The search tip retires through srWalkNote when a scorecard
+   * renders; the others complete on a tap on the pointed-at
+   * thing itself (the tap still does its normal job — this
+   * listener only observes). Taps anywhere else land on the
+   * scrim and are swallowed there. */
   try {
-    document.addEventListener('pointerdown', function (e) {
+    document.addEventListener('click', function (e) {
       try {
-        if (cardEl && current && !cardEl.contains(e.target)) dismiss(current);
+        if (!current || !anchorEl || !e.target || !e.target.closest) return;
+        if (current === 'scores') {
+          if (e.target.closest('#score-result .verdict')) dismiss('scores');
+        } else if (current === 'flags') {
+          if (anchorEl.contains(e.target)) dismiss('flags');
+        } else if (current === 'top10') {
+          var row = e.target.closest('[data-scan-research]');
+          if (row && anchorEl.contains(row)) dismiss('top10');
+        }
       } catch (err) {}
     });
   } catch (e) {}

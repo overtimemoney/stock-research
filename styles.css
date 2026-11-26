@@ -810,6 +810,9 @@ body.nav-back-on main { padding-top: calc(env(safe-area-inset-top) + 68px); }
 .tx-meta { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
 .tx-open { width: 100%; }
 .tx-turn { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.tx-sum-link { background: none; border: none; padding: 0; margin: 0; font: inherit; color: inherit; text-align: left; text-decoration: underline; text-decoration-color: var(--gold); text-underline-offset: 3px; cursor: pointer; }
+.tx-turn.tx-flash { animation: txflash 1.9s ease-out; border-radius: 8px; }
+@keyframes txflash { 0%, 55% { background: rgba(248, 199, 61, .30); } 100% { background: transparent; } }
 .tx-turn:last-of-type { border-bottom: none; }
 .tx-spk { font-weight: 800; font-size: 13.5px; margin-bottom: 3px; }
 .tx-turn p { margin: 0; font-size: 14.5px; line-height: 1.55; }
@@ -1272,11 +1275,11 @@ select { min-height: 48px; }
  * anchored near the element it describes — no scrim, no layout
  * shift, clamped inside the viewport. The anchor gets a subtle
  * gold outline (gentle pulse unless reduced motion). */
-.walk-tip { position: fixed; z-index: 70; background: var(--elev); border: 1.5px solid var(--gold); border-radius: 14px; padding: 12px 34px 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.35); box-sizing: border-box; }
-.walk-copy { margin: 0 0 10px; font-size: 14px; line-height: 1.45; font-weight: 600; color: var(--ink); }
-.walk-row { display: flex; justify-content: flex-end; }
-.walk-got { background: var(--gold); color: #141414; border: none; border-radius: 10px; font-weight: 800; font-size: 13px; padding: 7px 16px; cursor: pointer; }
-.walk-x { position: absolute; top: 4px; right: 6px; background: none; border: none; color: var(--muted); font-size: 19px; line-height: 1; padding: 5px; cursor: pointer; }
+.walk-scrim { position: fixed; inset: 0; z-index: 69; pointer-events: none; }
+.walk-dim { position: fixed; background: rgba(22, 22, 22, .52); pointer-events: auto; }
+.walk-tip { position: fixed; z-index: 70; background: var(--elev); border: 1.5px solid var(--gold); border-radius: 14px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.35); box-sizing: border-box; }
+.walk-copy { margin: 0 0 6px; font-size: 14px; line-height: 1.45; font-weight: 600; color: var(--ink); }
+.walk-hint { margin: 0; font-size: 12px; font-weight: 700; color: var(--muted); }
 .walk-anchor { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 8px; }
 @media (prefers-reduced-motion: no-preference) {
   .walk-anchor { animation: walk-pulse 1.6s ease-in-out infinite; }
