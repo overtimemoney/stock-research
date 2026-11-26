@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261126222730';
+var APP_BUILD = 'stock-research-20261126230236';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -7983,13 +7983,21 @@ function wlProjStale(T) {
 }
 async function fetchWlProjCagr(T) {
   var ent = wlProjEntry(T);
-  if (ent) return ent.cagr;
-  var cagr = null, loaded = false;
+  /* A partial entry was computed without the P/E history (a
+   * source fetch failed wherever it ran), so its exit multiple
+   * fell back to the industry median and the number can be
+   * wildly off -- AXP/GOOGL/AXON showed negative returns off
+   * median exits while the full-data math is positive
+   * (2026-11-26). Trust a partial for an hour, then recompute
+   * on-device, where the history has eight sources racing. */
+  if (ent && !(ent.p && Date.now() - (ent.at || 0) > 3600000)) return ent.cagr;
+  var cagr = null, loaded = false, thin = true;
   try {
     var d = await fetchStock(T);
     if (d) {
       loaded = true;
       await pjEnsureExitData(d);
+      thin = !(d.peByYear && d.peByYear.length >= 3);
       cagr = wlProjectCagr(d);
     }
   } catch (e) { cagr = null; }
@@ -8001,7 +8009,7 @@ async function fetchWlProjCagr(T) {
     if (stale) return stale.cagr;
   }
   var m = lsGet(WLPROJ_KEY, {});
-  m[T] = { day: new Date().toDateString(), cagr: isNum(cagr) ? cagr : null };
+  m[T] = { day: new Date().toDateString(), cagr: isNum(cagr) ? cagr : null, at: Date.now(), p: thin ? 1 : 0 };
   lsSet(WLPROJ_KEY, m);
   if (isNum(cagr)) {
     /* Accumulate into the scan dataset: the screener filters and
@@ -8053,6 +8061,7 @@ async function wlCagrSync() {
     if (!resp || !resp.ok) return;
     var j = await resp.json();
     if (!j || !j.map) return;
+    var meta = j.meta || {};
     var etToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
     var fresh = j.day === etToday;
     var todayStr = new Date().toDateString();
@@ -8068,11 +8077,13 @@ async function wlCagrSync() {
          * A null from today (a boot-time fill that found no path
          * or failed) never blocks the server's real number. */
         if (cur && cur.day === todayStr && (isNum(cur.cagr) || !isNum(cg))) return;
-        m[T] = { day: todayStr, cagr: isNum(cg) ? cg : null };
+        var mt = meta[T] || {};
+        m[T] = { day: todayStr, cagr: isNum(cg) ? cg : null, at: isNum(mt.at) ? mt.at : Date.now(), p: mt.p ? 1 : 0 };
         changed = true;
       } else {
         if (cur && (cur.day === todayStr || Date.parse(cur.day) >= Date.parse(ydayStr))) return;
-        m[T] = { day: ydayStr, cagr: isNum(cg) ? cg : null };
+        var mt2 = meta[T] || {};
+        m[T] = { day: ydayStr, cagr: isNum(cg) ? cg : null, at: isNum(mt2.at) ? mt2.at : Date.now() - 86400000, p: mt2.p ? 1 : 0 };
         changed = true;
       }
     });
