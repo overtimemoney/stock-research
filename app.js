@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261126200649';
+var APP_BUILD = 'stock-research-20261126202649';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -10306,9 +10306,9 @@ async function renderWatchlist(refresh) {
   rows.forEach(function (r) {
     var item = r.item, price = r.price;
     // Thumbnail-clean rows (Justin's ask, 2026-10-29): ticker, price
-    // and the valuation/risk line only. Target, distance-to-target,
-    // projection and the action menu all live in the full-screen
-    // overview a tap opens.
+    // and the valuation/risk line only; a tap opens the stock's full
+    // Research card (Justin's call, 2026-11-26 -- before that it
+    // opened the simplified overview).
     html += '<div class="wl-row" data-ticker="' + esc(item.ticker) + '">' + logoTile(item.ticker) + '<div class="wl-left"><span class="wl-t">' + esc(item.ticker) + '</span>' +
       '<div class="wl-meta wl-val">' + (r.val ? wlValInner(r.val) : '') + '</div>' +
       '<div class="wl-meta wl-proj' + (r.projStale && !isNum(r.projCagr) ? ' stale' : '') + '">' + wlProjInner(wlDispCagr(r), r.val) + '</div>' +
@@ -10327,7 +10327,13 @@ async function renderWatchlist(refresh) {
     row.addEventListener('click', function (e) {
       if (e.target.closest('button, a, select, input')) return;
       var T = row.getAttribute('data-ticker');
-      if (T) openOverview(T);
+      if (!T) return;
+      /* The same jump the scan and earnings rows already make:
+       * Research tab, full card, back button returns here. */
+      navPush();
+      switchTab('scorecard');
+      $('search-input').value = T;
+      runSearch(T);
     });
   });
 }
