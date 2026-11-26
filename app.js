@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261126211912';
+var APP_BUILD = 'stock-research-20261126212609';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -14840,6 +14840,7 @@ if (typeof document !== 'undefined' && document.getElementById) {
   function holeRect() {
     if (!anchorEl) return null;
     var r = anchorEl.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > window.innerHeight) return null;
     var out = { top: r.top, left: r.left, right: r.right, bottom: r.bottom };
     if (current === 'search') {
       var f = document.getElementById('search-form');
@@ -14974,7 +14975,10 @@ if (typeof document !== 'undefined' && document.getElementById) {
       if (ac) { var ar = ac.getBoundingClientRect(); if (ar.height > 0) top = Math.max(top, ar.bottom + 8); }
     }
     if (top + ch > window.innerHeight - 8) top = r.top - ch - 8;
-    if (top < 8) top = 8;
+    var minTop = 8;
+    var tb = document.querySelector('.topbar');
+    if (tb) minTop = Math.max(8, Math.round(tb.getBoundingClientRect().bottom) + 10);
+    if (top < minTop) top = minTop;
     cardEl.style.left = left + 'px';
     cardEl.style.top = top + 'px';
     placeScrim();
@@ -15059,6 +15063,36 @@ if (typeof document !== 'undefined' && document.getElementById) {
   } catch (e) {}
 
   try { setInterval(function () { try { poke(); } catch (e) {} }, 600); } catch (e) {}
+
+  /* Scrolling moves the anchor every frame, so placement follows
+   * on rAF-throttled scroll/resize events, not just the poller.
+   * If the anchor scrolls out of view the tip stands down at
+   * once (unseen -- it returns when the anchor does). */
+  var placeQueued = false;
+  function placeSoon() {
+    if (!current || placeQueued) return;
+    placeQueued = true;
+    try {
+      requestAnimationFrame(function () {
+        placeQueued = false;
+        try {
+          if (!current) return;
+          var a = anchorFor(current);
+          if (!a || !onScreen(a)) { hide(); return; }
+          if (a !== anchorEl) {
+            if (anchorEl) { try { anchorEl.classList.remove('walk-anchor'); } catch (e) {} }
+            anchorEl = a;
+            try { a.classList.add('walk-anchor'); } catch (e) {}
+          }
+          place();
+        } catch (err) {}
+      });
+    } catch (e) { placeQueued = false; }
+  }
+  try {
+    document.addEventListener('scroll', placeSoon, true);
+    window.addEventListener('resize', placeSoon);
+  } catch (e) {}
 
   /* Manual preview: Settings -> Learn -> Walkthrough. Re-arms and
    * restarts from Tip 1 (seen flags reset — the preview re-runs the

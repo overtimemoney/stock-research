@@ -893,7 +893,11 @@ table.factors:not(.scen) th.num, table.factors:not(.scen) td.num { width: 78px; 
  * it matched to the black-and-gold identity in both themes. */
 .ob-overlay { position: fixed; inset: 0; z-index: 200; background: var(--bg); color: var(--ink); height: 100vh; height: 100dvh; height: var(--app-h, 100dvh); }
 .ob-overlay[hidden] { display: none; }
-.ob-scroll { height: 100%; overflow: hidden; display: flex; flex-direction: column; padding: calc(8px + env(safe-area-inset-top)) 14px calc(8px + env(safe-area-inset-bottom)); }
+/* Top padding clears the frosted top strip with room to spare:
+ * at 8px the quiz kicker sat ~5px under the strip's gold line
+ * and read as blurred on device (Justin's screenshot,
+ * 2026-11-26). 24px puts the title fully below the blur. */
+.ob-scroll { height: 100%; overflow: hidden; display: flex; flex-direction: column; padding: calc(24px + env(safe-area-inset-top)) 14px calc(8px + env(safe-area-inset-bottom)); }
 .ob-inner { flex: 1 1 auto; min-height: 0; width: 100%; max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; }
 .ob-top { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
 .ob-kicker { font-size: 12px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
