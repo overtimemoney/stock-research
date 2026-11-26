@@ -132,13 +132,20 @@ h2, h3 { font-weight: 800; letter-spacing: -0.01em; }
    * the 3px gold line at its bottom edge. */
   background: rgba(10, 10, 12, .55);
   background: color-mix(in srgb, var(--bg) 55%, transparent);
-  -webkit-backdrop-filter: blur(14px) saturate(1.35);
-  backdrop-filter: blur(14px) saturate(1.35);
+  /* Blur softened and the rest gap widened 2026-11-26 (Justin's
+   * screenshot): with only 10px between the strip and the first
+   * content, the 14px blur kept catching the gold Research button
+   * and smearing it across the top of the page at rest. The blur
+   * now lives further up -- smaller radius, and main's top padding
+   * holds the first content 23px below the strip's bottom edge,
+   * beyond the blur's reach. */
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  backdrop-filter: blur(10px) saturate(1.2);
   border-bottom: 3px solid transparent; border-image: var(--gold-grad) 1;
 }
 
 /* ---------- layout ---------- */
-main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; width: 100%; max-width: 860px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 13px) 14px calc(88px + env(safe-area-inset-bottom)); }
+main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; width: 100%; max-width: 860px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 26px) 14px calc(88px + env(safe-area-inset-bottom)); }
 .tab { display: none; }
 .tab.active { display: block; }
 .tab-title { font-size: 24px; margin: 6px 0 14px; text-transform: uppercase; letter-spacing: .02em; }
@@ -544,7 +551,7 @@ table.factors.scen.micro td, table.factors.scen.micro th { padding: 7px 3px; }
  * the floating button may overlap content as it passes. The old
  * flat 56px was less than a modern safe-area + 13, so titles
  * actually slid UP under the button. */
-body.nav-back-on main { padding-top: calc(env(safe-area-inset-top) + 62px); }
+body.nav-back-on main { padding-top: calc(env(safe-area-inset-top) + 68px); }
 .gear-btn {
   width: 34px; height: 34px; border-radius: 10px; cursor: pointer; line-height: 1;
   border: 1.5px solid var(--line); background: var(--field); color: var(--ink); font-size: 19px;
