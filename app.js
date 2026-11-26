@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261126213209';
+var APP_BUILD = 'stock-research-20261126214236';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -1687,7 +1687,7 @@ function simScoreCompute(T) {
     try {
       var d2 = await fetchStock(T);
       if (!d2) return null;
-      var cg = overallCachedCagr(T);
+      var cg = overallCachedCagr(T, d2.price);
       var cagr = (cg && isNum(cg.cagr)) ? cg.cagr : null;
       /* No second fetch for the CAGR: d2 is already the full load,
        * and wlProjectCagr is the same pure math fetchWlProjCagr
@@ -4179,8 +4179,8 @@ function cashDebtHtml(d) {
  * and hides the strip when no forecast path exists. The fill guards
  * on the strip's own ticker attribute, so a slow answer for a stock
  * the user has already tapped away from never lands. */
-function projStripHtml(id, ticker) {
-  var saved = pjSavedCagr(ticker);
+function projStripHtml(id, ticker, curPrice) {
+  var saved = pjSavedCagr(ticker, curPrice);
   var freshEnt = wlProjEntry(ticker);
   var staleEnt = freshEnt ? null : wlProjStale(ticker);
   var cached = isNum(saved) ? saved : (freshEnt ? freshEnt.cagr : (staleEnt ? staleEnt.cagr : null));
@@ -4219,8 +4219,8 @@ function overallScore(d, cagr) {
   }
   return combined;
 }
-function overallCachedCagr(ticker) {
-  var saved = pjSavedCagr(ticker);
+function overallCachedCagr(ticker, curPrice) {
+  var saved = pjSavedCagr(ticker, curPrice);
   if (isNum(saved)) return { cagr: saved, stale: false };
   var fresh = wlProjEntry(ticker);
   if (fresh && isNum(fresh.cagr)) return { cagr: fresh.cagr, stale: false };
@@ -4229,14 +4229,14 @@ function overallCachedCagr(ticker) {
   return { cagr: null, stale: false };
 }
 function overallHtml(id, d) {
-  var cc = overallCachedCagr(d.ticker);
+  var cc = overallCachedCagr(d.ticker, d.price);
   var v = overallScore(d, cc.cagr);
   if (v === null) return '';
   return '<div class="sc-overall"><span class="sc-proj-l"><b>Overall score</b></span>' +
     '<span class="sc-overall-v' + (cc.stale ? ' sc-proj-stale' : '') + '" id="' + id + '"' + scanScoreStyle(v) + '>' + v + '</span></div>';
 }
 function overallFill(id, d) {
-  var saved = pjSavedCagr(d.ticker);
+  var saved = pjSavedCagr(d.ticker, d.price);
   function done(cg) {
     var el = $(id);
     if (!el) return;
@@ -4262,7 +4262,7 @@ function renderScorecard(d) {
     '<div class="sc-sub">' + esc([d.ticker, d.exchange, d.sector, d.industry].filter(Boolean).join(' · ')) + '</div></div></div>' +
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
-  html += projStripHtml('sc-proj', d.ticker);
+  html += projStripHtml('sc-proj', d.ticker, d.price);
   html += overallHtml('sc-overall-v', d);
   if (d.about) {
     var abLong = d.about.length > 240;
@@ -4858,15 +4858,22 @@ function pjSavedBase(T) {
   var feps = pjCaseEps(s.baseEps, s.path.slice(0, (s.years || 3) + off), 1);
   return isNum(feps) ? Math.max(0, feps * s.mult) : null;
 }
-/* Base-case CAGR of a saved projection: implied end price vs the price at
- * save time, annualized over the saved horizon -- comparable across
- * projections even when they use different year counts. */
-function pjSavedCagr(T) {
+/* Base-case CAGR of a saved projection: implied end price vs the
+ * CURRENT price when the caller has one (the end price itself --
+ * final EPS x exit P/E -- never depended on the entry price), so
+ * the return always reads from here, not from the day the
+ * projection was saved. Without a current price it falls back to
+ * the save-time price. (2026-11-26: FSLR saved at ~$205 kept
+ * showing +12.3%/yr at $147.88 while the builder, recomputing
+ * live, said +21.8% -- same projection, two answers.) */
+function pjSavedCagr(T, curPrice) {
   var s = getProjections()[T];
   var fp = pjSavedBase(T);
-  if (!s || !isNum(fp) || !isNum(s.price) || s.price <= 0 || !isNum(s.years) || s.years < 1 || fp <= 0) return null;
+  if (!s || !isNum(fp) || !isNum(s.years) || s.years < 1 || fp <= 0) return null;
+  var px = (isNum(curPrice) && curPrice > 0) ? curPrice : (isNum(s.price) && s.price > 0 ? s.price : null);
+  if (!isNum(px)) return null;
   var divF = isNum(s.divYield) && s.divYield > 0 ? Math.pow(1 + s.divYield / 100, s.years) : 1;
-  return (Math.pow(fp / s.price * divF, 1 / s.years) - 1) * 100;
+  return (Math.pow(fp / px * divF, 1 / s.years) - 1) * 100;
 }
 /* Headless base-case projection for the watchlist (Justin's ask,
  * 2026-11-10): the SAME math as the Projection Builder -- consensus
@@ -10070,7 +10077,7 @@ function renderOverview(d, item) {
     '<div class="sc-sub">' + esc([d.ticker, d.exchange, d.sector, d.industry].filter(Boolean).join(' \u00b7 ')) + '</div></div></div>' +
     '<div class="sc-price"><div class="p">' + fmtMoney(d.price) + '</div>' +
     '<div class="chg ' + chgCls + '">' + (isNum(d.dayChangePct) ? fmtPct(d.dayChangePct) + ' today' : '') + '</div></div></div>';
-  html += projStripHtml('ov-proj', d.ticker);
+  html += projStripHtml('ov-proj', d.ticker, d.price);
   html += overallHtml('ov-overall-v', d);
   html += earnLineHtml(d);
   html += ceoBlockHtml(d);
@@ -10300,7 +10307,7 @@ async function renderWatchlist(refresh) {
     var projMap = getProjections();
     var projEnt = wlProjEntry(item.ticker);
     var staleEnt = projEnt ? null : wlProjStale(item.ticker);
-    rows.push({ item: item, price: price, err: err, val: wlValuationDisplay(item.ticker), proj: !!projMap[item.ticker], projCagr: projMap[item.ticker] ? pjSavedCagr(item.ticker) : null, autoCagr: projEnt ? projEnt.cagr : (staleEnt ? staleEnt.cagr : null), projStale: !!staleEnt });
+    rows.push({ item: item, price: price, err: err, val: wlValuationDisplay(item.ticker), proj: !!projMap[item.ticker], projCagr: projMap[item.ticker] ? pjSavedCagr(item.ticker, price) : null, autoCagr: projEnt ? projEnt.cagr : (staleEnt ? staleEnt.cagr : null), projStale: !!staleEnt });
   }
   // Stale or missing scores are filled by the paced background pass
   // after the rows paint (see wlFillPass) -- never by blocking here.
