@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261126193449';
+var APP_BUILD = 'stock-research-20261126200649';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -3787,15 +3787,70 @@ function swotBox(letter, title, items, cls) {
   return '<div class="swot-box ' + cls + '"><h5><span class="swot-badge">' + letter + '</span>' + esc(title) + '</h5><ul>' + lis + '</ul></div>';
 }
 
-/* ============================== AI SWOT ============================== */
-/* Classic qualitative SWOT generated on demand by the Llama 4 model on
- * the user's own Cloudflare Worker (/swot endpoint, Workers AI free
- * tier). The app sends the ticker plus a summary of the live metrics it
- * already fetched; the worker adds recent Yahoo headlines and returns
- * the four lists. Saved on-device per ticker so it persists. */
+/* ====================== SWOT Deep Dive + Pro ====================== */
+/* The Deep Dive is the written SWOT: one canonical copy per ticker,
+ * generated on the first view (the Worker adds recent headlines and
+ * 10-K risks to the live metrics sent from here), shared by everyone,
+ * never regenerated. Viewing it is a Pro entitlement -- the Worker
+ * returns the text only to Pro accounts, so this side only ever
+ * renders what it was given. Pro state is asked of the Worker
+ * (/pro-check) at sign-in and cached on-device (sr_pro_v1). */
 var AI_SWOT_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/swot';
 var BIZ_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/bizmodel';
 var TX_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/av-transcript';
+var TXSUM_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/tx-summary';
+var PRO_CHECK_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/pro-check';
+var PRO_KEY = 'sr_pro_v1';
+function srPro() { var p = lsGet(PRO_KEY, null); return !!(p && p.pro); }
+async function refreshProStatus() {
+  try {
+    var uid = (typeof window.srSyncUserId === 'function') ? window.srSyncUserId() : null;
+    if (!uid) { lsSet(PRO_KEY, { pro: false, ts: Date.now() }); return; }
+    var r = await fetch(PRO_CHECK_URL + '?u=' + encodeURIComponent(uid));
+    var j = await r.json();
+    lsSet(PRO_KEY, { pro: !!(j && j.pro), ts: Date.now() });
+  } catch (e) { /* keep the cached answer */ }
+}
+function proLockHtml(title, line) {
+  return '<div class="card pro-lock"><div class="pro-lock-top"><span class="pro-pill">PRO</span><span class="pro-lock-title">' + esc(title) + '</span></div>' +
+    '<p class="fineprint">' + esc(line) + '</p>' +
+    '<button type="button" class="btn-ghost pro-unlock">Unlock with Pro</button></div>';
+}
+function bindProLock(scope) {
+  if (!scope) return;
+  var b = scope.querySelector('.pro-unlock');
+  if (b) b.addEventListener('click', function () { openProSheet(); });
+}
+function openProSheet() {
+  var ov = $('pro-overlay'), body = $('pro-body');
+  if (!ov || !body) return;
+  body.innerHTML = proSheetHtml();
+  var si = $('pro-signin'), ck = $('pro-check-btn');
+  if (si) si.addEventListener('click', function () { closeProSheet(); showSigninSheet(); });
+  if (ck) ck.addEventListener('click', async function () { await refreshProStatus(); openProSheet(); });
+  ov.hidden = false;
+  setMainLock('pro', true);
+}
+function closeProSheet() {
+  var ov = $('pro-overlay');
+  if (ov) ov.hidden = true;
+  setMainLock('pro', false);
+}
+function proSheetHtml() {
+  var inc = '<div class="pro-inc">' +
+    '<div class="pro-inc-row"><div class="pro-inc-t">SWOT Deep Dive</div><p class="fineprint">A full written SWOT for any stock — strengths, weaknesses, opportunities and threats, from the live numbers, headlines and 10-K risks.</p></div>' +
+    '<div class="pro-inc-row"><div class="pro-inc-t">Call summaries</div><p class="fineprint">The key points from the latest earnings call — what happened, the guidance, and what to watch — without reading the whole transcript.</p></div></div>';
+  if (srPro()) {
+    return inc + '<div class="alert ok">Pro is active on your account.</div>';
+  }
+  var uid = (typeof window.srSyncUserId === 'function') ? window.srSyncUserId() : null;
+  if (uid) {
+    return inc + '<p class="fineprint">Pro is rolling out to beta accounts now. If your account has been granted access it switches on by itself — no code, no checkout yet.</p>' +
+      '<button type="button" class="btn-gold" id="pro-check-btn">Check again</button>';
+  }
+  return inc + '<p class="fineprint">Pro follows your account, not this device — sign in to use it.</p>' +
+    '<button type="button" class="btn-gold" id="pro-signin">Sign in</button>';
+}
 var MOAT_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/moat';
 var TAM_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/tam';
 var COMP_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/comp';
@@ -3828,15 +3883,6 @@ var SCAN_SHARED_URL = 'https://stock-research-relay.supplessayings-6e6.workers.d
 var AI_SWOT_CACHE_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/swot-cache';
 var AI_SWOT_KEY = 'sr_aiswot_v1';
 
-function getAiSwot(ticker) {
-  var all = lsGet(AI_SWOT_KEY, {});
-  return all[ticker] || null;
-}
-function saveAiSwot(ticker, entry) {
-  var all = lsGet(AI_SWOT_KEY, {});
-  all[ticker] = entry;
-  lsSet(AI_SWOT_KEY, all);
-}
 function aiMetricsText(d) {
   var sc = scoreStock(d, STD_W);
   var parts = [];
@@ -3875,152 +3921,82 @@ function aiMetricsText(d) {
   }
   return parts.join('; ') + '.';
 }
-function aiSwotGridHtml(entry) {
-  return '<div class="swot-grid">' +
-    swotBox('S', 'Strengths', entry.swot.S, 'sw-s') + swotBox('W', 'Weaknesses', entry.swot.W, 'sw-w') +
-    swotBox('O', 'Opportunities', entry.swot.O, 'sw-o') + swotBox('T', 'Threats', entry.swot.T, 'sw-t') + '</div>' +
-    '<div style="margin-top:8px"><button class="btn-ghost" id="ai-swot-btn" type="button">' + ico(ICO_REGEN) + 'Regenerate</button></div>';
-}
-function bindAiSwotBtn(d, refresh) {
-  var b = $('ai-swot-btn');
-  if (b) b.addEventListener('click', function () { runAiSwot(d, refresh === true); });
-}
-/* Regenerations are signed-in only (Justin's call, 2026-11-15):
- * the popup explains why -- a regeneration is saved to the user's
- * account -- and offers the way in. First-time SWOTs still work
- * signed out. */
 function showSigninSheet() {
   var sh = $('signin-sheet');
   if (sh) sh.hidden = false;
 }
-async function runAiSwot(d, refresh) {
-  var zone = $('ai-swot-zone');
-  if (!zone) return;
-  if (refresh === true) {
-    var suid0 = (typeof window.srSyncUserId === 'function') ? window.srSyncUserId() : null;
-    if (!suid0) { showSigninSheet(); return; }
-  }
-  var prevHtml = zone.innerHTML;
-  zone.innerHTML = sklSwotHtml();
+function swotPayload(d) {
+  var payload = {
+    ticker: d.ticker,
+    name: d.companyName || d.ticker,
+    sector: d.sector || '',
+    industry: d.industry || '',
+    metrics: aiMetricsText(d)
+  };
+  var suid = (typeof window.srSyncUserId === 'function') ? window.srSyncUserId() : null;
+  if (suid) payload.uid = 'u:' + suid;
+  return payload;
+}
+async function swotFetch(d) {
+  var ctrl = ('AbortController' in window) ? new AbortController() : null;
+  var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 90000) : null;
   try {
-    var ctrl = ('AbortController' in window) ? new AbortController() : null;
-    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 90000) : null;
-    var payload = {
-      ticker: d.ticker,
-      name: d.companyName || d.ticker,
-      sector: d.sector || '',
-      industry: d.industry || '',
-      metrics: aiMetricsText(d)
-    };
-    /* Regenerate is a deliberate fresh take: it carries the refresh
-     * flag so the Worker skips its shared-cache answer (and counts
-     * against the generation throttle). Plain Generate sends no flag
-     * and gets the cached answer instantly when one is fresh. A
-     * regenerate also carries the account id (or the device id when
-     * signed out): regenerations are budgeted per account per day,
-     * and the result is saved to that account (see below). */
-    if (refresh === true) {
-      payload.refresh = true;
-      var suid = (typeof window.srSyncUserId === 'function') ? window.srSyncUserId() : null;
-      if (suid) payload.uid = 'u:' + suid;
-    }
     var resp = await fetch(AI_SWOT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(swotPayload(d)),
       signal: ctrl ? ctrl.signal : undefined
     });
     if (timer) clearTimeout(timer);
-    var data = await resp.json();
-    if (data && data.error === 'signin_required') {
-      /* Defensive twin of the pre-flight gate above: if the Worker
-       * refuses an anonymous regeneration (app/Worker version skew),
-       * restore the SWOT that was showing and explain via the popup. */
-      var zs = $('ai-swot-zone');
-      if (zs) { zs.innerHTML = prevHtml; bindAiSwotBtn(d, refresh === true); }
-      showSigninSheet();
-      return;
-    }
-    if (resp.status === 429 || (data && (data.error === 'rate_limited' || data.error === 'daily_cap' || data.error === 'regen_limit'))) {
-      /* Throttled or a cap is hit: keep whatever SWOT was on screen
-       * and put the plain reason above it. */
-      var msg = (data && data.error === 'regen_limit')
-        ? 'You\'ve used today\'s regenerations (10 a day per account) — the SWOT above is yours and stays saved to your account. The budget resets tomorrow.'
-        : (data && data.error === 'daily_cap')
-        ? 'Today\'s AI limit is reached — the shared analysis above is today\'s; try again tomorrow.'
-        : 'Lots of people are generating right now — try again in a minute.';
-      var z9 = $('ai-swot-zone');
-      if (z9) {
-        if (prevHtml && prevHtml.indexOf('ai-swot-btn') >= 0) {
-          z9.innerHTML = '<div class="alert warn" style="margin-bottom:8px">' + esc(msg) + '</div>' + prevHtml;
-          bindAiSwotBtn(d, refresh === true);
-        } else {
-          z9.innerHTML = '<div class="alert warn">' + esc(msg) + ' <button class="btn-ghost" id="ai-swot-btn" type="button">Try again</button></div>';
-          bindAiSwotBtn(d, refresh === true);
-        }
-      }
-      return;
-    }
-    if (!resp.ok || !data.swot) throw new Error((data && data.error) || ('HTTP ' + resp.status));
-    var entry = { asOf: data.asOf || '', swot: data.swot, tenk: data.tenk || null };
-    saveAiSwot(d.ticker, entry);
-    /* A generated SWOT belongs to this user's account: push it to
-     * the cloud copy NOW, in the same tap, instead of leaving it to
-     * the 2s debounce -- if the app is closed first, a debounced
-     * push can die with it and the regeneration never reaches the
-     * account. No-op when signed out (it still stays on-device). */
-    if (typeof window.srSyncFlushKey === 'function') window.srSyncFlushKey(AI_SWOT_KEY);
-    var z2 = $('ai-swot-zone');
-    if (z2) { z2.innerHTML = aiSwotGridHtml(entry); bindAiSwotBtn(d, true); }
+    return await resp.json();
   } catch (e) {
-    var z3 = $('ai-swot-zone');
-    if (z3) {
-      z3.innerHTML = '<div class="alert warn">The AI SWOT didn\'t come back (' + esc(e.message || 'network error') + '). <button class="btn-ghost" id="ai-swot-btn" type="button">Try again</button></div>';
-      bindAiSwotBtn(d, refresh === true);
-    }
+    if (timer) clearTimeout(timer);
+    return null;
   }
 }
-
-function aiSwotSharedHtml(swot, generatedAt) {
-  var day = generatedAt ? String(generatedAt).slice(0, 10) : '';
-  return '<p class="fineprint">Shared analysis' + (day ? ' · generated ' + esc(day) : '') +
-    ' — written by AI, the same for everyone viewing this ticker today. Generate your own for a fresh take on the latest numbers.</p>' +
-    '<div class="swot-grid">' +
-    swotBox('S', 'Strengths', swot.S, 'sw-s') + swotBox('W', 'Weaknesses', swot.W, 'sw-w') +
-    swotBox('O', 'Opportunities', swot.O, 'sw-o') + swotBox('T', 'Threats', swot.T, 'sw-t') + '</div>' +
-    '<div style="margin-top:8px"><button class="btn-ghost" id="ai-swot-btn" type="button">' + ico(ICO_SPARK) + 'Generate my own</button></div>';
+function deepSwotGridHtml(data) {
+  var sw = data.swot;
+  var day = data.generatedAt ? String(data.generatedAt).slice(0, 10) : (data.asOf || '');
+  return '<div class="swot-grid">' +
+    swotBox('S', 'Strengths', sw.S, 'sw-s') + swotBox('W', 'Weaknesses', sw.W, 'sw-w') +
+    swotBox('O', 'Opportunities', sw.O, 'sw-o') + swotBox('T', 'Threats', sw.T, 'sw-t') + '</div>' +
+    '<p class="fineprint">Written from the live numbers on this page, recent headlines and the company\'s 10-K risks' +
+    (day ? ' \u00b7 ' + esc(day) : '') + '. One analysis per stock, the same for everyone.</p>';
 }
-
-/* Shared-cache display: the Worker keeps the first AI SWOT generated
- * for each ticker each day, so if anyone already had one written, show
- * it here at zero extra AI cost. Display-only — a shared hit is never
- * written into sr_aiswot_v1, and a personal saved SWOT always wins (in
- * that case the cache isn't even fetched). Any miss or error leaves
- * today's empty state untouched, silently. */
-async function maybeShowSharedSwot(d) {
-  try {
-    if (!d || !d.ticker) return;
-    if (getAiSwot(d.ticker)) return;
-    var zoneAtStart = $('ai-swot-zone');
-    if (!zoneAtStart) return;
-    var ctrl = ('AbortController' in window) ? new AbortController() : null;
-    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 6000) : null;
-    var resp = await fetch(AI_SWOT_CACHE_URL + '?ticker=' + encodeURIComponent(d.ticker), {
-      signal: ctrl ? ctrl.signal : undefined
-    });
-    if (timer) clearTimeout(timer);
-    if (!resp || !resp.ok) return;
-    var data = await resp.json();
-    if (!data || !data.hit || !data.text) return;
-    var sw = data.text;
-    if (!sw.S || !sw.W || !sw.O || !sw.T) return;
-    var zone = $('ai-swot-zone');
-    if (!zone || zone !== zoneAtStart) return; /* card re-rendered meanwhile */
-    if (getAiSwot(d.ticker)) return;           /* a personal one landed meanwhile */
-    if (!zone.querySelector('#ai-swot-btn')) return; /* user already started generating */
-    zone.innerHTML = aiSwotSharedHtml(sw, data.generatedAt);
-    bindAiSwotBtn(d);
-  } catch (e) { /* silent: the empty state stays */ }
+function deepSwotLockHtml() {
+  return proLockHtml('SWOT Deep Dive', 'A full written SWOT for this stock — strengths, weaknesses, opportunities and threats, from the live numbers, headlines and 10-K risks.');
+}
+/* The Deep Dive zone: Pro accounts get the written SWOT; everyone
+ * else gets the lock. A first view by ANYONE asks the Worker for it,
+ * which is what gets it written (the Worker caps the daily spend);
+ * when the budget is spent it simply is not written, and Pro members
+ * see a plain not-available line instead of an error. */
+async function loadDeepSwot(d) {
+  var zone = $('ai-swot-zone');
+  if (!zone) return;
+  var cached = lsGet(PRO_KEY, null);
+  if (!cached) { await refreshProStatus(); }
+  else if (Date.now() - (cached.ts || 0) > 6 * 3600 * 1000) { refreshProStatus(); }
+  zone = $('ai-swot-zone');
+  if (!zone) return;
+  if (!srPro()) {
+    zone.innerHTML = deepSwotLockHtml();
+    bindProLock(zone);
+    swotFetch(d); /* fire-and-forget: gets the shared copy written */
+    return;
+  }
+  zone.innerHTML = sklSwotHtml();
+  var data = await swotFetch(d);
+  var z = $('ai-swot-zone');
+  if (!z) return;
+  if (data && data.swot) { z.innerHTML = deepSwotGridHtml(data); return; }
+  if (data && data.locked) {
+    lsSet(PRO_KEY, { pro: false, ts: Date.now() });
+    z.innerHTML = deepSwotLockHtml();
+    bindProLock(z);
+    return;
+  }
+  z.innerHTML = '<p class="fineprint">The Deep Dive is not available for this one right now — try again later.</p>';
 }
 
 /* Analyst target used across the card: Nasdaq's 1-yr target when it
@@ -4441,15 +4417,9 @@ function renderScorecard(d) {
     html += '<p class="fineprint">Not enough EPS data came back to run the cliff check for this ticker.</p>';
   }
 
-  var aiSaved = getAiSwot(d.ticker);
-  html += '<div class="section-h">Classic SWOT — <span class="gold-text">AI</span></div><div id="ai-swot-zone">';
-  if (aiSaved && aiSaved.swot) {
-    html += aiSwotGridHtml(aiSaved);
-  } else {
-    html += '<p class="fineprint">Written on demand by AI from the live numbers here, recent headlines and 10-K risks.</p>' +
-      '<button class="btn-ghost" id="ai-swot-btn" type="button">' + ico(ICO_SPARK) + 'Generate AI SWOT</button>';
-  }
-  html += '</div>';
+  var proCached = lsGet(PRO_KEY, null);
+  html += '<div class="section-h">SWOT — <span class="gold-text">Deep Dive</span></div><div id="ai-swot-zone">' +
+    ((proCached && !proCached.pro) ? deepSwotLockHtml() : sklSwotHtml()) + '</div>';
 
   var swot = buildSwot(d);
   html += '<div class="section-h">SWOT — <span class="gold-text">from the numbers</span></div>';
@@ -4491,11 +4461,7 @@ function renderScorecard(d) {
   loadTxSection(d);
   loadSimilarStocks(d);
 
-  /* The zone's button is "Regenerate" when a saved SWOT is showing
-   * (a deliberate fresh take -> refresh flag) and "Generate" when it
-   * isn't (cache-first is fine there). */
-  bindAiSwotBtn(d, !!(aiSaved && aiSaved.swot));
-  maybeShowSharedSwot(d);
+  loadDeepSwot(d);
   document.querySelectorAll('[data-stoggle]').forEach(function (b) {
     b.addEventListener('click', function () {
       var body = document.querySelector('[data-sbody="' + b.getAttribute('data-stoggle') + '"]');
@@ -7261,6 +7227,12 @@ function ensureQmWiring() {
   var txOvEl = $('tx-overlay');
   if (txOvEl) txOvEl.addEventListener('click', function (e) {
     if (e.target === txOvEl) closeTx();
+  });
+  var proCloseEl = $('pro-close');
+  if (proCloseEl) proCloseEl.addEventListener('click', closeProSheet);
+  var proOvEl = $('pro-overlay');
+  if (proOvEl) proOvEl.addEventListener('click', function (e) {
+    if (e.target === proOvEl) closeProSheet();
   });
 }
 
@@ -10776,12 +10748,13 @@ async function loadTxSection(d) {
 function openTx(d, payload) {
   var ov = $('tx-overlay'), body = $('tx-body');
   if (!ov || !body || !payload || !payload.data) return;
-  var html = '<div class="hld-title">Earnings call transcript</div><div class="hld-sub">' + esc(d.name || d.ticker) + ' \u00b7 ' + esc(txQuarterLabel(payload.quarter)) + '</div>';
+  var html = '<div class="hld-title">Earnings call transcript</div><div class="hld-sub">' + esc(d.name || d.ticker) + ' \u00b7 ' + esc(txQuarterLabel(payload.quarter)) + '</div><div id="tx-sum-zone"></div>';
   payload.data.transcript.forEach(function (t) {
     html += '<div class="tx-turn"><div class="tx-spk">' + esc(t.speaker || 'Speaker') + '</div><p>' + esc(t.content || '') + '</p></div>';
   });
   html += '<p class="fineprint">Transcript via Alpha Vantage. Machine-generated, so names and figures can contain errors.</p>';
   body.innerHTML = html;
+  loadTxSummary(d.ticker, payload.quarter);
   ov.hidden = false;
   setMainLock('tx', true);
   var sheet = $('tx-sheet');
@@ -10791,6 +10764,56 @@ function closeTx() {
   var ov = $('tx-overlay');
   if (ov) ov.hidden = true;
   setMainLock('tx', false);
+}
+function txSumLockHtml() {
+  return '<div class="tx-sum-lock"><span class="pro-pill">PRO</span><span class="tx-sum-lock-t">Call summary</span>' +
+    '<button type="button" class="btn-ghost pro-unlock">Unlock with Pro</button></div>';
+}
+function txSumHtml(s) {
+  var sec = function (title, arr) {
+    if (!arr || !arr.length) return '';
+    return '<div class="tx-sum-sec">' + esc(title) + '</div><ul class="tx-sum-list">' +
+      arr.map(function (b) { return '<li>' + esc(b) + '</li>'; }).join('') + '</ul>';
+  };
+  return '<div class="tx-sum"><div class="tx-sum-h">Call summary</div>' +
+    '<p class="tx-sum-head">' + esc(s.headline) + '</p>' +
+    sec('What happened', s.results) + sec('Guidance & outlook', s.guidance) + sec('Watch-outs', s.watch) + '</div>';
+}
+/* The summary block at the top of the transcript reader. Pro
+ * accounts get the written summary (the first Pro open of a call
+ * gets it written; after that it is served from the Worker's
+ * cache). Everyone else gets the lock row, and free opens never
+ * trigger a generation. When no summary can be had, the block
+ * quietly removes itself and the transcript stands alone. */
+async function loadTxSummary(T, Q) {
+  var zone = $('tx-sum-zone');
+  if (!zone) return;
+  var cached = lsGet(PRO_KEY, null);
+  if (!cached) { await refreshProStatus(); zone = $('tx-sum-zone'); if (!zone) return; }
+  if (!srPro()) {
+    zone.innerHTML = txSumLockHtml();
+    bindProLock(zone);
+    return;
+  }
+  zone.innerHTML = sklLinesHtml(3);
+  try {
+    var uid = (typeof window.srSyncUserId === 'function') ? window.srSyncUserId() : null;
+    var r = await fetch(TXSUM_URL + '?t=' + encodeURIComponent(T) + (Q ? '&q=' + encodeURIComponent(Q) : '') + (uid ? '&u=' + encodeURIComponent(uid) : ''));
+    var j = await r.json();
+    var z = $('tx-sum-zone');
+    if (!z) return;
+    if (j && j.ok && j.summary) { z.innerHTML = txSumHtml(j.summary); return; }
+    if (j && j.locked) {
+      lsSet(PRO_KEY, { pro: false, ts: Date.now() });
+      z.innerHTML = txSumLockHtml();
+      bindProLock(z);
+      return;
+    }
+    z.innerHTML = '';
+  } catch (e) {
+    var z2 = $('tx-sum-zone');
+    if (z2) z2.innerHTML = '';
+  }
 }
 
 function pfView() { return localStorage.getItem('sr_pfview_v1') === 'news' ? 'news' : 'overview'; }
@@ -11570,10 +11593,10 @@ function importBackupText(text) {
   var pj = obj && obj.projections && typeof obj.projections === 'object' && !Array.isArray(obj.projections) ? obj.projections : null;
   if (!wl && !j && !ai && !pf && !pj) {
     status.className = 'status err';
-    status.textContent = 'That file has no watchlist, portfolio, journal or AI SWOTs in it — not a Stock Research backup.';
+    status.textContent = 'That file has no watchlist, portfolio, journal or saved SWOTs in it — not a Stock Research backup.';
     return;
   }
-  if (!window.confirm('Replace your current watchlist, portfolio, journal and saved AI SWOTs with this backup?')) return;
+  if (!window.confirm('Replace your current watchlist, portfolio, journal and saved SWOTs with this backup?')) return;
   if (wl) setWatchlist(wl);
   if (pj) setProjections(pj);
   if (pf) setPortfolio(pf);
@@ -11585,7 +11608,7 @@ function importBackupText(text) {
   renderPjSaved();
   if (lastStock) renderScorecard(lastStock);
   status.className = 'status';
-  status.textContent = 'Backup restored: ' + (wl ? wl.length : 0) + ' watchlist item(s), ' + (pf ? pf.length : 0) + ' portfolio holding(s), ' + (j ? Object.keys(j).length : 0) + ' journal entr(ies)' + (ai ? ', ' + Object.keys(ai).length + ' AI SWOT(s)' : '') + '.';
+  status.textContent = 'Backup restored: ' + (wl ? wl.length : 0) + ' watchlist item(s), ' + (pf ? pf.length : 0) + ' portfolio holding(s), ' + (j ? Object.keys(j).length : 0) + ' journal entr(ies)' + (ai ? ', ' + Object.keys(ai).length + ' saved SWOT(s)' : '') + '.';
 }
 
 /* ============================== theme & settings ============================== */
@@ -12555,9 +12578,9 @@ function initApp() {
     b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); });
   });
   $('nav-back').addEventListener('click', navBack);
-  /* Sign-in popup (SWOT regenerations): backdrop or "Not now"
-   * dismisses; "Sign in" lands on the Profile tab with the settings
-   * menu open, where the sign-in form lives. */
+  /* Sign-in popup (offered from the Pro sheet): backdrop or
+   * "Not now" dismisses; "Sign in" lands on the Settings page,
+   * where the sign-in form lives. */
   var signinSheet = $('signin-sheet');
   if (signinSheet) {
     signinSheet.addEventListener('click', function (e) { if (e.target === signinSheet) signinSheet.hidden = true; });
@@ -13088,22 +13111,6 @@ function initApp() {
     });
   });
   renderWeightsPanel();
-  $('set-clear-ai').addEventListener('click', function () {
-    var savedSwots = null;
-    try { savedSwots = localStorage.getItem(AI_SWOT_KEY); } catch (e) {}
-    try { localStorage.removeItem(AI_SWOT_KEY); } catch (e) {}
-    $('settings-note').textContent = 'Saved AI SWOTs cleared — regenerate any of them from a scorecard.';
-    if (lastStock) renderScorecard(lastStock);
-    showUndoToast('Saved AI SWOTs cleared.', function () {
-      try {
-        if (savedSwots === null) localStorage.removeItem(AI_SWOT_KEY);
-        else localStorage.setItem(AI_SWOT_KEY, savedSwots);
-      } catch (e) {}
-      if (window.srSyncFlushKey) window.srSyncFlushKey(AI_SWOT_KEY);
-      if (lastStock) renderScorecard(lastStock);
-      $('settings-note').textContent = 'Saved AI SWOTs restored.';
-    });
-  });
   $('set-clear-cache').addEventListener('click', function () {
     var savedCache = null;
     try { savedCache = localStorage.getItem(CACHE_KEY); } catch (e) {}
@@ -13501,13 +13508,12 @@ if (typeof document !== 'undefined' && document.getElementById) {
     }, 2000);
   }
 
-  /* Hooks for the rest of the app (added 2026-11-15 for AI SWOT
-   * regenerations): the signed-in user's id, so a regeneration can
-   * be counted against their account; and an immediate flush, so a
-   * regenerated SWOT reaches the account in the same tap instead of
-   * waiting out the 2s debounce (or dying with the app if it is
-   * closed first). Both are safe no-ops when signed out or when the
-   * sync module is not configured. */
+  /* Hooks for the rest of the app (added 2026-11-15): the signed-in
+   * user's id (Pro checks and beta claims key off it) and an
+   * immediate flush, so a sync write reaches the account in the
+   * same tap instead of waiting out the 2s debounce (or dying with
+   * the app if it is closed first). Both are safe no-ops when
+   * signed out or when the sync module is not configured. */
   window.srSyncUserId = function () { return currentUser ? currentUser.id : null; };
   /* The current session's access token (added 2026-11-18): the beta
    * claim sends it so the Worker can verify the account is real
@@ -13622,6 +13628,7 @@ if (typeof document !== 'undefined' && document.getElementById) {
      * member's first sign-in claims their spot, and later sign-ins
      * simply re-confirm it. Fire-and-forget, as before. */
     try { betaClaim(currentUser.id); } catch (e) {}
+    try { refreshProStatus(); } catch (e) {}
     installWritePatch();
     await reconcile();
   }
@@ -13717,6 +13724,7 @@ if (typeof document !== 'undefined' && document.getElementById) {
         client.auth.onAuthStateChange(function (event) {
           if (event === 'SIGNED_OUT') {
             currentUser = null;
+            try { lsSet(PRO_KEY, { pro: false, ts: Date.now() }); } catch (e) {}
             showAuthState();
           }
         });

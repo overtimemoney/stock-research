@@ -785,6 +785,27 @@ body.nav-back-on main { padding-top: calc(env(safe-area-inset-top) + 68px); }
 .qm-sheet-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 #holders-overlay { position: fixed; inset: 0; z-index: 150; background: rgba(0,0,0,.62); overscroll-behavior: contain; }
 #tx-overlay { position: fixed; inset: 0; z-index: 150; background: rgba(0,0,0,.62); overscroll-behavior: contain; }
+/* Pro (2026-11-26): the entitlement sheet sits above every other
+ * sheet (opened from locks inside the transcript reader too), and
+ * the lock + summary blocks live in the scorecard / reader. */
+#pro-overlay { position: fixed; inset: 0; z-index: 260; background: rgba(0,0,0,.62); overscroll-behavior: contain; }
+#pro-sheet { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); left: 10px; background: var(--bg); border: 1.5px solid var(--line); border-radius: 20px; padding: 14px 14px calc(88px + env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; animation: dlg-in .25s var(--ease-drawer); }
+.pro-sheet-kicker { font-size: 17px; font-weight: 900; letter-spacing: .02em; color: var(--accent-text); }
+.pro-pill { background: var(--gold); color: #141414; font-size: 10px; font-weight: 900; letter-spacing: .07em; padding: 3px 7px; border-radius: 999px; flex: none; }
+.pro-lock-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.pro-lock-title { font-weight: 800; font-size: 15px; }
+.pro-lock .btn-ghost { margin-top: 8px; }
+.pro-inc { display: flex; flex-direction: column; gap: 12px; margin: 12px 0 16px; }
+.pro-inc-t { font-weight: 800; font-size: 15px; margin-bottom: 2px; }
+.tx-sum { border: 1.5px solid var(--line); border-radius: 14px; padding: 10px 12px; margin-bottom: 14px; background: var(--elev); }
+.tx-sum-h { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-text); }
+.tx-sum-head { font-size: 16px; font-weight: 800; margin: 4px 0 6px; }
+.tx-sum-sec { font-size: 12.5px; font-weight: 800; margin-top: 9px; }
+.tx-sum-list { margin: 4px 0 0; padding-left: 18px; }
+.tx-sum-list li { margin: 3px 0; line-height: 1.45; }
+.tx-sum-lock { display: flex; align-items: center; gap: 8px; border: 1.5px dashed var(--line); border-radius: 14px; padding: 10px 12px; margin-bottom: 14px; }
+.tx-sum-lock-t { font-weight: 800; font-size: 14.5px; }
+.tx-sum-lock .btn-ghost { margin-left: auto; flex: none; }
 #tx-sheet { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); left: 10px; background: var(--bg); border: 1.5px solid var(--line); border-radius: 20px; padding: 14px 14px calc(88px + env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; animation: dlg-in .25s var(--ease-drawer); }
 .tx-meta { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
 .tx-open { width: 100%; }
