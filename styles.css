@@ -537,7 +537,14 @@ table.factors.scen.micro td, table.factors.scen.micro th { padding: 7px 3px; }
  * just below the arrow's bottom edge. Applies on every tab at once,
  * and lifts the moment the arrow goes away, so scroll positions
  * captured without the arrow still restore exactly. */
-body.nav-back-on main { padding-top: 56px; }
+/* The back button's bottom edge sits at safe-area + 50px (top
+ * safe-area + 10, height 40), so with the button armed the page
+ * must start below it: at rest the button never covers the top
+ * of the page (Justin's rule, 2026-11-26). Once the page scrolls,
+ * the floating button may overlap content as it passes. The old
+ * flat 56px was less than a modern safe-area + 13, so titles
+ * actually slid UP under the button. */
+body.nav-back-on main { padding-top: calc(env(safe-area-inset-top) + 62px); }
 .gear-btn {
   width: 34px; height: 34px; border-radius: 10px; cursor: pointer; line-height: 1;
   border: 1.5px solid var(--line); background: var(--field); color: var(--ink); font-size: 19px;
