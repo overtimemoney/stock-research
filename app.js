@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261126212609';
+var APP_BUILD = 'stock-research-20261126213209';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -10793,6 +10793,7 @@ async function loadTxSection(d) {
 function openTx(d, payload) {
   var ov = $('tx-overlay'), body = $('tx-body');
   if (!ov || !body || !payload || !payload.data) return;
+  txHl = null;
   var html = '<div class="hld-title">Earnings call transcript</div><div class="hld-sub">' + esc(d.name || d.ticker) + ' \u00b7 ' + esc(txQuarterLabel(payload.quarter)) + '</div><div id="tx-sum-zone"></div>';
   payload.data.transcript.forEach(function (t, i) {
     html += '<div class="tx-turn" data-txturn="' + i + '"><div class="tx-spk">' + esc(t.speaker || 'Speaker') + '</div><p>' + esc(t.content || '') + '</p></div>';
@@ -10820,15 +10821,16 @@ function txSumHtml(s) {
     if (!arr || !arr.length) return '';
     return '<div class="tx-sum-sec">' + esc(title) + '</div><ul class="tx-sum-list">' +
       arr.map(function (b) {
-        /* A bullet with a turn citation renders as its own
-         * link: the text itself, underlined. Tapping scrolls
-         * the transcript to the turn it came from. A citation
-         * past the end of this transcript (or none at all)
-         * renders as plain text -- no direct source, no link. */
+        /* A bullet with a verified sentence citation renders
+         * as its own link: the text itself, underlined. Tapping
+         * highlights the exact sentence it came from in the
+         * transcript below. A bullet without a quote (its point
+         * has no single home sentence) renders as plain text --
+         * sentence-level or no link at all. */
         if (b && typeof b === 'object' && b.t) {
           var n = parseInt(b.turn, 10);
-          if (isNum(n) && n >= 1 && n <= turnCount) {
-            return '<li><button type="button" class="tx-sum-link" data-txturn="' + (n - 1) + '">' + esc(b.t) + '</button></li>';
+          if (isNum(n) && n >= 1 && n <= turnCount && b.q) {
+            return '<li><button type="button" class="tx-sum-link" data-txturn="' + (n - 1) + '" data-txq="' + esc(b.q) + '">' + esc(b.t) + '</button></li>';
           }
           return '<li>' + esc(b.t) + '</li>';
         }
@@ -10876,21 +10878,75 @@ async function loadTxSummary(T, Q) {
   }
 }
 
+/* The live sentence highlight: the cited sentence inside one
+ * transcript turn, wrapped in .tx-hl. It STAYS until the user
+ * taps off it (Justin's rule, 2026-11-26) -- no fade timer. */
+var txHl = null;
+function txClearHl() {
+  if (!txHl) return;
+  try { txHl.p.textContent = txHl.text; } catch (e) {}
+  txHl = null;
+}
+function txFindQuote(text, quote) {
+  var i = text.indexOf(quote);
+  if (i >= 0) return [i, quote.length];
+  i = text.toLowerCase().indexOf(String(quote).toLowerCase());
+  if (i >= 0) return [i, quote.length];
+  try {
+    var words = String(quote).trim().split(/\s+/).map(function (wd) { return wd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
+    var m = new RegExp(words.join('\\s+'), 'i').exec(text);
+    if (m) return [m.index, m[0].length];
+  } catch (e) {}
+  return null;
+}
+function txSentenceRange(text, start, end) {
+  var s = 0, re = /[.!?]+["')\]]?\s+/g, m;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index + m[0].length <= start) s = m.index + m[0].length;
+    else break;
+  }
+  var e = text.length;
+  var re2 = /[.!?]+["')\]]?(?=\s|$)/g;
+  re2.lastIndex = Math.max(0, end - 1);
+  var m2 = re2.exec(text);
+  if (m2) e = m2.index + m2[0].length;
+  return [s, e];
+}
+function txHighlight(turnIdx, quote) {
+  var el = document.querySelector('#tx-body .tx-turn[data-txturn="' + turnIdx + '"]');
+  if (!el) return;
+  var p = el.querySelector('p');
+  if (!p) return;
+  txClearHl();
+  var text = p.textContent;
+  var at = txFindQuote(text, quote);
+  if (!at) { try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {} return; }
+  var r = txSentenceRange(text, at[0], at[0] + at[1]);
+  p.innerHTML = esc(text.slice(0, r[0])) + '<span class="tx-hl">' + esc(text.slice(r[0], r[1])) + '</span>' + esc(text.slice(r[1]));
+  txHl = { p: p, text: text };
+  var span = p.querySelector('.tx-hl');
+  if (span) { try { span.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { span.scrollIntoView(); } }
+}
 function wireTxSumLinks(zone) {
   if (!zone) return;
   zone.querySelectorAll('.tx-sum-link').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      var idx = parseInt(btn.getAttribute('data-txturn'), 10);
-      var el = document.querySelector('#tx-body .tx-turn[data-txturn="' + idx + '"]');
-      if (!el) return;
-      try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { el.scrollIntoView(); }
-      el.classList.remove('tx-flash');
-      void el.offsetWidth;
-      el.classList.add('tx-flash');
-      setTimeout(function () { el.classList.remove('tx-flash'); }, 2000);
+      txHighlight(parseInt(btn.getAttribute('data-txturn'), 10), btn.getAttribute('data-txq') || '');
     });
   });
 }
+/* Tapping anywhere that is not the highlighted sentence (and
+ * not another summary link, which re-targets instead) clears
+ * the highlight. Capture phase, registered once. */
+try {
+  document.addEventListener('pointerdown', function (e) {
+    if (!txHl) return;
+    try {
+      if (e.target && e.target.closest && (e.target.closest('.tx-hl') || e.target.closest('.tx-sum-link'))) return;
+    } catch (err) {}
+    txClearHl();
+  }, true);
+} catch (e) {}
 
 function pfView() { return localStorage.getItem('sr_pfview_v1') === 'news' ? 'news' : 'overview'; }
 function pfSetView(v) {
