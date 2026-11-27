@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261127160551';
+var APP_BUILD = 'stock-research-20261127192343';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -4405,7 +4405,7 @@ function renderScorecard(d) {
     '<button class="sc-act" id="sc-charts" type="button"><span>Charts</span><span class="sc-act-arrow">›</span></button>' +
     '<button class="sc-act" id="sc-holders" type="button"><span>Holders</span><span class="sc-act-arrow">›</span></button>' +
     '<button class="sc-act" id="sc-refresh" type="button"><span>Refresh data</span><span class="sc-act-arrow">›</span></button>' +
-    '<a class="sc-act sc-ext" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=' + esc(d.ticker) + '&type=&dateb=&owner=include&count=10" target="_blank" rel="noopener"><span>SEC filings</span><span class="sc-act-arrow">↗</span></a>' +
+    '<button class="sc-act" id="sc-sec" type="button"><span>SEC filings</span><span class="sc-act-arrow">›</span></button>' +
     /* The YouTube Earnings call row lived only on the watchlist
      * overview; when watchlist taps moved to the Research tab
      * (2026-11-26) the overview became unreachable and the row
@@ -4518,6 +4518,7 @@ function renderScorecard(d) {
   });
   $('sc-refresh').addEventListener('click', function () { runSearch(d.ticker, true); });
   $('sc-holders').addEventListener('click', function () { openHolders(d); });
+  $('sc-sec').addEventListener('click', function () { openStatements(d); });
 }
 
 /* Holders screen (Justin's ask, 2026-11-21): the "Holders" action
@@ -4606,6 +4607,122 @@ function closeHolders() {
   var ov = $('holders-overlay');
   if (ov) ov.hidden = true;
   setMainLock('holders', false);
+}
+
+/* Financial statements (Justin's ask, 2026-11-27): the SEC filings
+ * action row opens a sheet with the three statements -- Income,
+ * Balance sheet, Cash flow -- rendered as tables from the same
+ * StockAnalysis pages Charts reads (they compile the company's
+ * SEC filings), with a Yearly/Quarterly switch and the old
+ * SEC.gov filings list kept as a link at the bottom. */
+var STMT_DEFS = {
+  inc: { label: 'Income', path: 'income-statement/' },
+  bs: { label: 'Balance sheet', path: 'balance-sheet/' },
+  cf: { label: 'Cash flow', path: 'cash-flow-statement/' }
+};
+var STMT_KEY = 'sr_stmt_v1';
+var stmtState = { T: null, name: '', kind: 'inc', freq: 'y' };
+function stmtCleanLabel(l) {
+  l = String(l || '').replace(/\s+/g, ' ').trim();
+  if (/ \(YoY\)$/.test(l)) l = l.slice(0, -6);
+  if (!/ Growth$/.test(l)) return l;
+  var base = l.slice(0, -7);
+  var m = base.match(/^(.+?) \1$/);
+  if (m) return m[1];
+  if (/ EPS$/.test(base)) return base.slice(0, -4);
+  return base;
+}
+function parseSAStatement(html, yearly) {
+  if (!html) return null;
+  var head = yearly ? 'Fiscal Year' : 'Fiscal Quarter';
+  var chunks = String(html).match(/<table\b[^>]*>[\s\S]*?<\/table>/g) || [];
+  var mainChunks = chunks.filter(function (c) {
+    var tag = c.slice(0, c.indexOf('>') + 1);
+    return tag.indexOf('financials-table') !== -1 && tag.indexOf('main-table-') !== -1 && tag.indexOf('main-table-additional-metrics') === -1;
+  });
+  var tables = saTables(mainChunks.length ? mainChunks.join('\n') : html);
+  var periods = null, rows = [], seen = {};
+  tables.forEach(function (t) {
+    if (!t.length || t[0][0] !== head) return;
+    if (!mainChunks.length && periods) return; /* older markup: the first table is the statement */
+    if (!periods) periods = t[0].slice(1, 13);
+    t.slice(1).forEach(function (r) {
+      if (!r[0]) return;
+      var vals = r.slice(1, 1 + periods.length);
+      if (/Growth/.test(r[0]) && vals.every(function (v) { return v === '' || v === '-' || /^-?[\d.,]+%$/.test(v); })) return;
+      var label = stmtCleanLabel(r[0]);
+      if (label === 'Period Ending') {
+        if (!seen.__pe) { seen.__pe = 1; rows.push({ label: label, vals: vals, dates: true }); }
+        return;
+      }
+      if (seen[label]) return;
+      seen[label] = 1;
+      rows.push({ label: label, vals: vals, total: /^Total\b/.test(label) || label === 'Net Income' || label === 'Gross Profit' || label === 'Operating Income' || label === 'Free Cash Flow' });
+    });
+  });
+  if (!periods || !rows.length) return null;
+  return { periods: periods, rows: rows };
+}
+async function fetchStatement(T, kind, freq) {
+  var key = T + '|' + kind + '|' + freq;
+  var cache = lsGet(STMT_KEY, {});
+  var e = cache[key];
+  if (e && Date.now() - e.at < 86400000 && e.data) return e.data;
+  var url = 'https://stockanalysis.com/stocks/' + encodeURIComponent(T) + '/financials/' + STMT_DEFS[kind].path + (freq === 'q' ? '?p=quarterly' : '');
+  var needle = freq === 'q' ? 'Fiscal Quarter' : 'Fiscal Year';
+  var html = await relayFetch(url, { timeout: 25000, validate: function (t) { return t.indexOf(needle) !== -1; } }).catch(function () { return null; });
+  var data = parseSAStatement(html, freq !== 'q');
+  if (data) { cache[key] = { at: Date.now(), data: data }; lsSet(STMT_KEY, cache); }
+  return data;
+}
+function stmtTableHtml(data) {
+  var h = '<div class="stmt-scroll"><table class="stmt-table"><thead><tr><th></th>';
+  data.periods.forEach(function (p) { h += '<th>' + esc(p) + '</th>'; });
+  h += '</tr></thead><tbody>';
+  data.rows.forEach(function (r) {
+    h += '<tr' + (r.total ? ' class="stmt-total"' : '') + (r.dates ? ' class="stmt-dates"' : '') + '><td>' + esc(r.label) + '</td>';
+    r.vals.forEach(function (v) { h += '<td>' + esc(v || '-') + '</td>'; });
+    h += '</tr>';
+  });
+  return h + '</tbody></table></div><p class="fineprint">Figures in millions of dollars, except per-share figures. Compiled from the company\'s SEC filings.</p>';
+}
+function renderStatement() {
+  var body = $('stmt-body');
+  if (!body) return;
+  var st = stmtState;
+  var head = '<div class="hld-title">Financial statements</div><div class="hld-sub">' + esc(st.name || st.T) + ' \u00b7 ' + esc(st.T) + '</div>';
+  var seg = '<div class="stmt-seg">' + Object.keys(STMT_DEFS).map(function (k) {
+    return '<button type="button" data-stmtkind="' + k + '"' + (st.kind === k ? ' class="on"' : '') + '>' + STMT_DEFS[k].label + '</button>';
+  }).join('') + '</div>';
+  var per = '<div class="stmt-seg stmt-per">' + [['y', 'Yearly'], ['q', 'Quarterly']].map(function (pf) {
+    return '<button type="button" data-stmtfreq="' + pf[0] + '"' + (st.freq === pf[0] ? ' class="on"' : '') + '>' + pf[1] + '</button>';
+  }).join('') + '</div>';
+  var ext = '<p class="stmt-ext"><a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=' + encodeURIComponent(st.T) + '&type=&dateb=&owner=include&count=10" target="_blank" rel="noopener">All filings on SEC.gov \u2197</a></p>';
+  body.innerHTML = head + seg + per + '<div id="stmt-zone"><div class="skl-wrap" aria-hidden="true"><div class="skl skl-strip"></div><div class="skl skl-strip"></div><div class="skl skl-strip"></div><div class="skl skl-strip"></div></div></div>' + ext;
+  body.querySelectorAll('[data-stmtkind]').forEach(function (b) {
+    b.addEventListener('click', function () { stmtState.kind = b.getAttribute('data-stmtkind'); renderStatement(); });
+  });
+  body.querySelectorAll('[data-stmtfreq]').forEach(function (b) {
+    b.addEventListener('click', function () { stmtState.freq = b.getAttribute('data-stmtfreq'); renderStatement(); });
+  });
+  var zone = $('stmt-zone');
+  fetchStatement(st.T, st.kind, st.freq).then(function (data) {
+    if (!zone || !document.body.contains(zone)) return;
+    zone.innerHTML = data ? stmtTableHtml(data) : '<div class="status">No data found</div>';
+  });
+}
+function openStatements(d) {
+  var ov = $('stmt-overlay');
+  if (!ov) return;
+  stmtState = { T: d.ticker, name: d.name || '', kind: 'inc', freq: 'y' };
+  ov.hidden = false;
+  setMainLock('stmt', true);
+  renderStatement();
+}
+function closeStatements() {
+  var ov = $('stmt-overlay');
+  if (ov) ov.hidden = true;
+  setMainLock('stmt', false);
 }
 
 /* Skeleton loaders (2026-11-19): content-shaped shimmer blocks shown
@@ -7241,6 +7358,14 @@ function ensureQmWiring() {
   var txOvEl = $('tx-overlay');
   if (txOvEl) txOvEl.addEventListener('click', function (e) {
     if (e.target === txOvEl) closeTx();
+  });
+  var stBackEl = $('stmt-back');
+  if (stBackEl) stBackEl.addEventListener('click', closeStatements);
+  var stCloseEl = $('stmt-close');
+  if (stCloseEl) stCloseEl.addEventListener('click', closeStatements);
+  var stOvEl = $('stmt-overlay');
+  if (stOvEl) stOvEl.addEventListener('click', function (e) {
+    if (e.target === stOvEl) closeStatements();
   });
   var proCloseEl = $('pro-close');
   if (proCloseEl) proCloseEl.addEventListener('click', closeProSheet);
