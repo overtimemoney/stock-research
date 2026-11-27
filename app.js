@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261127042243';
+var APP_BUILD = 'stock-research-20261127042545';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -7983,7 +7983,17 @@ var WLPROJ_KEY = 'sr_wlproj_v4';
  * healed (2026-11-26, third report). */
 function wlProjNeedsCompute(T) {
   var ent = wlProjEntry(T);
-  if (ent) return !!(ent.p && Date.now() - (ent.at || 0) > 3600000);
+  if (ent) {
+    /* Entries written before the quality stamp existed carry
+     * no at/p at all -- and they are exactly the values that
+     * can be silently degraded: AXON's -11.5 survived three
+     * fixes because every check asked about flags the entry
+     * never had. Recompute each unstamped entry once; the
+     * write-back carries the stamp and normal rules apply
+     * from then on. */
+    if (!ent.at) return true;
+    return !!(ent.p && Date.now() - ent.at > 3600000);
+  }
   /* No entry for today: a stale placeholder normally means
    * compute now -- unless the last attempt just failed degraded
    * (flagged, under an hour old), in which case wait it out
