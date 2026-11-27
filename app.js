@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261127042027';
+var APP_BUILD = 'stock-research-20261127042243';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -5018,7 +5018,7 @@ function renderPjSaved() {
 function pjBaseEps() { var v = parseFloat($('pj-eps').value); return isNum(v) ? v : null; }
 function pjYearsWanted() {
   var y = parseInt($('pj-years').value, 10);
-  return isNum(y) ? Math.max(1, Math.min(10, y)) : 3;
+  return isNum(y) ? Math.max(1, Math.min(10, y)) : 4;
 }
 function pjFlatGrowth() {
   var g = parseFloat($('pj-growth').value);
