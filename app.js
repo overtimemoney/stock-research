@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261127035613';
+var APP_BUILD = 'stock-research-20261127040127';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -7968,6 +7968,24 @@ async function wlFillPass(tickers) {
  * so this is mostly assembly after the first run). A stored null
  * means "no analyst path today" and is not retried until tomorrow. */
 var WLPROJ_KEY = 'sr_wlproj_v4';
+/* Whether T's displayed CAGR still needs an on-device compute:
+ * no entry for today, or a partial entry (computed without the
+ * P/E history) older than an hour. The watchlist render gate
+ * below and fetchWlProjCagr share this test -- when they
+ * disagreed (the gate asked only "is there an entry?"), flagged
+ * entries were never recomputed and the bad numbers never
+ * healed (2026-11-26, third report). */
+function wlProjNeedsCompute(T) {
+  var ent = wlProjEntry(T);
+  if (ent) return !!(ent.p && Date.now() - (ent.at || 0) > 3600000);
+  /* No entry for today: a stale placeholder normally means
+   * compute now -- unless the last attempt just failed degraded
+   * (flagged, under an hour old), in which case wait it out
+   * instead of refetching on every render. */
+  var stale = wlProjStale(T);
+  if (stale && stale.p && Date.now() - (stale.at || 0) <= 3600000) return false;
+  return true;
+}
 function wlProjEntry(T) {
   var m = lsGet(WLPROJ_KEY, {});
   var e = m[T];
@@ -7990,7 +8008,7 @@ async function fetchWlProjCagr(T) {
    * median exits while the full-data math is positive
    * (2026-11-26). Trust a partial for an hour, then recompute
    * on-device, where the history has eight sources racing. */
-  if (ent && !(ent.p && Date.now() - (ent.at || 0) > 3600000)) return ent.cagr;
+  if (ent && !wlProjNeedsCompute(T)) return ent.cagr;
   var cagr = null, loaded = false, thin = true;
   try {
     var d = await fetchStock(T);
@@ -8009,7 +8027,20 @@ async function fetchWlProjCagr(T) {
     if (stale) return stale.cagr;
   }
   var m = lsGet(WLPROJ_KEY, {});
-  m[T] = { day: new Date().toDateString(), cagr: isNum(cagr) ? cagr : null, at: Date.now(), p: thin ? 1 : 0 };
+  var prev = m[T];
+  if (!isNum(cagr) && prev && isNum(prev.cagr)) {
+    /* A hollow compute (the stock loaded without its history or
+     * forecast path -- e.g. served from the quote cache) must
+     * never burn a real number into a null. Keep the number,
+     * flag it partial -- and backdate the stamp so it is retried
+     * in about five minutes, not an hour: a hollow load usually
+     * means the sources were still mid-flight. */
+    m[T] = { day: prev.day, cagr: prev.cagr, at: Date.now() - 55 * 60000, p: 1 };
+  } else {
+    m[T] = { day: new Date().toDateString(), cagr: isNum(cagr) ? cagr : null,
+             at: isNum(cagr) ? Date.now() : Date.now() - 55 * 60000,
+             p: isNum(cagr) ? (thin ? 1 : 0) : 1 };
+  }
   lsSet(WLPROJ_KEY, m);
   if (isNum(cagr)) {
     /* Accumulate into the scan dataset: the screener filters and
@@ -10388,7 +10419,7 @@ async function renderWatchlist(refresh) {
   box.innerHTML = html;
   if (staleTickers.length) wlFillPass(staleTickers);
   var missProj = [];
-  rows.forEach(function (r) { if (!wlProjEntry(r.item.ticker)) missProj.push(r.item.ticker); });
+  rows.forEach(function (r) { if (wlProjNeedsCompute(r.item.ticker)) missProj.push(r.item.ticker); });
   if (missProj.length) wlProjPass(missProj);
   box.querySelectorAll('.wl-row').forEach(function (row) {
     row.addEventListener('click', function (e) {
