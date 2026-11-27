@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261127200001';
+var APP_BUILD = 'stock-research-20261127201004';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -4686,16 +4686,74 @@ async function fetchStatement(T, kind, freq) {
   if (data) { cache[key] = { at: Date.now(), data: data }; lsSet(STMT_KEY, cache); }
   return data;
 }
+function stmtNumInfo(v) {
+  if (v == null) return null;
+  var s = String(v).trim();
+  if (!s || s === '-' || s === '\u2014') return null;
+  var pct = /%$/.test(s);
+  var neg = /^\(.*\)$/.test(s);
+  s = s.replace(/[(),$%\s]/g, '');
+  if (!/^-?[\d.]+$/.test(s)) return null;
+  var n = parseFloat(s);
+  if (!isFinite(n)) return null;
+  return { n: neg ? -Math.abs(n) : n, pct: pct };
+}
 function stmtTableHtml(data) {
   var h = '<div class="stmt-scroll"><table class="stmt-table"><thead><tr><th></th>';
   data.periods.forEach(function (p) { h += '<th>' + esc(p) + '</th>'; });
   h += '</tr></thead><tbody>';
-  data.rows.forEach(function (r) {
+  data.rows.forEach(function (r, ri) {
     h += '<tr' + (r.total ? ' class="stmt-total"' : '') + (r.dates ? ' class="stmt-dates"' : '') + '><td>' + esc(r.label) + '</td>';
-    r.vals.forEach(function (v) { h += '<td>' + esc(v || '-') + '</td>'; });
+    r.vals.forEach(function (v, ci) {
+      /* Every number carries the research tab's dotted underline
+       * (Justin's ask, 2026-11-27): tapping it shows the growth
+       * from the period before in the readout line. Dates and
+       * blanks stay plain text. */
+      h += (!r.dates && stmtNumInfo(v))
+        ? '<td><button type="button" class="stmt-num" data-r="' + ri + '" data-c="' + ci + '">' + esc(v) + '</button></td>'
+        : '<td>' + esc(v || '-') + '</td>';
+    });
     h += '</tr>';
   });
   return h + '</tbody></table></div><p class="fineprint">Figures in millions of dollars, except per-share figures. Compiled from the company\'s SEC filings.</p>';
+}
+function stmtWireNums(zone, data) {
+  zone.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('.stmt-num') : null;
+    if (!b) return;
+    var ri = +b.getAttribute('data-r'), ci = +b.getAttribute('data-c');
+    var row = data.rows[ri];
+    var cur = row && stmtNumInfo(row.vals[ci]);
+    if (!row || !cur) return;
+    zone.querySelectorAll('.stmt-num.on').forEach(function (x) { x.classList.remove('on'); });
+    b.classList.add('on');
+    var read = $('stmt-read');
+    if (!read) return;
+    /* Columns run newest first, so the period before is the
+     * next column over. */
+    var per = data.periods[ci] || '';
+    var prevPer = data.periods[ci + 1];
+    var unit = stmtState.freq === 'q' ? 'quarter' : 'year';
+    var txt;
+    if (prevPer === undefined) {
+      txt = esc(row.label) + ' \u00b7 ' + esc(per) + ': no earlier ' + unit + ' in this table';
+    } else {
+      var prev = stmtNumInfo(row.vals[ci + 1]);
+      if (!prev) {
+        txt = esc(row.label) + ' \u00b7 ' + esc(per) + ': no comparison \u2014 the ' + unit + ' before was not reported';
+      } else if (prev.n === 0) {
+        txt = esc(row.label) + ' \u00b7 ' + esc(per) + ': no comparison \u2014 the ' + unit + ' before was 0';
+      } else if (cur.pct || prev.pct) {
+        var dp = cur.n - prev.n;
+        txt = esc(row.label) + ' \u00b7 ' + esc(per) + ': <b class="' + (dp >= 0 ? 'up' : 'down') + '">' + (dp >= 0 ? '+' : '\u2212') + Math.abs(dp).toFixed(1) + ' pts</b> vs ' + esc(prevPer);
+      } else {
+        var g = (cur.n - prev.n) / Math.abs(prev.n) * 100;
+        txt = esc(row.label) + ' \u00b7 ' + esc(per) + ': <b class="' + (g >= 0 ? 'up' : 'down') + '">' + fmtPct(g) + '</b> vs ' + esc(prevPer);
+      }
+    }
+    read.innerHTML = txt;
+    read.hidden = false;
+  });
 }
 function renderStatement() {
   var body = $('stmt-body');
@@ -4709,7 +4767,7 @@ function renderStatement() {
     return '<button type="button" data-stmtfreq="' + pf[0] + '"' + (st.freq === pf[0] ? ' class="on"' : '') + '>' + pf[1] + '</button>';
   }).join('') + '</div>';
   var ext = '<p class="stmt-ext"><a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=' + encodeURIComponent(st.T) + '&type=&dateb=&owner=include&count=10" target="_blank" rel="noopener">All filings on SEC.gov \u2197</a></p>';
-  body.innerHTML = head + seg + per + '<div id="stmt-zone"><div class="skl-wrap" aria-hidden="true"><div class="skl skl-strip"></div><div class="skl skl-strip"></div><div class="skl skl-strip"></div><div class="skl skl-strip"></div></div></div>' + ext;
+  body.innerHTML = head + seg + per + '<div id="stmt-read" class="stmt-read" hidden></div><div id="stmt-zone"><div class="skl-wrap" aria-hidden="true"><div class="skl skl-strip"></div><div class="skl skl-strip"></div><div class="skl skl-strip"></div><div class="skl skl-strip"></div></div></div>' + ext;
   body.querySelectorAll('[data-stmtkind]').forEach(function (b) {
     b.addEventListener('click', function () { stmtState.kind = b.getAttribute('data-stmtkind'); renderStatement(); });
   });
@@ -4720,6 +4778,7 @@ function renderStatement() {
   fetchStatement(st.T, st.kind, st.freq).then(function (data) {
     if (!zone || !document.body.contains(zone)) return;
     zone.innerHTML = data ? stmtTableHtml(data) : '<div class="status">No data found</div>';
+    if (data) stmtWireNums(zone, data);
   });
 }
 function openStatements(d) {

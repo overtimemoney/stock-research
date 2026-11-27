@@ -1352,3 +1352,10 @@ select { min-height: 48px; }
 .set-back { flex: none; width: 40px; height: 40px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
 .set-crumb { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .set-panel-title { font-size: 21px; font-weight: 800; line-height: 1.15; }
+
+/* Statement numbers: the research tab's dotted underline (same
+ * recipe as .pts-btn); tapping shows growth vs the period before
+ * in the readout line above the table. */
+.stmt-num { background: none; border: 0; border-bottom: 1px dotted rgba(248,199,61,.55); color: inherit; font: inherit; cursor: pointer; padding: 0 0 1px; }
+.stmt-num.on { background: rgba(248,199,61,.22); border-radius: 3px; }
+.stmt-read { font-size: 13px; padding: 8px 2px 0; }
