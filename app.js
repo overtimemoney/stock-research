@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261126230236';
+var APP_BUILD = 'stock-research-20261127035033';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -8062,6 +8062,14 @@ async function wlCagrSync() {
     var j = await resp.json();
     if (!j || !j.map) return;
     var meta = j.meta || {};
+    /* Payloads published before the partial flag existed carry
+     * no meta at all -- their values were never quality-checked,
+     * and the degraded ones (the negative-CAGR incident,
+     * 2026-11-26) are indistinguishable from good ones. Treat
+     * every value from such a payload as suspect: seeded as an
+     * already-old partial, so the first render recomputes it
+     * on-device instead of trusting it all day. */
+    var legacy = !j.meta;
     var etToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
     var fresh = j.day === etToday;
     var todayStr = new Date().toDateString();
@@ -8078,7 +8086,9 @@ async function wlCagrSync() {
          * or failed) never blocks the server's real number. */
         if (cur && cur.day === todayStr && (isNum(cur.cagr) || !isNum(cg))) return;
         var mt = meta[T] || {};
-        m[T] = { day: todayStr, cagr: isNum(cg) ? cg : null, at: isNum(mt.at) ? mt.at : Date.now(), p: mt.p ? 1 : 0 };
+        m[T] = { day: todayStr, cagr: isNum(cg) ? cg : null,
+                 at: legacy ? Date.now() - 2 * 3600000 : (isNum(mt.at) ? mt.at : Date.now()),
+                 p: legacy ? 1 : (mt.p ? 1 : 0) };
         changed = true;
       } else {
         if (cur && (cur.day === todayStr || Date.parse(cur.day) >= Date.parse(ydayStr))) return;

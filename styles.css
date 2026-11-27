@@ -48,7 +48,7 @@ input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-sele
   --chart-line: #141414;
   --chart-actual: #141414; --chart-val: #141414;
   --val-l: 38%;
-  --nav-bg: #ffffff; --nav-active: rgba(20,20,20,.09); --nav-shadow: rgba(20,20,20,.18);
+  --nav-bg: rgba(255,255,255,.68); --nav-active: rgba(20,20,20,.09); --nav-shadow: rgba(20,20,20,.18); --nav-edge: rgba(255,255,255,.65);
   /* Emil review 2026-10-30: strong custom easing curves (Kowalski's
    * standards) replace weak built-in ease/ease-in-out app-wide. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -85,7 +85,7 @@ input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-sele
   --chart-line: #F8C73D;
   --chart-actual: #E9E2D0; --chart-val: #F2EDE3;
   --val-l: 62%;
-  --nav-bg: #202023; --nav-active: #404047; --nav-shadow: rgba(0,0,0,.5);
+  --nav-bg: rgba(28,28,31,.66); --nav-active: rgba(255,255,255,.13); --nav-shadow: rgba(0,0,0,.5); --nav-edge: rgba(255,255,255,.16);
 }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; background: var(--bg); height: 100%; overflow: hidden; overscroll-behavior: none; }
@@ -480,9 +480,16 @@ table.factors.scen.micro td, table.factors.scen.micro th { padding: 7px 3px; }
   display: flex; gap: 2px;
   margin: 0;
   padding: 6px;
+  /* Liquid Glass material (Justin's ask, 2026-11-26): translucent
+   * fill, the page blurs and saturates behind the bar, and a
+   * specular edge -- a bright hairline along the top inside --
+   * over the drop shadow. The sliding lens below keeps its own
+   * lighter fill and edge so it reads as glass on glass. */
   background: var(--nav-bg);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  backdrop-filter: blur(20px) saturate(1.6);
   border: 1px solid var(--line); border-radius: 999px;
-  box-shadow: 0 10px 28px var(--nav-shadow);
+  box-shadow: 0 10px 28px var(--nav-shadow), inset 0 1px 0 var(--nav-edge), inset 0 -1px 0 rgba(0,0,0,.06);
   transition: padding .28s var(--ease-out), transform .28s var(--ease-out);
 }
 .tabbar button {
@@ -501,7 +508,7 @@ table.factors.scen.micro td, table.factors.scen.micro th { padding: 7px 3px; }
  * transition only exists once .pill-on lands (first placement
  * snaps), and while the pill is live the buttons' own active
  * background steps aside so the lens is the highlight. */
-.tab-pill { position: absolute; left: 0; top: 7px; height: 46px; border-radius: 999px; background: var(--nav-active); box-shadow: 0 2px 10px var(--nav-shadow), inset 0 0 0 1px var(--line); pointer-events: none; opacity: 0; }
+.tab-pill { position: absolute; left: 0; top: 7px; height: 46px; border-radius: 999px; background: var(--nav-active); box-shadow: 0 2px 10px var(--nav-shadow), inset 0 0 0 1px var(--line), inset 0 1px 0 var(--nav-edge); pointer-events: none; opacity: 0; }
 .tabbar.mini .tab-pill { top: 5px; height: 36px; }
 .tabbar.pill-on .tab-pill { opacity: 1; transition: transform .34s cubic-bezier(.30, 1.15, .36, 1), width .34s cubic-bezier(.30, 1.15, .36, 1), height .28s var(--ease-out), top .28s var(--ease-out), opacity .2s ease; }
 .tabbar.pill-on button { position: relative; z-index: 1; }
