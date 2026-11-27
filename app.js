@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261127195320';
+var APP_BUILD = 'stock-research-20261127200001';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -3352,6 +3352,15 @@ function bindPriceChart(d) {
         holdTimer = null;
         if (mode !== 'pending' || pointers.size !== 1) return;
         mode = 'scrub';
+        /* The gesture is ours now: kill the browser's scroll
+         * takeover for the rest of it. With pan-y still on, a
+         * finger drifting downward mid-scrub reads as a page
+         * scroll, the browser fires pointercancel, and the
+         * crosshair vanishes under the finger (Justin's report,
+         * 2026-11-27). touch-action: none once scrubbing (or
+         * pinching) engages; pan-y returns when the gesture ends
+         * so plain vertical drags still scroll the page. */
+        zone.style.touchAction = 'none';
         hapticTick();
         var p = Array.from(pointers.values())[0];
         if (p) scrubTo(p.clientX);
@@ -3359,6 +3368,7 @@ function bindPriceChart(d) {
     } else if (pointers.size === 2) {
       if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
       mode = 'pinch';
+      zone.style.touchAction = 'none';
       pinched = true;
       grp.style.display = 'none';
       var ps = Array.from(pointers.values());
@@ -3397,11 +3407,12 @@ function bindPriceChart(d) {
     if (e.type === 'pointercancel') {
       /* The browser took the gesture (a page scroll): just clean
        * up -- never read it as a tap or a finished scrub. */
-      if (pointers.size === 0) { mode = 'idle'; grp.style.display = 'none'; downInfo = null; pinch0 = null; }
+      if (pointers.size === 0) { mode = 'idle'; grp.style.display = 'none'; downInfo = null; pinch0 = null; zone.style.touchAction = 'pan-y'; }
       return;
     }
     if (pointers.size === 0) {
       mode = 'idle';
+      zone.style.touchAction = 'pan-y';
       grp.style.display = 'none';
       /* finishGesture runs when the LAST finger lifts: lifting one
        * finger first drops into scrub mode, and the pinch's tier
