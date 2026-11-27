@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261127201004';
+var APP_BUILD = 'stock-research-20261127201516';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -13374,6 +13374,8 @@ function initApp() {
     }
     var hint = $('set-val-account');
     if (hint) hint.textContent = email || (pro ? 'Pro' : '');
+    var dz = $('acct-danger');
+    if (dz) dz.hidden = !email;
   }
   window.renderAccountPanel = renderAccountPanel;
   var acctAuthBtn = $('acct-auth-btn');
@@ -13385,6 +13387,50 @@ function initApp() {
   });
   var acctProBtn = $('acct-pro-btn');
   if (acctProBtn) acctProBtn.addEventListener('click', function () { openProSheet(); });
+  (function wireAcctDelete() {
+    var delBtn = $('acct-delete'), yesBtn = $('acct-delete-yes'), noBtn = $('acct-delete-no');
+    var copyBtn = $('acct-del-copy'), retryBtn = $('acct-del-retry');
+    if (!delBtn) return;
+    function delStatus(msg) { var s = $('acct-del-status'); if (s) { s.textContent = msg || ''; s.hidden = !msg; } }
+    function showOnly(id) {
+      ['acct-del-confirm', 'acct-del-setup'].forEach(function (x) { var el = $(x); if (el) el.hidden = x !== id; });
+    }
+    delBtn.addEventListener('click', function () {
+      delStatus('');
+      if (!window.srDeleteRpcExists) { delStatus('Sync is unavailable right now.'); return; }
+      window.srDeleteRpcExists().then(function (ok) {
+        if (ok) { showOnly('acct-del-confirm'); }
+        else {
+          var pre = $('acct-del-sql');
+          if (pre) pre.textContent = window.srDeleteSql || '';
+          showOnly('acct-del-setup');
+        }
+      });
+    });
+    if (noBtn) noBtn.addEventListener('click', function () { showOnly(null); delStatus(''); });
+    if (copyBtn) copyBtn.addEventListener('click', function () {
+      var done = function () { delStatus('Copied \u2014 paste it into the Supabase SQL editor and run it, then tap Delete account again.'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(window.srDeleteSql || '').then(done, done);
+      else done();
+    });
+    if (retryBtn) retryBtn.addEventListener('click', function () {
+      if (window.srDeleteRpcReset) window.srDeleteRpcReset();
+      showOnly(null);
+      delBtn.click();
+    });
+    if (yesBtn) yesBtn.addEventListener('click', async function () {
+      yesBtn.disabled = true;
+      delStatus('Deleting your account\u2026');
+      try {
+        await window.srDeleteAccount();
+        delStatus('Account deleted. Reloading\u2026');
+        setTimeout(function () { location.reload(); }, 900);
+      } catch (e) {
+        delStatus('Delete didn\u2019t finish: ' + (e && e.message ? e.message : 'unknown error'));
+        yesBtn.disabled = false;
+      }
+    });
+  })();
   document.querySelectorAll('[data-setback]').forEach(function (b) {
     b.addEventListener('click', function () { setOpenPanel(null); });
   });
@@ -14232,6 +14278,46 @@ if (typeof document !== 'undefined' && document.getElementById) {
     if (syncNowBtn) syncNowBtn.addEventListener('click', function () { reconcile(); });
     window.addEventListener('online', function () { if (currentUser) reconcile(); });
   }
+
+  /* Permanent account deletion (Justin's ask, 2026-11-27).
+   * The synced rows go through the normal client (RLS already
+   * scopes them to this user); the auth user itself can only be
+   * removed by the delete_current_user() database function,
+   * which the owner installs once from the Account panel -- the
+   * app never holds an admin key. Order matters: rows first,
+   * then the function (it ends the session), then this device's
+   * copies of everything that synced. */
+  var DELETE_SQL = "create or replace function public.delete_current_user()\nreturns void\nlanguage plpgsql\nsecurity definer\nset search_path = public\nas $$\nbegin\n  delete from public.user_data where user_id = auth.uid();\n  delete from auth.users where id = auth.uid();\nend;\n$$;";
+  var delRpcProbe = null;
+  function deleteRpcExists() {
+    if (!delRpcProbe) {
+      delRpcProbe = fetch(url + '/rest/v1/', { headers: { apikey: anonKey } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { return !!(j && j.paths && j.paths['/rpc/delete_current_user']); })
+        .catch(function () { return false; });
+    }
+    return delRpcProbe;
+  }
+  async function deleteAccount() {
+    if (!client) await ensureClient();
+    if (!client || !currentUser) throw new Error('You are not signed in.');
+    var del = await client.from('user_data').delete().eq('user_id', currentUser.id);
+    if (del && del.error) throw del.error;
+    var r = await client.rpc('delete_current_user');
+    if (r && r.error) throw r.error;
+    try {
+      SR_SYNC_DEFS.forEach(function (d) { try { localStorage.removeItem(d.key); } catch (e) {} });
+      try { localStorage.removeItem('sr_pro_v1'); } catch (e) {}
+      Object.keys(localStorage).filter(function (k) { return k.indexOf('sb-') === 0; })
+        .forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+    } catch (e) {}
+    try { await client.auth.signOut(); } catch (e) {}
+    currentUser = null;
+  }
+  window.srDeleteAccount = deleteAccount;
+  window.srDeleteRpcExists = deleteRpcExists;
+  window.srDeleteSql = DELETE_SQL;
+  window.srDeleteRpcReset = function () { delRpcProbe = null; };
 
   try {
     wireSyncUi();
