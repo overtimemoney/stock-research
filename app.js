@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261127042545';
+var APP_BUILD = 'stock-research-20261127160551';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -636,7 +636,7 @@ async function fetchStock(ticker, opts) {
      * pass over the article body. Co-CEO pages ("A & B") have no
      * single person to look up, so their names stand alone. */
     var gatherFacts = async function () {
-      var facts = { since: null, founder: false, bio: '', prevRole: null, prevGrowth: null, linkedin: null };
+      var facts = { since: null, founder: false, bio: '', prevRole: null, prevGrowth: null, edu: [], roles: [], born: null };
       if (name.indexOf(' & ') !== -1) return facts;
       var queries = ceoWikiQueries(name, d.companyName || T);
       var pickedPage = null;
@@ -653,8 +653,6 @@ async function fetchStock(ticker, opts) {
         var wd = await ceoSinceFromWikidata(d.companyName || T, name);
         if (wd) facts.since = wd;
       }
-      var liId = await ceoLinkedinFromWikidata(d.companyName || T, name);
-      if (liId) facts.linkedin = liId;
       /* The article body serves two hunts: the strict tenure pass
        * (only when the lead gave no date — some leads never date the
        * tenure while the body does; strict patterns only, every one
@@ -686,13 +684,24 @@ async function fetchStock(ticker, opts) {
         var pv = await ceoPrevFor(name, d.companyName || T, prevText);
         if (pv) { facts.prevRole = pv.pr; facts.prevGrowth = pv.pg; }
       }
+      /* Our own CEO background database (2026-11-27) is the
+       * primary source for the structured background -- it
+       * replaced the LinkedIn out-link. It backstops the bio
+       * and tenure too when the live hunts came up empty. */
+      var dbRec = await ceoDbFetch(T);
+      if (dbRec) {
+        facts.edu = dbRec.education || []; facts.roles = dbRec.roles || []; facts.born = dbRec.born || null;
+        if (!facts.bio && dbRec.bio) facts.bio = dbRec.bio;
+        if (!facts.since && dbRec.since) facts.since = dbRec.since;
+        if (dbRec.founder) facts.founder = true;
+      }
       return facts;
     };
     var applyBundle = function (b) {
       d.ceoSince = b.since; d.ceoFounder = b.founder; d.ceoBio = b.bio;
       d.ceoStartClose = b.sc; d.ceoStartLabel = b.sl; d.ceoStartTs = b.st;
       d.ceoPrevRole = b.pr; d.ceoPrevGrowth = b.pg;
-      d.ceoLinkedin = b.li || null;
+      d.ceoEducation = b.edu || []; d.ceoRoles = b.roles || []; d.ceoBorn = b.born || null;
     };
 
     var hit = ceoCacheGet(key);
@@ -708,10 +717,10 @@ async function fetchStock(ticker, opts) {
        * sources had not caught up) re-runs the hunt every few days,
        * so the performance line appears once the date is published
        * anywhere — no 30-day wait. */
-      if ((!hit.since || (hit.pr === undefined) || (hit.li === undefined)) && Date.now() - (hit.ts || 0) > 3 * 86400000) {
+      if ((!hit.since || (hit.pr === undefined) || (hit.edu === undefined)) && Date.now() - (hit.ts || 0) > 3 * 86400000) {
         var facts2 = await gatherFacts();
         hit.ts = Date.now();
-        if (facts2.linkedin !== undefined) hit.li = facts2.linkedin;
+        if (facts2.edu) { hit.edu = facts2.edu; hit.roles = facts2.roles; hit.born = facts2.born; }
         if (facts2.prevRole || facts2.prevGrowth) { hit.pr = facts2.prevRole; hit.pg = facts2.prevGrowth; }
         if (facts2.since) {
           hit.since = facts2.since; hit.founder = facts2.founder;
@@ -726,12 +735,12 @@ async function fetchStock(ticker, opts) {
     }
     var facts = await gatherFacts();
     var perf = facts.since ? await ceoPerfFor(T, facts.since) : null;
-    var bundle = { since: facts.since, founder: facts.founder, bio: facts.bio, sc: perf ? perf.sc : null, sl: perf ? perf.sl : '', st: perf ? perf.st : null, pr: facts.prevRole, pg: facts.prevGrowth, li: facts.linkedin, ts: Date.now() };
+    var bundle = { since: facts.since, founder: facts.founder, bio: facts.bio, sc: perf ? perf.sc : null, sl: perf ? perf.sl : '', st: perf ? perf.st : null, pr: facts.prevRole, pg: facts.prevGrowth, edu: facts.edu, roles: facts.roles, born: facts.born, ts: Date.now() };
     applyBundle(bundle);
     /* Cache only a bundle that actually found something. Caching an
      * empty result (a failed lookup) used to stick for the whole
      * 30-day TTL — that is what kept NVDA's CEO block empty. */
-    if (bundle.since || bundle.bio || bundle.sc || bundle.pr || bundle.li) ceoCacheSet(key, bundle);
+    if (bundle.since || bundle.bio || bundle.sc || bundle.pr || (bundle.edu && bundle.edu.length)) ceoCacheSet(key, bundle);
   } catch (e) { d.errors.push('CEO: ' + e.message); } };
 
   var srcSurprise = async function () { try {
@@ -1437,67 +1446,30 @@ async function ceoSinceFromWikidata(companyName, ceoName) {
     return { y: parseInt(mm[1], 10), m: (mon >= 1 && mon <= 12) ? mon - 1 : null };
   } catch (e) { return null; }
 }
-/* The CEO's LinkedIn (Justin's ask, 2026-11-15): resolve the person
- * the same way as the tenure fallback (company item -> P169 ->
- * surname match, preferring the statement with no end date), then
- * read the person's LinkedIn profile ID (P6634). Coverage is
- * partial -- Nadella has one, Dimon doesn't -- so a null here just
- * means the render falls back to a LinkedIn people search. */
-async function ceoLinkedinFromWikidata(companyName, ceoName) {
+var CEO_DB_URL = 'https://stock-research-relay.supplessayings-6e6.workers.dev/ceo-db';
+async function ceoDbFetch(T) {
   try {
-    if (!companyName || !ceoName) return null;
-    var wurl = 'https://en.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrlimit=1&prop=pageprops&ppprop=wikibase_item&gsrsearch=' + encodeURIComponent(companyName);
-    var wj = await relayFetch(wurl, { timeout: 20000, validate: function (t) { return t.indexOf('wikibase_item') !== -1; } });
-    var pages = ((JSON.parse(wj).query || {}).pages) || {};
-    var qid = null;
-    Object.keys(pages).forEach(function (k) { if (pages[k].pageprops && pages[k].pageprops.wikibase_item) qid = pages[k].pageprops.wikibase_item; });
-    if (!qid) return null;
-    var curl = 'https://www.wikidata.org/w/api.php?action=wbgetclaims&format=json&entity=' + qid + '&property=P169';
-    var cj = await relayFetch(curl, { timeout: 20000, validate: function (t) { return t.indexOf('P169') !== -1; } });
-    var claims = ((JSON.parse(cj).claims || {}).P169) || [];
-    var cands = [];
-    claims.forEach(function (cl) {
-      var snak = cl.mainsnak;
-      if (!snak || !snak.datavalue || !snak.datavalue.value || !snak.datavalue.value.id) return;
-      var quals = cl.qualifiers || {};
-      cands.push({ pid: snak.datavalue.value.id, ended: !!(quals.P582 && quals.P582[0]) });
-    });
-    if (!cands.length) return null;
-    var ids = cands.map(function (c) { return c.pid; }).join('|');
-    var ej = await relayFetch('https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=labels&languages=en&ids=' + ids, { timeout: 20000, validate: function (t) { return t.indexOf('"labels"') !== -1; } });
-    var ents = (JSON.parse(ej).entities) || {};
-    var surname = String(ceoName).toLowerCase().split(/\s+/).pop();
-    var mine = cands.filter(function (c) {
-      var e = ents[c.pid];
-      var lab = e && e.labels && e.labels.en && e.labels.en.value;
-      return lab && lab.toLowerCase().indexOf(surname) !== -1;
-    });
-    if (!mine.length) return null;
-    var active = mine.filter(function (c) { return !c.ended; });
-    var pid = (active.length ? active : mine)[0].pid;
-    var lj = await relayFetch('https://www.wikidata.org/w/api.php?action=wbgetclaims&format=json&entity=' + pid + '&property=P6634', { timeout: 20000 });
-    var lc = ((JSON.parse(lj).claims || {}).P6634) || [];
-    var sn = lc[0] && lc[0].mainsnak;
-    var val = sn && sn.datavalue && sn.datavalue.value;
-    return (typeof val === 'string' && val) ? val : null;
+    var r = await fetch(CEO_DB_URL + '?t=' + encodeURIComponent(T));
+    var jj = await r.json();
+    return (jj && jj.ok && jj.rec) ? jj.rec : null;
   } catch (e) { return null; }
 }
 function ceoCacheGet(key) {
   try {
-    var all = JSON.parse(localStorage.getItem('sr_ceo_v3') || '{}');
+    var all = JSON.parse(localStorage.getItem('sr_ceo_v4') || '{}');
     var e = all[key];
     /* An all-empty entry is a cached failure from the old build —
      * treat it as a miss so the lookup retries instead of waiting
      * out the TTL. */
-    if (e && (Date.now() - e.ts) < 30 * 864e5 && (e.since || e.bio || e.sc || e.pr || e.li)) return e;
+    if (e && (Date.now() - e.ts) < 30 * 864e5 && (e.since || e.bio || e.sc || e.pr || (e.edu && e.edu.length))) return e;
   } catch (err) {}
   return null;
 }
 function ceoCacheSet(key, e) {
   try {
-    var all = JSON.parse(localStorage.getItem('sr_ceo_v3') || '{}');
+    var all = JSON.parse(localStorage.getItem('sr_ceo_v4') || '{}');
     all[key] = e;
-    localStorage.setItem('sr_ceo_v3', JSON.stringify(all));
+    localStorage.setItem('sr_ceo_v4', JSON.stringify(all));
   } catch (err) {}
 }
 /* Latest-year revenue share per business segment, from the 10-K
@@ -1780,16 +1752,6 @@ function tamBlockHtml(d) {
     '<div class="ceo-body tam-body" hidden>' + inner + '</div>';
 }
 function ceoHeadHtml(d) { return 'CEO · <b>' + esc(d.ceo) + '</b>'; }
-/* The CEO's LinkedIn link (Justin's ask, 2026-11-15): the exact
- * profile when Wikidata carries the ID, otherwise a LinkedIn
- * people search for the name + company, which lands on the same
- * person as the top result. Co-CEOs get no link -- one link can't
- * point at two people. */
-function ceoLinkedinUrl(d) {
-  if (!d || !d.ceo || d.ceo.indexOf(' & ') !== -1) return '';
-  if (d.ceoLinkedin) return 'https://www.linkedin.com/in/' + encodeURIComponent(d.ceoLinkedin);
-  return 'https://www.linkedin.com/search/results/people/?keywords=' + encodeURIComponent(d.ceo + ' ' + (d.companyName || d.ticker || ''));
-}
 function ceoInnerHtml(d) {
   var inner = '';
   var meta = [];
@@ -1797,6 +1759,8 @@ function ceoInnerHtml(d) {
   if (d.ceoFounder) meta.push('<span class="gold-text">Founder</span>');
   if (meta.length) inner += '<p class="ceo-meta">' + meta.join(' \u00b7 ') + '</p>';
   if (d.ceoBio) inner += '<p class="ceo-bio">' + esc(d.ceoBio) + '</p>';
+  if (d.ceoEducation && d.ceoEducation.length) inner += '<p class="ceo-prev">Education \u00b7 ' + d.ceoEducation.map(function (x) { return esc(x); }).join(' \u00b7 ') + '</p>';
+  if (d.ceoRoles && d.ceoRoles.length) inner += '<p class="ceo-prev">Career \u00b7 ' + d.ceoRoles.slice(0, 4).map(function (r) { return esc(r.org) + (r.from ? ' (' + r.from + '\u2013' + (r.to || '') + ')' : ''); }).join(' \u00b7 ') + '</p>';
   if (isNum(d.ceoStartClose) && d.ceoStartClose > 0 && isNum(d.price) && d.ceoStartLabel) {
     var pct = (d.price / d.ceoStartClose - 1) * 100;
     var ptxt = (pct >= 0 ? '+' : '') + (Math.abs(pct) >= 100 ? fmtNum(pct, 0) : fmtNum(pct, 1)) + '%';
@@ -1812,8 +1776,6 @@ function ceoInnerHtml(d) {
   }
   if (d.ceoPrevRole) inner += '<p class="ceo-prev">Previously \u00b7 ' + esc(d.ceoPrevRole) + '</p>';
   if (d.ceoPrevGrowth) inner += '<p class="ceo-prev">Track record \u00b7 ' + esc(d.ceoPrevGrowth) + '</p>';
-  var liUrl = ceoLinkedinUrl(d);
-  if (liUrl) inner += '<p class="ceo-li"><a href="' + liUrl + '" target="_blank" rel="noopener">LinkedIn \u2197</a></p>';
   return inner;
 }
 function ceoBlockHtml(d) {
