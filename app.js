@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261127040127';
+var APP_BUILD = 'stock-research-20261127042027';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -4443,7 +4443,13 @@ function renderScorecard(d) {
     '<button class="sc-act" id="sc-charts" type="button"><span>Charts</span><span class="sc-act-arrow">›</span></button>' +
     '<button class="sc-act" id="sc-holders" type="button"><span>Holders</span><span class="sc-act-arrow">›</span></button>' +
     '<button class="sc-act" id="sc-refresh" type="button"><span>Refresh data</span><span class="sc-act-arrow">›</span></button>' +
-    '<a class="sc-act sc-ext" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=' + esc(d.ticker) + '&type=&dateb=&owner=include&count=10" target="_blank" rel="noopener"><span>SEC filings</span><span class="sc-act-arrow">↗</span></a></div>';
+    '<a class="sc-act sc-ext" href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=' + esc(d.ticker) + '&type=&dateb=&owner=include&count=10" target="_blank" rel="noopener"><span>SEC filings</span><span class="sc-act-arrow">↗</span></a>' +
+    /* The YouTube Earnings call row lived only on the watchlist
+     * overview; when watchlist taps moved to the Research tab
+     * (2026-11-26) the overview became unreachable and the row
+     * effectively vanished -- Justin caught it the same night.
+     * It belongs here too, next to SEC filings. */
+    '<a class="sc-act sc-ext" href="https://www.youtube.com/results?search_query=' + encodeURIComponent(d.ticker + ' earnings call') + '" target="_blank" rel="noopener"><span>Earnings call</span><span class="sc-act-arrow">↗</span></a></div>';
 
   html += stockNewsSectionHtml('sc', d.ticker);
   html += txSectionHtml(d.ticker);
