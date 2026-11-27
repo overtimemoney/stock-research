@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261127194542';
+var APP_BUILD = 'stock-research-20261127195320';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -13561,7 +13561,30 @@ function initApp() {
       $('settings-note').textContent = 'Price cache restored.';
     });
   });
-  $('set-reload').addEventListener('click', function () { location.reload(); });
+  /* Reload app = force the newest version (Justin's ask,
+   * 2026-11-27): clear the cached app shell and unregister the
+   * service worker before reloading, so the fresh build is
+   * guaranteed -- the plain reload it replaced could serve the
+   * old cached copy again. Only the shell cache is cleared;
+   * watchlist, projections and every other saved datum lives in
+   * local storage / the cloud and is untouched. Offline it just
+   * reloads (clearing the shell with no network would strand
+   * the app on a blank page). */
+  $('set-reload').addEventListener('click', async function () {
+    if (navigator.onLine) {
+      try {
+        if ('caches' in window) {
+          var ckeys = await caches.keys();
+          await Promise.all(ckeys.map(function (k) { return caches.delete(k); }));
+        }
+        if ('serviceWorker' in navigator) {
+          var regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(function (r) { return r.unregister(); }));
+        }
+      } catch (e) {}
+    }
+    location.reload();
+  });
   $('journal-form').addEventListener('submit', function (e) {
     e.preventDefault();
     var T = ($('j-ticker').value || '').trim().toUpperCase();
