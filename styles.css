@@ -1365,3 +1365,8 @@ select { min-height: 48px; }
 .btn-danger { background: none; border: 1px solid var(--bad); color: var(--bad); border-radius: 999px; padding: 8px 16px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
 .btn-danger:disabled { opacity: .5; cursor: default; }
 .sync-sql { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-word; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px; max-height: 180px; overflow: auto; margin: 0 0 8px; }
+
+/* EPS trajectory bars: tap a bar for its analyst count. */
+.eps-hit { fill: transparent; cursor: pointer; }
+.eps-bar.on { stroke: var(--gold); stroke-width: 2.5; }
+.eps-read { font-size: 13px; padding: 8px 2px 0; }

@@ -1,4 +1,4 @@
-var APP_BUILD = 'stock-research-20261127201516';
+var APP_BUILD = 'stock-research-20261128070628';
 /* Stock Research PWA — personal stock research with live data.
  * Data sources (public, no key): Finviz (fundamentals), Nasdaq API
  * (quote, summary, EPS forecasts), Yahoo Finance chart (1y history).
@@ -2334,7 +2334,7 @@ function epsPoints(d) {
   if (isNum(d.epsTTM)) pts.push({ label: 'TTM', eps: d.epsTTM, kind: 'actual' });
   (d.epsForecasts || []).slice(0, 4).forEach(function (f) {
     var yr = String(f.fiscalEnd || '').replace(/^[A-Za-z]+\s+/, '');
-    pts.push({ label: 'FY' + yr, eps: f.eps, kind: 'est', n: f.n });
+    pts.push({ label: 'FY' + yr, eps: f.eps, kind: 'est', n: f.n, hi: f.high, lo: f.low });
   });
   if (pts.length < 2 && isNum(d.epsNextY)) {
     pts.push({ label: 'Next yr est', eps: d.epsNextY, kind: 'est' });
@@ -2965,10 +2965,16 @@ function barChartSVG(pts, w, h) {
     var x = padX + i * bw + bw * 0.16, bwid = bw * 0.68;
     var y = p.eps >= 0 ? zeroY - bh : zeroY;
     var fillAttr = p.kind === 'actual' ? 'style="fill:var(--chart-actual)"' : 'fill="url(#goldGrad)"';
-    out += '<rect x="' + x + '" y="' + y + '" width="' + bwid + '" height="' + Math.max(bh, 1.5) + '" rx="4" ' + fillAttr + '/>';
+    out += '<rect class="eps-bar" data-i="' + i + '" x="' + x + '" y="' + y + '" width="' + bwid + '" height="' + Math.max(bh, 1.5) + '" rx="4" ' + fillAttr + '/>';
     var vy = p.eps >= 0 ? y - 5 : y + bh + 13;
     out += '<text x="' + (x + bwid / 2) + '" y="' + vy + '" text-anchor="middle" font-size="12.5" font-weight="800" style="fill:var(--chart-val)">' + fmtNum(p.eps, Math.abs(p.eps) >= 100 ? 0 : 2) + '</text>';
     out += '<text x="' + (x + bwid / 2) + '" y="' + (h - 8) + '" text-anchor="middle" font-size="11.5" font-weight="700" fill="#77705f">' + esc(p.label) + (p.kind === 'est' ? ' est' : '') + '</text>';
+  });
+  /* Full-column tap targets over the bars (Justin's ask,
+   * 2026-11-28): tapping a forecast bar shows how many analysts'
+   * estimates it rests on in the readout under the chart. */
+  pts.forEach(function (p, i) {
+    out += '<rect class="eps-hit" data-i="' + i + '" x="' + (padX + i * bw) + '" y="0" width="' + bw + '" height="' + h + '" fill="transparent"/>';
   });
   out += '<defs><linearGradient id="goldGrad" x1="0" y1="0" x2="1" y2="0">' +
     '<stop offset="0%" stop-color="#B46A11"/><stop offset="33%" stop-color="#D68D15"/>' +
@@ -3226,6 +3232,35 @@ function hapticTick() {
     }
     _hapticSw.click();
   } catch (e) {}
+}
+function bindEpsChart(d) {
+  var wrap = $('score-result');
+  if (!wrap) return;
+  var read = $('eps-read');
+  if (!read || read.dataset.bound) return;
+  read.dataset.bound = '1';
+  var pts = epsPoints(d);
+  wrap.querySelectorAll('.eps-hit').forEach(function (hit) {
+    hit.addEventListener('click', function () {
+      var i = +hit.getAttribute('data-i');
+      var p = pts[i];
+      if (!p) return;
+      wrap.querySelectorAll('.eps-bar.on').forEach(function (b) { b.classList.remove('on'); });
+      var bar = wrap.querySelector('.eps-bar[data-i="' + i + '"]');
+      if (bar) bar.classList.add('on');
+      var txt;
+      if (p.kind === 'actual') {
+        txt = '<b>' + esc(p.label) + '</b> \u00b7 EPS $' + fmtNum(p.eps, 2) + ' \u2014 reported results, not an estimate';
+      } else if (isNum(p.n) && p.n > 0) {
+        txt = '<b>' + esc(p.label) + ' est</b> \u00b7 EPS $' + fmtNum(p.eps, 2) + ' \u2014 based on ' + (p.n === 1 ? '<b>just 1 analyst</b>' : '<b>' + Math.round(p.n) + ' analysts</b>');
+        if (isNum(p.hi) && isNum(p.lo) && p.hi > p.lo) txt += ' (estimates range $' + fmtNum(p.lo, 2) + ' to $' + fmtNum(p.hi, 2) + ')';
+      } else {
+        txt = '<b>' + esc(p.label) + ' est</b> \u00b7 EPS $' + fmtNum(p.eps, 2) + ' \u2014 no analyst count reported for this one';
+      }
+      read.innerHTML = txt;
+      read.hidden = false;
+    });
+  });
 }
 function bindPriceChart(d) {
   var wrap = $('score-result');
@@ -4383,7 +4418,7 @@ function renderScorecard(d) {
 
   html += '<div class="section-h">EPS trajectory — <span class="gold-text">cliff check</span></div>';
   if (traj.points.length >= 2) {
-    html += '<div class="chart-wrap">' + barChartSVG(traj.points) + '</div>';
+    html += '<div class="chart-wrap">' + barChartSVG(traj.points) + '</div><div id="eps-read" class="eps-read" hidden></div>';
     if (traj.warning) html += '<div class="alert warn">' + ico(ICO_ALERT, 'ico-sm') + esc(traj.warning) + '</div>';
     else html += '<div class="alert ok">' + ico(ICO_OKCIRCLE, 'ico-sm') + 'No cliff in the consensus path — estimates don\'t fall off a peak inside the forecast window. That doesn\'t make it safe; it means the cheapness isn\'t obviously a peak-earnings illusion.</div>';
   } else {
@@ -4442,6 +4477,7 @@ function renderScorecard(d) {
   projStripFill('sc-proj', d.ticker);
   overallFill('sc-overall-v', d);
   loadStockNews('sc', d.ticker);
+  bindEpsChart(d);
   loadTxSection(d);
   loadSimilarStocks(d);
 
