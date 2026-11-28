@@ -340,22 +340,6 @@ setTimeout(function () { var s = document.getElementById('splash'); if (s) { s.c
       </div>
       <div id="acct-danger" hidden>
         <button id="acct-delete" class="btn-danger" type="button">Delete account</button>
-        <div id="acct-del-confirm" hidden>
-          <p class="fineprint" style="margin:10px 0 8px">This permanently deletes your account and everything synced to it \u2014 watchlist, portfolio, journal and projections \u2014 and clears them from this device too. It can\u2019t be undone.</p>
-          <div class="row-gap">
-            <button id="acct-delete-yes" class="btn-danger" type="button">Permanently delete</button>
-            <button id="acct-delete-no" class="btn-ghost" type="button">Cancel</button>
-          </div>
-        </div>
-        <div id="acct-del-setup" hidden>
-          <p class="fineprint" style="margin:10px 0 8px">One-time setup: deleting an account needs a small function in your database. Paste this into the Supabase SQL editor once, then tap Delete account again.</p>
-          <pre id="acct-del-sql" class="sync-sql"></pre>
-          <div class="row-gap">
-            <button id="acct-del-copy" class="btn-ghost" type="button">Copy SQL</button>
-            <button id="acct-del-retry" class="btn-ghost" type="button">I\u2019ve added it</button>
-          </div>
-        </div>
-        <p id="acct-del-status" class="fineprint" style="margin:10px 0 0" hidden></p>
       </div>
     </div>
     <div class="set-panel" id="panel-sync" hidden>
@@ -645,6 +629,17 @@ setTimeout(function () { var s = document.getElementById('splash'); if (s) { s.c
   <div id="holders-sheet">
     <div class="qm-sheet-top"><button type="button" id="holders-back" class="btn-ghost">‹ Back</button><button type="button" id="holders-close" class="qm-x" aria-label="Close holders"><svg class="ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div id="holders-body"></div>
+  </div>
+</div>
+<div id="del-overlay" hidden>
+  <div id="del-sheet" role="alertdialog" aria-modal="true" aria-labelledby="del-title">
+    <div class="del-title" id="del-title">Delete your account?</div>
+    <p class="sheet-note">This permanently deletes your account and everything synced to it — watchlist, portfolio, journal and projections — and clears them from this device. This can’t be undone.</p>
+    <p id="del-error" class="del-error" hidden>Couldn’t delete your account. Please try again later.</p>
+    <div class="sheet-btns">
+      <button type="button" id="del-cancel" class="btn-ghost">Cancel</button>
+      <button type="button" id="del-yes" class="btn-danger-fill">Delete permanently</button>
+    </div>
   </div>
 </div>
 <div id="tx-overlay" hidden>

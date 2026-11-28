@@ -1364,9 +1364,18 @@ select { min-height: 48px; }
 #acct-danger { margin-top: 18px; }
 .btn-danger { background: none; border: 1px solid var(--bad); color: var(--bad); border-radius: 999px; padding: 8px 16px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
 .btn-danger:disabled { opacity: .5; cursor: default; }
-.sync-sql { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-word; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px; max-height: 180px; overflow: auto; margin: 0 0 8px; }
-
 /* EPS trajectory bars: tap a bar for its analyst count. */
 .eps-hit { fill: transparent; cursor: pointer; }
 .eps-bar.on { stroke: var(--gold); stroke-width: 2.5; }
 .eps-read { font-size: 13px; padding: 8px 2px 0; }
+
+/* Delete-account confirmation popup: a centered dialog over a
+ * dimmed backdrop, in the app's sheet language. */
+#del-overlay { position: fixed; inset: 0; z-index: 160; background: rgba(0,0,0,.62); display: flex; align-items: center; justify-content: center; padding: 20px; overscroll-behavior: contain; }
+#del-overlay[hidden] { display: none; }
+#del-sheet { background: var(--bg); border: 1.5px solid var(--line); border-radius: 20px; padding: 20px; width: 100%; max-width: 340px; animation: dlg-in .25s var(--ease-drawer); }
+.del-title { font-size: 19px; font-weight: 800; margin: 0 0 10px; }
+.del-error { color: var(--bad); font-size: 13px; margin: 0 0 12px; }
+#del-sheet .sheet-btns .btn-ghost { flex: 1; }
+.btn-danger-fill { flex: 1; background: var(--bad); border: 1px solid var(--bad); color: #fff; border-radius: 999px; padding: 10px 16px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-danger-fill:disabled { opacity: .5; cursor: default; }
